@@ -1,20 +1,13 @@
 Odin: Organized Digital Intelligent Networks
 =======
 
-.. image:: https://readthedocs.org/projects/lasagne/badge/
-    :target: http://lasagne.readthedocs.org/en/latest/
+[![image](https://readthedocs.org/projects/lasagne/badge/)](http://lasagne.readthedocs.org/en/latest/)
+[![image](https://travis-ci.org/Lasagne/Lasagne.svg)](https://travis-ci.org/Lasagne/Lasagne)
+[![image](https://img.shields.io/coveralls/Lasagne/Lasagne.svg)](https://coveralls.io/r/Lasagne/Lasagne)
 
-.. image:: https://travis-ci.org/Lasagne/Lasagne.svg
-    :target: https://travis-ci.org/Lasagne/Lasagne
+[![image](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Lasagne/Lasagne/blob/master/LICENSE)
 
-.. image:: https://img.shields.io/coveralls/Lasagne/Lasagne.svg
-    :target: https://coveralls.io/r/Lasagne/Lasagne
-
-.. image:: https://img.shields.io/badge/license-MIT-blue.svg
-    :target: https://github.com/Lasagne/Lasagne/blob/master/LICENSE
-
-.. image:: https://zenodo.org/badge/16974/Lasagne/Lasagne.svg
-   :target: https://zenodo.org/badge/latestdoi/16974/Lasagne/Lasagne
+[![image](https://zenodo.org/badge/16974/Lasagne/Lasagne.svg)](https://zenodo.org/badge/latestdoi/16974/Lasagne/Lasagne)
 
 Odin is a minimalist, highly modular neural networks library, written in Python and capable of running on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
 
