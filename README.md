@@ -7,8 +7,6 @@ Odin: Organized Digital Intelligent Networks
 
 [![image](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Lasagne/Lasagne/blob/master/LICENSE)
 
-[![image](https://zenodo.org/badge/16974/Lasagne/Lasagne.svg)](https://zenodo.org/badge/latestdoi/16974/Lasagne/Lasagne)
-
 Odin is a minimalist, highly modular neural networks library, written in Python and capable of running on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
 
 Use Keras if you need a deep learning library that:
