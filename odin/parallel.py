@@ -1,87 +1,137 @@
 from __future__ import print_function, division
 
 import numpy as np
+from .base import OdinObject
+from .utils import segment_list
 
-# ======================================================================
-# Multiprocessing
-# ======================================================================
-class mpi():
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+npro = comm.Get_size()
 
-    """docstring for mpi"""
-    @staticmethod
-    def segment_job(file_list, n_seg):
+__all__ = [
+    'MapReduce'
+]
+# ===========================================================================
+# MPI MapReduce
+# ===========================================================================
+class MapReduce(OdinObject):
+
+    """
+    Example
+    -------
+    >>> a = MapReduce()
+    >>> a.set_log_point(10)
+    >>> a.set_cache_size(30)
+    >>>
+    >>> def map_func(v, job):
+    >>>     return (v['tmp'], job)
+    >>> def reduce_func(v, results):
+    >>>     v['test'] += results
+    >>> def root_func(v):
+    >>>     v['test'] = []
+    >>> def global_func(v):
+    >>>     v['tmp'] = v['rank']
+    >>>
+    >>> a.set_init(root_init=root_func, global_init=global_func)
+    >>> a.add_task(range(100),
+    >>>     map_func,
+    >>>     reduce_func).add_task(range(100, 200),
+    >>>     map_func,
+    >>>     reduce_func).add_task(range(200, 300),
+    >>>     map_func,
+    >>>     reduce_func)
+    >>> a()
+    >>> print(a.get_results('test'))
+    """
+
+    def __init__(self):
+        super(MapReduce, self).__init__()
+        self._cache = 30
+        self._log = 50
+        self._tasks = []
+        self._global_vars = {'rank': rank, 'size': npro}
+        self._root_rank = 0
+
+    def _check_init_func(self, init_func):
+        if init_func:
+           if not hasattr(init_func, '__call__') or \
+              init_func.func_code.co_argcount != 1:
+              raise ValueError('Init function must be callable and has 1 arg')
+
+    def _check_mapreduce_func(self, func):
+        if not func or \
+           not hasattr(func, '__call__') or \
+           func.func_code.co_argcount != 2:
+           raise ValueError('Map/Reduce function must be callable and has 2 arg')
+
+    def set_cache_size(self, cache):
         '''
-        Example
-        -------
-            >>> segment_job([1,2,3,4,5],2)
-            >>> [[1, 2, 3], [4, 5]]
-            >>> segment_job([1,2,3,4,5],4)
-            >>> [[1], [2], [3], [4, 5]]
+        cache : int
+            maximum number of cache for each process before gathering the data
         '''
-        # by floor, make sure and process has it own job
-        size = int(np.ceil(len(file_list) / float(n_seg)))
-        if size * n_seg - len(file_list) > size:
-            size = int(np.floor(len(file_list) / float(n_seg)))
-        # start segmenting
-        segments = []
-        for i in xrange(n_seg):
-            start = i * size
-            if i < n_seg - 1:
-                end = start + size
-            else:
-                end = max(start + size, len(file_list))
-            segments.append(file_list[start:end])
-        return segments
+        self._cache = cache
+        return self
 
-    @staticmethod
-    def div_n_con(path, file_list, n_job, div_func, con_func):
-        ''' Divide and conquer strategy for multiprocessing.
-        Parameters
-        ----------
-        path : str
-            path to save the result, all temp file save to path0, path1, path2...
-        file_list : list
-            list of all file or all job to do processing
-        n_job : int
-            number of processes
-        div_func : function(save_path, jobs_list)
-            divide function, execute for each partition of job
-        con_func : function(save_path, temp_paths)
-            function to merge all the result
-        Returns
-        -------
-        return : list(Process)
-            div_processes and con_processes
+    def set_log_point(self, log):
         '''
-        import multiprocessing
-        job_list = mpi.segment_job(file_list, n_job)
-        file_path = [path + str(i) for i in xrange(n_job)]
-        div_processes = [multiprocessing.Process(target=div_func, args=(file_path[i], job_list[i])) for i in xrange(n_job)]
-        con_processes = multiprocessing.Process(target=con_func, args=(path, file_path))
-        return div_processes, con_processes
+        log : int
+            after this amount of preprocessed data, print log
+        '''
+        self._log = log
+        return self
 
-    @staticmethod
-    def preprocess_mpi(jobs_list, features_func, save_func, n_cache=30, log_point=50):
+    def set_root(self, rank):
+        self._root_rank = rank
+
+    def set_init(self, root_init=None, rank_init=None, global_init=None):
+        '''
+        root_init: function(map)
+            store variables in root's vars
+        rank_init: function(map)
+            store variables in all processes except root
+        global_init: function(map)
+            store variables in all processes
+        '''
+        self._global_vars = {'rank': rank, 'size': npro}
+
+        if root_init:
+            self._check_init_func(root_init)
+            if rank == self._root_rank:
+                root_init(self._global_vars)
+
+        if rank_init:
+            self._check_init_func(rank_init)
+            if rank != self._root_rank:
+                rank_init(self._global_vars)
+
+        if global_init:
+            self._check_init_func(global_init)
+            global_init(self._global_vars)
+        return self
+
+    def get_results(self, key):
+        if key in self._global_vars:
+            return self._global_vars[key]
+        return None
+
+    def add_task(self, jobs, map_func, reduce_func, init_func=None, name=None):
         ''' Wrapped preprocessing procedure in MPI.
                     root
                 / / / | \ \ \
-                features_func
+                 mapping_func
                 \ \ \ | / / /
-                  save_func
+                 reduce_func
             * NO need call Barrier at the end of this methods
 
         Parameters
         ----------
-        jobs_list : list
+        jobs : list
             [data_concern_job_1, job_2, ....]
-        features_func : function(job_i)
+        map_func : function(job_i)
             function object to extract feature from each job
-        save_func : function([job_i,...])
+        reduce_func : function([job_i,...])
             transfer all data to process 0 as a list for saving to disk
-        n_cache : int
-            maximum number of cache for each process before gathering the data
-        log_point : int
-            after this amount of preprocessed data, print log
 
         Notes
         -----
@@ -104,52 +154,73 @@ class mpi():
         >>>     f['idx'] = idx
         >>>     f.close()
         '''
-        from mpi4py import MPI
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        npro = comm.Get_size()
+        self._check_init_func(init_func)
+        self._check_mapreduce_func(map_func)
+        self._check_mapreduce_func(reduce_func)
+        self._tasks.append([jobs, map_func, reduce_func, init_func, name])
+        return self
+
+    def _run_mpi(self, jobs_list, init_func, map_func, reduce_func):
+        root = self._root_rank
+        # create variables
+        global_vars = self._global_vars.copy()
+        local_vars = {}
+        if init_func:
+            init_func(local_vars)
+        for i, j in local_vars.iteritems():
+            global_vars[i] = j
 
         #####################################
         # 1. Scatter jobs for all process.
-        if rank == 0:
-            logger.info('Process 0 found %d jobs' % len(jobs_list))
-            jobs = mpi.segment_job(jobs_list, npro)
+        if rank == self._root_rank:
+            self.log('Process %d found %d jobs' % (root, len(jobs_list)))
+            jobs = segment_list(jobs_list, npro)
             n_loop = max([len(i) for i in jobs])
         else:
             jobs = None
             n_loop = 0
-            logger.info('Process %d waiting for Process 0!' % rank)
-        comm.Barrier()
+            # self.log('Process %d waiting for Process %d!' % (rank, root))
 
-        jobs = comm.scatter(jobs, root=0)
-        n_loop = comm.bcast(n_loop, root=0)
-        logger.info('Process %d receive %d jobs' % (rank, len(jobs)))
+        jobs = comm.scatter(jobs, root=root)
+        n_loop = comm.bcast(n_loop, root=root)
+        self.log('[Received] Process %d: %d jobs' % (rank, len(jobs)))
+        comm.Barrier()
 
         #####################################
         # 2. Start preprocessing.
         data = []
 
         for i in xrange(n_loop):
-            if i % n_cache == 0 and i > 0:
-                all_data = comm.gather(data, root=0)
-                if rank == 0:
-                    logger.info('Saving data at process 0')
+            if i % self._cache == 0 and i > 0:
+                all_data = comm.gather(data, root=root)
+                if rank == root:
+                    self.log('Reduce all data to process %d' % self._root_rank)
                     all_data = [k for j in all_data for k in j]
                     if len(all_data) > 0:
-                        save_func(all_data)
+                        reduce_func(global_vars, all_data)
                 data = []
 
             if i >= len(jobs): continue
-            feature = features_func(jobs[i])
+            feature = map_func(global_vars, jobs[i])
             if feature is not None:
                 data.append(feature)
 
-            if i % log_point == 0:
-                logger.info('Rank:%d preprocessed %d files!' % (rank, i))
+            if i > 0 and i % self._log == 0:
+                self.log(' - [Map] Process %d finished %d files!' % (rank, i))
 
-        all_data = comm.gather(data, root=0)
-        if rank == 0:
-            logger.info('Finished preprocess_mpi !!!!\n')
+        #####################################
+        # 3. Reduce task
+        all_data = comm.gather(data, root=root)
+        if rank == root:
+            self.log('Finished MapReduce task !!!!')
             all_data = [k for j in all_data for k in j]
             if len(all_data) > 0:
-                save_func(all_data)
+                reduce_func(global_vars, all_data)
+
+    def __call__(self):
+        for k, t in enumerate(self._tasks):
+            j, m, r, i, n = t[0], t[1], t[2], t[3], t[4]
+            if rank == self._root_rank:
+                self.log('****** Start %dth task, name:%s ******' % (k, str(n)), 20)
+            self._run_mpi(j, i, m, r)
+            comm.Barrier()
