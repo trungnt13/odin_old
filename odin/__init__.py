@@ -1,3 +1,5 @@
 from . import config
-import tensor
+from . import utils
+from . import tensor
 from model import model
+

@@ -108,12 +108,20 @@ class model(OdinObject):
         self._save_path = savepath
 
         # contain real model object
-        self._model_func = None
+        self._need_update_model = False
         self._model = None
+        self._model_func = None
+        self._model_var = {} # variable for input, output of model
         self._api = ''
 
+        # ====== functions ====== #
         self._pred_func = None
+
+        self._cost_func_old = None
         self._cost_func = None
+
+        self._updates_func_old = None
+        self._objective_func_old = None
         self._updates_func = None
 
     # ==================== Weights ==================== #
@@ -132,13 +140,15 @@ class model(OdinObject):
         '''
         # ====== Make sure model created ====== #
         if self._model_func:
-            self.create_model()
+            self.get_model()
             # set model weights
             if self._model:
                 # convert weights between api
                 if api and api != self._api:
                     self._weights = _convert_weights(
                         self._model, weights, api, self._api)
+                else:
+                    self._weights = weights
                 _set_weights(self._model, self._weights, self._api)
             elif api is not None:
                 raise ValueError('Cannot convert weights when model haven\'t created!')
@@ -152,8 +162,11 @@ class model(OdinObject):
         ''' if set_model is called, and your AI is created, always return the
         newest weights from AI
         '''
-        if self._model is not None:
-            self._weights = _get_weights(self._model)
+        # create model to have weights
+        if self._model_func:
+            self.get_model()
+        # always update the newest weights of model
+        self._weights = _get_weights(self._model)
         return self._weights
 
     def get_nweights(self):
@@ -184,10 +197,10 @@ class model(OdinObject):
                 raise ValueError('Currently not support API: %s' % self._api)
         return 0
 
-    # ==================== Network manipulation ==================== #
-    def get_model(self):
-        return self._model_func
+    def get_vars(self):
+        return self._model_var
 
+    # ==================== Model ==================== #
     def set_model(self, model, api, *args, **kwargs):
         ''' Save a function that create your model.
 
@@ -205,20 +218,22 @@ class model(OdinObject):
         if not hasattr(model, '__call__'):
             raise NotImplementedError('Model must be a function return computational graph')
         api = api.lower()
+        func = function(model, *args, **kwargs)
+        if self._model_func and self._model_func != func:
+            self._need_update_model = True
         # ====== Lasagne ====== #
         if 'lasagne' in api:
             self._api = 'lasagne'
-            self._model_func = function(model, *args, **kwargs)
+            self._model_func = func
         # ====== Keras ====== #
         elif 'keras' in api:
             self._api = 'keras'
-            self._model_func = function(model, *args, **kwargs)
+            self._model_func = func
         elif 'blocks' in api:
             self._api = 'blocks'
             raise ValueError('Currently not support API: %s' % self._api)
 
-    # ==================== Network manipulation ==================== #
-    def create_model(self, checkpoint=True):
+    def get_model(self, checkpoint=True):
         '''
         Parameters
         ----------
@@ -235,11 +250,15 @@ class model(OdinObject):
         '''
         if self._model_func is None:
             raise ValueError("You must set_model first")
-        if self._model is None:
+        if self._need_update_model or self._model is None:
             self.log('*** Creating network ... ***', 20)
             self._model = self._model_func()
-
-            # load old weight
+            self._need_update_model = False
+            # reset all function
+            self._pred_func = None
+            self._cost_func = None
+            self._updates_func = None
+            # ====== load old weight ====== #
             if len(self._weights) > 0:
                 try:
                     _set_weights(self._model, self._weights, self._api)
@@ -248,7 +267,7 @@ class model(OdinObject):
                     self.log('*** Cannot load old weights ***', 50)
                     self.log(str(e), 40)
                     import traceback; traceback.print_exc();
-            # fetch new weights into model, create checkpoints
+            # ====== fetch new weights into model, create checkpoints ====== #
             else:
                 weights = self.get_weights()
                 if self._save_path is not None and checkpoint:
@@ -260,83 +279,121 @@ class model(OdinObject):
                         self.log('Error Creating checkpoint: %s' % str(e), 40)
                         raise e
                     f.close()
-        return self._model
-
-    def set_pred(self, pred_func):
-        self._pred_func = pred_func
-
-    def create_pred(self):
-        ''' Create prediction funciton '''
-        self.create_model()
-
-        # ====== Create prediction function ====== #
-        if self._pred_func is None:
+            # ====== store model's variables ====== #
             if self._api == 'lasagne':
                 import lasagne
-                # create prediction function
-                self._pred_func = tensor.function(
-                    inputs=[l.input_var for l in
-                            lasagne.layers.find_layers(
-                                self._model, types=lasagne.layers.InputLayer)],
-                    outputs=lasagne.layers.get_output(
-                        self._model, deterministic=True))
-                self.log(
-                    '*** Successfully create [lasagne] prediction function ***', 20)
+                X = [l.input_var for l in lasagne.layers.find_layers(
+                    self._model, types=lasagne.layers.InputLayer)]
+                y_pred = lasagne.layers.get_output(self._model, deterministic=True)
+                y_train = lasagne.layers.get_output(self._model, deterministic=False)
             elif self._api == 'keras':
-                self._pred_func = tensor.function(
-                    inputs=[self._model.get_input(train=False)],
-                    outputs=self._model.get_output(train=False),
-                    updates=self._model.state_updates)
-                self.log(
-                    '*** Successfully create [keras] prediction function ***', 20)
+                X = self._model.get_input(train=False)
+                if type(X) not in (list, tuple):
+                    X = [X]
+                y_pred = self._model.get_output(train=False)
+                y_train = self._model.get_output(train=True)
+            y_true = tensor.placeholder(ndim=tensor.ndim(y_pred))
+            self._model_var['X'] = X
+            self._model_var['y_true'] = y_true
+            self._model_var['y_pred'] = y_pred
+            self._model_var['y_train'] = y_train
+        return self._model
+
+    # ==================== Network function ==================== #
+    def create_pred(self):
+        ''' Create prediction funciton '''
+        self.get_model()
+        # ====== Create prediction function ====== #
+        if not self._pred_func:
+            var = self._model_var
+            if self._api == 'lasagne':
+                updates = []
+            elif self._api == 'keras':
+                updates = self._model.state_updates
             else:
                 raise ValueError('Currently not support API: %s' % self._api)
+            # create prediction function
+            self._pred_func = tensor.function(
+                inputs=var['X'],
+                outputs=var['y_pred'],
+                updates=updates)
+            self.log(
+                '*** Successfully create [%s] prediction function ***' % self._api, 20)
+        return self._pred_func
 
-    def set_cost(self, cost_func):
-        self._cost_func = cost_func
-
-    def create_cost(self, cost_func, *args, **kwargs):
+    def create_cost(self, cost_func):
         ''' Create cost funciton
         Parameters
         ----------
         cost_func: callable object
-            cost funciton is a function(y_pred, y_true)
+            cost funciton is a function(y_pred, y_true,...)
         args, kwargs: arguments, keyword arguments
             for given cost function
         '''
-        if cost_func and not hasattr(cost_func, '__call__'):
-            raise ValueError('Cost funciton must be callable and has 2 arguments')
-        self.create_model()
-
+        if not cost_func or not hasattr(cost_func, '__call__'):
+            raise ValueError(
+                'Cost funciton must be callable and has at least 2 arguments')
+        self.get_model()
         # ====== Create prediction function ====== #
-        if cost_func is not None:
+        if not self._cost_func or \
+           self._cost_func_old != cost_func:
+            self._cost_func_old = cost_func
+            var = self._model_var
             if self._api == 'lasagne':
-                import lasagne
-                y = tensor.placeholder(shape=self._model.output_shape, name='y')
-                y_pred = lasagne.layers.get_output(self._model, deterministic=True)
-                cost = cost_func(y_pred, y, *args, **kwargs)
-                # create prediction function
-                self._cost_func = tensor.function(
-                    inputs=[l.input_var for l in
-                            lasagne.layers.find_layers(
-                                self._model, types=lasagne.layers.InputLayer)] + [y],
-                    outputs=cost)
-                self.log('*** Successfully create [lasagne] cost function ***', 20)
+                updates = []
             elif self._api == 'keras':
-                X_test = self._model.get_input(train=False)
-                y_pred = self._model.get_output(train=False)
-                y = tensor.placeholder(ndim=tensor.ndim(y_pred))
-                cost = cost_func(y_pred, y, *args, **kwargs)
-                self._cost_func = tensor.function(
-                    inputs=[X_test, y],
-                    outputs=cost,
-                    updates=self._model.state_updates)
-                self.log('*** Successfully create [keras] cost function ***', 20)
+                updates = self._model.state_updates
             else:
                 raise ValueError('Currently not support API: %s' % self._api)
+            # create cost function
+            cost = cost_func(var['y_pred'], var['y_true'])
+            self._cost_func = tensor.function(
+                inputs=var['X'] + [var['y_true']],
+                outputs=cost,
+                updates=updates)
+            self.log(
+                '*** Successfully create [%s] cost function ***' % self._api, 20)
+        return self._cost_func
 
-    def create_update(self):
-        pass
+    def create_updates(self, objective_func, updates_func):
+        ''' Create updates funciton
+        Parameters
+        ----------
+        objective_func: callable object
+            objective funciton is a function(loss, params)
+        updates_func: callable object
+            update funciton is a function(loss_or_grads, params,...)
+        args, kwargs: arguments, keyword arguments
+            for given cost function
+        '''
+        if not updates_func or not hasattr(updates_func, '__call__'):
+            raise ValueError(
+                'Updates funciton must be callable and has at least 2 arguments')
+        self.get_model()
+        # ====== Create updates function ====== #
+        if not self._updates_func or \
+           self._updates_func_old != updates_func or \
+           self._objective_func_old != objective_func:
+            self._updates_func_old = updates_func
+            self._objective_func_old = objective_func
+            var = self._model_var
+            obj = tensor.mean(objective_func(var['y_pred'], var['y_true']))
+            if self._api == 'lasagne':
+                import lasagne
+                params = lasagne.layers.get_all_params(self._model, trainable=True)
+            elif self._api == 'keras':
+                params = self._model.trainable_weights
+            else:
+                raise ValueError('Currently not support API: %s' % self._api)
+            # create updates function
+            updates = updates_func(obj, params)
+            self._updates_func = tensor.function(
+                inputs=var['X'] + [var['y_true']],
+                outputs=obj,
+                updates=updates)
+            self.log(
+                '*** Successfully create [%s] updates function ***' % self._api, 20)
+        return self._updates_func
 
     # ==================== network actions ==================== #
     def pred(self, *X):
@@ -345,36 +402,19 @@ class model(OdinObject):
         '''
         self.create_pred()
         # ====== make prediction ====== #
-        try:
-            prediction = self._pred_func(X)
-            return prediction
-        except Exception, e:
-            if self._api == 'lasagne':
-                import lasagne
-                input_layers = lasagne.layers.find_layers(
-                    self._model, types=lasagne.layers.InputLayer)
-                self.log('Input order:' + str([l.name for l in input_layers]), 10)
-            import traceback; traceback.print_exc();
-            raise e
+        prediction = self._pred_func(X)
+        return prediction
 
-    def cost(self, X, y, cost_func=None):
-        if type(X) not in (tuple, list):
-            X = [X]
-        if type(y) not in (tuple, list):
-            y = [y]
-        self.create_cost(cost_func)
-        inputs = X + y
+    def cost(self, *X):
+        if not self._cost_func:
+            raise ValueError('Haven\'t created cost function')
         # ====== caluclate cost ====== #
-        try:
-            return self._cost_func(inputs)
-        except Exception, e:
-            if self._api == 'lasagne':
-                import lasagne
-                input_layers = lasagne.layers.find_layers(
-                    self._model, types=lasagne.layers.InputLayer)
-                self.log('Input order:' + str([l.name for l in input_layers]), 10)
-            import traceback; traceback.print_exc();
-            raise e
+        return self._cost_func(X)
+
+    def updates(self, *X):
+        if not self._updates_func:
+            raise ValueError('Haven\'t created cost function')
+        return self._updates_func(X)
 
     def rollback(self):
         ''' Roll-back weights and history of model from last checkpoints
@@ -452,12 +492,12 @@ class model(OdinObject):
         self._history[-1].record(values, *tags)
         self._history_updated = True
 
-    def update(self, tags, new, after=None, before=None, n=None, absolute=False):
-        if len(self._history) == 0:
-            self._history.append(frame())
-        self._history[-1].update(self, tags, new,
-            after, before, n, absolute)
-        self._history_updated = True
+    # def update(self, tags, new, after=None, before=None, n=None, absolute=False):
+    #     if len(self._history) == 0:
+    #         self._history.append(frame())
+    #     self._history[-1].update(self, tags, new,
+    #         after, before, n, absolute)
+    #     self._history_updated = True
 
     def select(self, tags, default=None, after=None, before=None, n=None,
         filter_value=None, absolute=False, newest=False, return_time=False):

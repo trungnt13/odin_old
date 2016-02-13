@@ -482,6 +482,7 @@ class function(OdinObject):
     Note
     ----
     This class does not support nested functions
+    All the complex objects must be created in the function
     """
 
     def __init__(self, func, *args, **kwargs):
@@ -503,6 +504,13 @@ class function(OdinObject):
         s += 'Sandbox:%s\n' % str(self._sandbox)
         s += inspect.getsource(self._function)
         return s
+
+    def __eq__(self, other):
+        if self._function == other._function and \
+           self._function_args == other._function_args and \
+           self._function_kwargs == other._function_kwargs:
+           return True
+        return False
 
     def get_config(self):
         config = super(function, self).get_config()
