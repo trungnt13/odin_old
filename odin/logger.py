@@ -19,6 +19,7 @@ __all__ = [
 
     "set_print_level",
     "set_enable",
+    "is_enable",
     "set_save_path",
 
     "critical",
@@ -95,12 +96,15 @@ def create_logger(name=None, logging_path=None, mode='w', multiprocess=False):
 # ===========================================================================
 # Main Code
 # ===========================================================================
-_logging = True
+_logging = False
 _default_logger = create_logger()
 
 def set_enable(enable):
     global _logging
     _logging = enable
+
+def is_enable():
+    return _logging
 
 def set_print_level(level):
     ''' VERBOSITY level:

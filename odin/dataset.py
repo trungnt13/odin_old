@@ -3,8 +3,8 @@ from __future__ import print_function, division
 import numpy as np
 from numpy.random import RandomState
 
-from .utils import create_batch, queue, MAGIC_SEED
-from . import logger
+from .base import OdinObject
+from .utils import create_batch, queue, get_magic_seed
 from .ie import get_file
 
 from six.moves import zip_longest
@@ -320,7 +320,7 @@ class batch(object):
         prng2 = _dummy_shuffle
         if shuffle:
             if seed is None:
-                seed = MAGIC_SEED
+                seed = get_magic_seed()
             prng1 = RandomState(seed)
             prng2 = RandomState(seed)
 
@@ -338,7 +338,7 @@ class batch(object):
         prng2 = _dummy_shuffle
         if shuffle:
             if seed is None:
-                seed = MAGIC_SEED
+                seed = get_magic_seed()
             prng1 = RandomState(seed)
             prng2 = RandomState(seed)
 
@@ -529,7 +529,7 @@ class batch(object):
         s = s[:-1] + '>'
         return s
 
-class dataset(object):
+class dataset(OdinObject):
 
     '''
     dataset object to manage multiple hdf5 file
@@ -644,7 +644,7 @@ class dataset(object):
 
         # ====== Multple files ====== #
         if self._write_mode is None:
-            logger.warning('Have not set write mode, default is [last]')
+            self.log('Have not set write mode, default is [last]', 30)
             self._write_mode = 'last'
 
         if self._write_mode == 'last':
@@ -735,6 +735,8 @@ class dataset(object):
                     i[j] = value
                     self._object[j].append(i)
         else: # array
+            if self._chunk_size == 'auto':
+                self.log('Chunk size auto is not recommended for big dataset', 30)
             shape = value.shape
             # find appropriate key
             hdf = self._get_write_hdf()
@@ -803,8 +805,8 @@ class dataset(object):
             local path or url to hdf5 datafile
         '''
         datapath = get_file('mnist.hdf', path)
-        logger.info('Loading data from: %s' % datapath)
-        return dataset(datapath, mode='r')
+        ds = dataset(datapath, mode='r')
+        ds.log('Loading data from: %s' % datapath, 20)
 
     def get_imdb(path):
         pass

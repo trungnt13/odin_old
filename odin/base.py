@@ -14,6 +14,7 @@ class OdinObject(object):
     _logging = True
 
     def get_config(self):
+        ''' Always return as pickle-able dictionary '''
         config = OrderedDict()
         config['class'] = self.__class__.__name__
         return config

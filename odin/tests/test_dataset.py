@@ -1,6 +1,5 @@
 # ======================================================================
 # Author: TrungNT
-# Run batch_test first
 # ======================================================================
 from __future__ import print_function, division
 import os
