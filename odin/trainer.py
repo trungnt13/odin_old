@@ -176,8 +176,10 @@ class _task(object):
         self._seed = seed
         self._rand = np.random.RandomState(seed)
 
-        self._batch_start = lambda x: x
-        self._batch_end = lambda x: x
+        self._batch_start = lambda x, y, z: z
+        self._batch_end = lambda x, y, z: None
+        self._epoch_start = lambda x, y: None
+        self._epoch_end = lambda x, y, z: None
 
         if not epoch or epoch <= 0:
             epoch = float('inf')
@@ -194,6 +196,8 @@ class _task(object):
     def set_callback(self, trainer):
         self._batch_start = trainer._batch_start
         self._batch_end = trainer._batch_end
+        self._epoch_start = trainer._epoch_start
+        self._epoch_end = trainer._epoch_end
 
     def set_iter(self, batch, start, end, shuffle, mode):
         self._batch = batch
@@ -208,15 +212,21 @@ class _task(object):
         return None at the end of iteration
         '''
         i = 0
+        it = 0
         while i < self._epoch:
+            epoch_results = []
+            self._epoch_start(i, it)
             for dat in self._data.create_iter(
                 self._batch, self._start, self._end,
                 self._shuffle, self._rand.randint(0, 10e8), self._mode):
                 if self._rand.rand() < self._p:
-                    dat = self._batch_start(dat)
+                    it += 1
+                    dat = self._batch_start(i, it, dat)
                     res = self._func(*dat)
-                    self._batch_end(res)
+                    epoch_results.append(res)
+                    self._batch_end(i, it, res)
                 yield False
+            self._epoch_end(i, it, epoch_results)
             yield True
             i += 1
 
@@ -300,15 +310,30 @@ class trainer(OdinObject):
 
         self._iter_mode = 1
 
-    # ==================== Helper ==================== #
-    def _batch_start(self, dat):
+    # =============== Callback interface for task =============== #
+    def _batch_start(self, nepoch, niter, dat):
+        self.epoch = nepoch
+        self.iter = niter
         self.data = dat
         self._batch_start(self)
-        return trainer.data
+        return self.data
 
-    def _batch_end(self, result):
+    def _batch_end(self, nepoch, niter, result):
+        self.epoch = nepoch
+        self.iter = niter
         self.output = result
         self._batch_end(self)
+
+    def _epoch_start(self, nepoch, niter):
+        self.epoch = nepoch
+        self.iter = niter
+        self._epoch_start(self)
+
+    def _epoch_end(self, nepoch, niter, results):
+        self.epoch = nepoch
+        self.niter = niter
+        self.output = results
+        self._epoch_end(self)
 
     # ==================== Trigger Command ==================== #
     def stop(self):
