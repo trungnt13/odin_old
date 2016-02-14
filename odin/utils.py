@@ -6,13 +6,25 @@ import types
 import time
 from collections import defaultdict
 
+# ===========================================================================
+# RandomStates
+# ===========================================================================
 _MAGIC_SEED = 12082518
+_SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
+
 def set_magic_seed(seed):
     global _MAGIC_SEED
     _MAGIC_SEED = seed
 
 def get_magic_seed():
     return _MAGIC_SEED
+
+def set_seed_generator(seed):
+    global _SEED_GENERATOR
+    _SEED_GENERATOR = np.random.RandomState(seed)
+
+def seed_generate():
+    return _SEED_GENERATOR.randint(0, 10e8)
 
 # ===========================================================================
 # DAA

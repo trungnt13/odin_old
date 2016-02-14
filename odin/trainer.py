@@ -2,21 +2,24 @@ from __future__ import print_function, division
 
 from .base import OdinObject
 from .dataset import dataset, batch
-from .utils import get_magic_seed
+from .utils import get_magic_seed, seed_generate
 from .logger import progress
 
 import random
 import numpy as np
 from numpy.random import RandomState
 
-import itertools.tee
+from itertools import tee
+from six.moves import range, zip
 
 __all__ = [
+    '_data',
+    '_task',
     'trainer'
 ]
-# ======================================================================
-# Trainer
-# ======================================================================
+# ===========================================================================
+# Helper
+# ===========================================================================
 class _iterator_wrapper(object):
 
     '''Fake class with iter function like dnntoolkit.batch'''
@@ -31,7 +34,7 @@ class _iterator_wrapper(object):
         if hasattr(creator, '__call__'):
             return creator(batch, shuffle, seed)
         elif hasattr(creator, 'next'):
-            creator, news = itertools.tee(creator)
+            creator, news = tee(creator)
             self.creator = creator
             return news
         else:
@@ -75,6 +78,164 @@ def _parse_data_config(task, data):
         if 'valid' in task: valid = [data]
     return train, valid, test
 
+# ===========================================================================
+# Task
+# ===========================================================================
+class _data(OdinObject):
+
+    """
+    Object store information that create data for trainer
+    - ds: dataset object (optional)
+    - batches: list of batch objects, can be create from
+        - str: key name in given dataset
+        - array: np.ndarray
+        - function: function that return an iterator
+        - iterator: duplicate a given iterator
+    - start: start position of a batch when iterate
+    - end: end position of a batch when iterate
+    """
+
+    def __init__(self, ds=None):
+        super(_data, self).__init__()
+        self._batches = []
+        self._ds = ds
+        self._data = []
+
+    def _get_data_str(self, d):
+        if not d: return 'None'
+        if isinstance(d, np.ndarray):
+            return '<Array: ' + str(d.shape) + '>'
+        return str(d)
+
+    def set_dataset(self, ds):
+        self._ds = ds
+        self.set(self._data)
+
+    def set(self, data):
+        self._batches = []
+        if type(data) not in (tuple, list):
+            data = [data]
+
+        self._data = data
+        for i in data:
+            if isinstance(i, batch):
+                self._batches.append(i)
+            elif self._ds and isinstance(i, str):
+                self._batches.append(self._ds[i])
+            elif hasattr(i, '__call__') or hasattr(i, 'next'):
+                self._batches.append(_iterator_wrapper(i))
+            elif isinstance(i, np.ndarray):
+                self._batches.append(batch(arrays=i))
+        return self
+
+    def create_iter(self, batch, start, end, shuffle, seed, mode):
+        ''' data: is [dnntoolkit.batch] instance, always a list
+            cross: is [dnntoolkit.batch] instance, always a list
+        '''
+        data = [i.iter(batch, start=start, end=end,
+                       shuffle=shuffle, seed=seed, mode=mode)
+                for i in self._batches]
+        # handle case that 1 batch return all data
+        if len(data) == 1:
+            iter_data = data[0]
+        else:
+            iter_data = zip(*data)
+        return iter_data
+
+    def __str__(self):
+        ds_str = ','.join(self._ds.get_path()) if self._ds else 'None'
+        s = 'Data: - ds: %s\n' % ds_str
+        for i, j in enumerate(self._data):
+            j = self._get_data_str(j)
+            s += '      - batch[%d]: %s\n' % (i, j)
+        return s[:-1]
+
+class _task(object):
+
+    """
+    An executable task:
+    - name: str
+    - func: function execute on task data
+    - data: _data instance, or function, iterator, str, batch
+    - p: probability will be executed after each batch
+    - seed: seed for RandomState of task
+    """
+
+    def __init__(self, name, func, data, ds=None,
+        epoch=1, p=1., seed=None):
+        super(_task, self).__init__()
+        self._name = name
+        self._func = func
+        if isinstance(data, _data):
+            self._data = data
+        else:
+            self._data = _data(ds=ds).set(data)
+        self._p = p
+        if not seed:
+            seed = get_magic_seed()
+        self._seed = seed
+        self._rand = np.random.RandomState(seed)
+
+        self._batch_start = lambda x: x
+        self._batch_end = lambda x: x
+
+        if not epoch or epoch <= 0:
+            epoch = float('inf')
+        self._epoch = epoch
+        self._batch = 128
+        self._start = 0.0
+        self._end = 1.0
+        self._shuffle = True
+        self._mode = 1
+
+    def set_dataset(self, ds):
+        self._data.set_dataset(ds)
+
+    def set_callback(self, trainer):
+        self._batch_start = trainer._batch_start
+        self._batch_end = trainer._batch_end
+
+    def set_iter(self, batch, start, end, shuffle, mode):
+        self._batch = batch
+        self._start = start
+        self._end = end
+        self._shuffle = shuffle
+        self._mode = mode
+
+    def run_iter(self):
+        '''
+        return True if epoch ended, otherwise return False
+        return None at the end of iteration
+        '''
+        i = 0
+        while i < self._epoch:
+            for dat in self._data.create_iter(
+                self._batch, self._start, self._end,
+                self._shuffle, self._rand.randint(0, 10e8), self._mode):
+                if self._rand.rand() < self._p:
+                    dat = self._batch_start(dat)
+                    res = self._func(*dat)
+                    self._batch_end(res)
+                yield False
+            yield True
+            i += 1
+
+        while True:
+            yield None
+
+    def __str__(self):
+        s = ''
+        s += 'Task: %s\n' % str(self._name)
+        s += '  - Func: %s\n' % str(self._func)
+        s += '  - p: %s\n' % str(self._p)
+        s += '  - seed: %s\n' % str(self._seed)
+        s += '\n'.join(['  ' + i for i in str(self._data).split('\n')])
+        return s
+
+# ======================================================================
+# Trainer
+# ======================================================================
+
 class trainer(OdinObject):
 
     """
@@ -88,7 +249,7 @@ class trainer(OdinObject):
      - Add prediction task
     Value can be queried on callback:
      - idx(int): current run idx in the strategies, start from 0
-     - cost: current training, testing, validating cost
+     - output: current training, testing, validating output
      - iter(int): number of iteration, start from 0
      - data: current data (batch_start)
      - epoch(int): current epoch, start from 0
@@ -104,18 +265,23 @@ class trainer(OdinObject):
         self._seed = RandomState(get_magic_seed())
         self._strategy = []
 
-        self._train_data = None
-        self._valid_data = None
-        self._test_data = None
+        # ====== dataset ====== #
+        self._data_map = {}
+        self._loaded_dataset = {}
 
+        # ====== tasks ====== #
+        self._task_list = []
+        self._subtask_map = {}
+
+        # ====== query ====== #
         self.idx = 0 # index in strategy
-        self.cost = None
+        self.output = None
         self.iter = None
         self.data = None
         self.epoch = 0
         self.task = None
 
-        # callback
+        # ====== callback ====== #
         self._epoch_start = _callback
         self._epoch_end = _callback
         self._batch_start = _callback
@@ -127,17 +293,22 @@ class trainer(OdinObject):
         self._test_start = _callback
         self._test_end = _callback
 
+        # ====== command ====== #
         self._stop = False
         self._valid_now = False
         self._restart_now = False
 
-        self._log_enable = True
-        self._log_newline = False
-
-        self._cross_data = None
-        self._pcross = 0.3
-
         self._iter_mode = 1
+
+    # ==================== Helper ==================== #
+    def _batch_start(self, dat):
+        self.data = dat
+        self._batch_start(self)
+        return trainer.data
+
+    def _batch_end(self, result):
+        self.output = result
+        self._batch_end(self)
 
     # ==================== Trigger Command ==================== #
     def stop(self):
@@ -153,18 +324,6 @@ class trainer(OdinObject):
         self._restart_now = True
 
     # ==================== Setter ==================== #
-    def set_action(self, name, action,
-                   epoch_start=False, epoch_end=False,
-                   batch_start=False, batch_end=False,
-                   train_start=False, train_end=False,
-                   valid_start=False, valid_end=False,
-                   test_start=False, test_end=False):
-        pass
-
-    def set_log(self, enable=True, newline=False):
-        self._log_enable = enable
-        self._log_newline = newline
-
     def set_iter_mode(self, mode):
         '''
         ONly for training, for validation and testing mode = 0
@@ -181,91 +340,33 @@ class trainer(OdinObject):
                 => each dataset 102 samples) (only work if batch size <<
                 dataset size)        '''
         self._iter_mode = mode
+        for i in self._task_list:
+            i._mode = mode
 
-    def set_dataset(self, data, train=None, valid=None,
-        test=None, cross=None, pcross=None):
+    def add_dataset(self, name, data, ds=None):
         ''' Set dataset for trainer.
 
         Parameters
         ----------
-        data : dnntoolkit.dataset
-            dataset instance which contain all your data
-        train : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
-            list of dataset used for training
-        valid : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
-            list of dataset used for validation
-        test : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
-            list of dataset used for testing
-        cross : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
-            list of dataset used for cross training
-        pcross : float (0.0-1.0)
-            probablity of doing cross training when training, None=default=0.3
+        name : str
+            name of given dataset
+        data : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
+            list of data used for given task name
+        ds : ``odin.dataset`` (optional)
+            dataset instance that conatin all given str in data
 
         Returns
         -------
         return : trainer
-            for chaining method calling
+            for method chaining
 
-        Note
-        ----
-        the order of train, valid, test must be the same in model function
-        any None input will be ignored
         '''
-        if isinstance(data, str):
-            data = dataset(data, mode='r')
-        if not isinstance(data, dataset):
-            raise ValueError('[data] must be instance of dataset')
+        if ds:
+            if not isinstance(ds, dataset):
+                ds = dataset(ds, 'r')
+            self._loaded_dataset[ds.get_path()] = ds
 
-        self._dataset = data
-
-        if train is not None:
-            if type(train) not in (tuple, list):
-                train = [train]
-            self._train_data = train
-
-        if valid is not None:
-            if type(valid) not in (tuple, list):
-                valid = [valid]
-            self._valid_data = valid
-
-        if test is not None:
-            if type(test) not in (tuple, list):
-                test = [test]
-            self._test_data = test
-
-        if cross is not None:
-            if type(cross) not in (tuple, list):
-                cross = [cross]
-            self._cross_data = cross
-        if self._pcross:
-            self._pcross = pcross
-        return self
-
-    def set_model(self, cost_func=None, updates_func=None):
-        ''' Set main function for this trainer to manipulate your model.
-
-        Parameters
-        ----------
-        cost_func : theano.Function, function
-            cost function: inputs=[X,y]
-                           return: cost
-        updates_func : theano.Function, function
-            updates parameters function: inputs=[X,y]
-                                         updates: parameters
-                                         return: cost while training
-
-        Returns
-        -------
-        return : trainer
-            for chaining method calling
-        '''
-        if cost_func is not None and not hasattr(cost_func, '__call__'):
-           raise ValueError('cost_func must be function')
-        if updates_func is not None and not hasattr(updates_func, '__call__'):
-           raise ValueError('updates_func must be function')
-
-        self._cost_func = cost_func
-        self._updates_func = updates_func
+        self._data_map[name] = _data(ds=ds).set(data)
         return self
 
     def set_callback(self, epoch_start=_callback, epoch_end=_callback,
@@ -297,6 +398,24 @@ class trainer(OdinObject):
         self._valid_end = valid_end
         self._test_end = test_end
         return self
+
+    def _validate_data(self, data, ds):
+        if isinstance(data, str):
+            if data in self._data_map:
+                return self._data_map[data]
+        if ds and not isinstance(ds, dataset):
+            ds = dataset(ds, 'r')
+            self._loaded_dataset[ds.get_path()] = ds
+        return _data(ds=ds).set(data)
+
+    def add_task(self, name, func, data, ds=None,
+                 epoch=1, p=1.,
+                 batch=128, shuffle=True, seed=None,
+                 start=0., end=1.):
+        data = self._validate_data(data, ds)
+        task = _task(name, func, data, epoch=epoch, p=p, seed=seed)
+        task.set_iter(batch, start, end, shuffle, self._iter_mode)
+        self._task_list.append(task)
 
     def set_strategy(self, task=None, data=None,
                      epoch=1, batch=512, validfreq=0.4,
@@ -458,9 +577,9 @@ class trainer(OdinObject):
                 yield d
 
     def _finish_train(self, train_cost, restart=False):
-        self.cost = train_cost
+        self.output = train_cost
         self._train_end(self) # callback
-        self.cost = None
+        self.output = None
         self.task = None
         self.data = None
         self.it = 0
@@ -512,23 +631,23 @@ class trainer(OdinObject):
                     newline=self._log_newline, idx=task)
 
             # batch end
-            self.cost = cost
+            self.output = cost
             self.iter = it
             self._batch_end(self)
             self.data = None
-            self.cost = None
+            self.output = None
         # ====== statistic of validation ====== #
-        self.cost = valid_cost
+        self.output = valid_cost
         self.log('\n => %s Stats: Mean:%.4f Var:%.2f Med:%.2f Min:%.2f Max:%.2f' %
-                (task, np.mean(self.cost), np.var(self.cost), np.median(self.cost),
-                np.percentile(self.cost, 5), np.percentile(self.cost, 95)), 20)
+                (task, np.mean(self.output), np.var(self.output), np.median(self.output),
+                np.percentile(self.output, 5), np.percentile(self.output, 95)), 20)
         # ====== callback ====== #
         if task == 'valid':
             self._valid_end(self) # callback
         else:
             self._test_end(self)
         # ====== reset all flag ====== #
-        self.cost = None
+        self.output = None
         self.task = None
         self.iter = 0
         return True
@@ -560,7 +679,7 @@ class trainer(OdinObject):
             validfreq_it = int(validfreq)
         # ====== start ====== #
         train_cost = []
-        for i in xrange(epoch):
+        for i in range(epoch):
             self.epoch = i
             self.iter = it
             self._epoch_start(self) # callback
@@ -595,11 +714,11 @@ class trainer(OdinObject):
                         newline=self._log_newline, idx='train')
 
                 # end batch
-                self.cost = cost
+                self.output = cost
                 self.iter = it
                 self._batch_end(self)  # callback
                 self.data = None
-                self.cost = None
+                self.output = None
                 if self._early_stop(): # earlystop
                     return self._finish_train(train_cost, self._early_restart())
 
@@ -614,14 +733,14 @@ class trainer(OdinObject):
                             return self._finish_train(train_cost, self._early_restart())
                     self.task = 'train' # restart flag back to train
             # ====== end epoch: statistic of epoch cost ====== #
-            self.cost = epoch_cost
+            self.output = epoch_cost
             self.iter = it
             self.log('\n => Epoch Stats: Mean:%.4f Var:%.2f Med:%.2f Min:%.2f Max:%.2f' %
-                    (np.mean(self.cost), np.var(self.cost), np.median(self.cost),
-                    np.percentile(self.cost, 5), np.percentile(self.cost, 95)))
+                    (np.mean(self.output), np.var(self.output), np.median(self.output),
+                    np.percentile(self.output, 5), np.percentile(self.output, 95)))
 
             self._epoch_end(self) # callback
-            self.cost = None
+            self.output = None
             if self._early_stop(): # earlystop
                 return self._finish_train(train_cost, self._early_restart())
 

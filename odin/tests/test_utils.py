@@ -35,6 +35,14 @@ class UtilsTest(unittest.TestCase):
 
         self.assertEqual(s1, s2)
 
+    def test_function_compare(self):
+        f1 = function(test, 3, 4)
+        f2 = function(test, 3, 4)
+        f3 = function(test, 1, 4)
+
+        self.assertEqual(f1 == f2, True)
+        self.assertEqual(f1 == f3, False)
+
     def test_frame(self):
         labels = ['a', 'b', 'c', 'd']
         random.seed(get_magic_seed())

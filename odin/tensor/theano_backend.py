@@ -380,8 +380,7 @@ class Function(object):
         self.function = theano.function(inputs, outputs, updates=updates,
                                         allow_input_downcast=True, **kwargs)
 
-    def __call__(self, inputs):
-        assert type(inputs) in {list, tuple}
+    def __call__(self, *inputs):
         return self.function(*inputs)
 
 

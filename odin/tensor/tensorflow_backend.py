@@ -372,8 +372,7 @@ class Function(object):
         with tf.control_dependencies(self.outputs):
             self.updates = [tf.assign(p, new_p) for (p, new_p) in updates]
 
-    def __call__(self, inputs):
-        assert type(inputs) in {list, tuple}
+    def __call__(self, *inputs):
         names = [v.name for v in self.inputs]
         feed_dict = dict(zip(names, inputs))
         session = _get_session()

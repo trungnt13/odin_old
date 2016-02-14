@@ -402,19 +402,19 @@ class model(OdinObject):
         '''
         self.create_pred()
         # ====== make prediction ====== #
-        prediction = self._pred_func(X)
+        prediction = self._pred_func(*X)
         return prediction
 
     def cost(self, *X):
         if not self._cost_func:
             raise ValueError('Haven\'t created cost function')
         # ====== caluclate cost ====== #
-        return self._cost_func(X)
+        return self._cost_func(*X)
 
     def updates(self, *X):
         if not self._updates_func:
             raise ValueError('Haven\'t created cost function')
-        return self._updates_func(X)
+        return self._updates_func(*X)
 
     def rollback(self):
         ''' Roll-back weights and history of model from last checkpoints

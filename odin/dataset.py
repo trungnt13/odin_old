@@ -578,6 +578,9 @@ class dataset(OdinObject):
                 else:
                     self._index[i].append(f)
 
+    def get_path(self):
+        return [i.filename for i in self._hdf]
+
     # ==================== Set and get ==================== #
     def set_chunk_size(self, size):
         '''
@@ -799,7 +802,7 @@ class dataset(OdinObject):
 
     # ==================== Static loading ==================== #
     @staticmethod
-    def get_mnist(path='https://s3.amazonaws.com/ai-datasets/mnist.hdf'):
+    def load_mnist(path='https://s3.amazonaws.com/ai-datasets/mnist.hdf'):
         '''
         path : str
             local path or url to hdf5 datafile
@@ -807,10 +810,11 @@ class dataset(OdinObject):
         datapath = get_file('mnist.hdf', path)
         ds = dataset(datapath, mode='r')
         ds.log('Loading data from: %s' % datapath, 20)
+        return ds
 
-    def get_imdb(path):
+    def load_imdb(path):
         pass
 
-    def get_reuters(path):
+    def load_reuters(path):
         pass
 

@@ -1,6 +1,8 @@
 from __future__ import print_function, division
 
+import os
 from six.moves.urllib.request import FancyURLopener
+
 from . import logger
 
 # ======================================================================
@@ -47,7 +49,7 @@ def get_file(fname, origin):
     fpath = os.path.join(datadir, fname)
 
     if not os.path.exists(fpath):
-        logger.info('Downloading data from', origin)
+        logger.info('Downloading data from ' + origin)
         global progbar
         progbar = None
 
