@@ -10,6 +10,7 @@ import numpy as np
 from numpy.random import RandomState
 
 from itertools import tee
+from collections import defaultdict
 from six.moves import range, zip
 
 __all__ = [
@@ -128,11 +129,20 @@ class _data(OdinObject):
                 self._batches.append(batch(arrays=i))
         return self
 
-    def create_iter(self, batch, start, end, shuffle, seed, mode):
-        ''' data: is [dnntoolkit.batch] instance, always a list
-            cross: is [dnntoolkit.batch] instance, always a list
-        '''
-        data = [i.iter(batch, start=start, end=end,
+    def est_niter(self, bs, start, end, mode):
+        '''estimate number of iteration for 1 epoch'''
+        niter = []
+        for i in self._batches:
+            if isinstance(i, batch):
+                n = end - start if end - start > 1 \
+                    else i.iter_len(mode) * (end - start)
+                niter.append(int(np.ceil(n / bs)))
+            else:
+                niter.append(float('inf'))
+        return min(niter)
+
+    def create_iter(self, bs, start, end, shuffle, seed, mode):
+        data = [i.iter(bs, start=start, end=end,
                        shuffle=shuffle, seed=seed, mode=mode)
                 for i in self._batches]
         # handle case that 1 batch return all data
@@ -148,7 +158,7 @@ class _data(OdinObject):
         for i, j in enumerate(self._data):
             j = self._get_data_str(j)
             s += '      - batch[%d]: %s\n' % (i, j)
-        return s[:-1]
+        return s
 
 class _task(object):
 
@@ -161,25 +171,24 @@ class _task(object):
     - seed: seed for RandomState of task
     """
 
-    def __init__(self, name, func, data, ds=None,
-        epoch=1, p=1., seed=None):
+    def __init__(self, name, func, data,
+                 epoch=1, p=1., seed=None):
         super(_task, self).__init__()
-        self._name = name
+        self.name = str(name)
         self._func = func
-        if isinstance(data, _data):
-            self._data = data
-        else:
-            self._data = _data(ds=ds).set(data)
+        if not isinstance(data, _data):
+            raise ValueError('Only support _data for _task')
+        self._data = data
         self._p = p
         if not seed:
             seed = get_magic_seed()
         self._seed = seed
         self._rand = np.random.RandomState(seed)
 
-        self._batch_start = lambda x, y, z: z
-        self._batch_end = lambda x, y, z: None
-        self._epoch_start = lambda x, y: None
-        self._epoch_end = lambda x, y, z: None
+        self._batch_start = lambda t, x, y, z: z
+        self._batch_end = lambda t, x, y, z: None
+        self._epoch_start = lambda t, x, y: None
+        self._epoch_end = lambda t, x, y, z: None
 
         if not epoch or epoch <= 0:
             epoch = float('inf')
@@ -190,21 +199,28 @@ class _task(object):
         self._shuffle = True
         self._mode = 1
 
+        self.ds = None # store ds, so the subtask can find parents' dataset
+
     def set_dataset(self, ds):
+        self.ds = ds
         self._data.set_dataset(ds)
 
     def set_callback(self, trainer):
-        self._batch_start = trainer._batch_start
-        self._batch_end = trainer._batch_end
-        self._epoch_start = trainer._epoch_start
-        self._epoch_end = trainer._epoch_end
+        self._batch_start = trainer._batch_start_callback
+        self._batch_end = trainer._batch_end_callback
+        self._epoch_start = trainer._epoch_start_callback
+        self._epoch_end = trainer._epoch_end_callback
 
-    def set_iter(self, batch, start, end, shuffle, mode):
-        self._batch = batch
+    def set_iter(self, bs, start, end, shuffle, mode):
+        self._batch = bs
         self._start = start
         self._end = end
         self._shuffle = shuffle
         self._mode = mode
+
+    def est_niter(self):
+        return self._data.est_niter(
+            self._batch, self._start, self._end, self._mode)
 
     def run_iter(self):
         '''
@@ -215,18 +231,18 @@ class _task(object):
         it = 0
         while i < self._epoch:
             epoch_results = []
-            self._epoch_start(i, it)
+            self._epoch_start(self.name, i, it)
             for dat in self._data.create_iter(
                 self._batch, self._start, self._end,
                 self._shuffle, self._rand.randint(0, 10e8), self._mode):
                 if self._rand.rand() < self._p:
                     it += 1
-                    dat = self._batch_start(i, it, dat)
+                    dat = self._batch_start(self.name, i, it, dat)
                     res = self._func(*dat)
                     epoch_results.append(res)
-                    self._batch_end(i, it, res)
+                    self._batch_end(self.name, i, it, res)
                 yield False
-            self._epoch_end(i, it, epoch_results)
+            self._epoch_end(self.name, i, it, epoch_results)
             yield True
             i += 1
 
@@ -235,12 +251,22 @@ class _task(object):
 
     def __str__(self):
         s = ''
-        s += 'Task: %s\n' % str(self._name)
+        s += 'Task: %s\n' % str(self.name)
         s += '  - Func: %s\n' % str(self._func)
         s += '  - p: %s\n' % str(self._p)
         s += '  - seed: %s\n' % str(self._seed)
+        s += '  - epoch: %s\n' % str(self._epoch)
+        s += '  - batch: %s\n' % str(self._batch)
+        s += '  - start: %s\n' % str(self._start)
+        s += '  - end: %s\n' % str(self._end)
+        s += '  - shuffle: %s\n' % str(self._shuffle)
+        s += '  - mode: %s\n' % str(self._mode)
+        s += '  - batch_start: %s\n' % str(self._batch_start.__name__)
+        s += '  - batch_end:   %s\n' % str(self._batch_end.__name__)
+        s += '  - epoch_start: %s\n' % str(self._epoch_start.__name__)
+        s += '  - epoch_end:   %s\n' % str(self._epoch_end.__name__)
         s += '\n'.join(['  ' + i for i in str(self._data).split('\n')])
-        return s
+        return s[:-2]
 
 # ======================================================================
 # Trainer
@@ -273,15 +299,18 @@ class trainer(OdinObject):
     def __init__(self):
         super(trainer, self).__init__()
         self._seed = RandomState(get_magic_seed())
-        self._strategy = []
 
         # ====== dataset ====== #
-        self._data_map = {}
-        self._loaded_dataset = {}
+        self._data_map = {} # name: _data
+        self._loaded_dataset = {} # dataset_path: dataset
+        self._del_able_dataset = []
 
         # ====== tasks ====== #
         self._task_list = []
-        self._subtask_map = {}
+        self._subtask_map = defaultdict(list)
+        self._last_task = None
+        self._subtask_single_run = {} #_task: is_subtask_single_run (bool)
+        self._subtask_freq = {} #_task: freq (int, float)
 
         # ====== query ====== #
         self.idx = 0 # index in strategy
@@ -296,40 +325,39 @@ class trainer(OdinObject):
         self._epoch_end = _callback
         self._batch_start = _callback
         self._batch_end = _callback
-        self._train_start = _callback
-        self._train_end = _callback
-        self._valid_start = _callback
-        self._valid_end = _callback
-        self._test_start = _callback
-        self._test_end = _callback
+        self._task_start = _callback
+        self._task_end = _callback
 
         # ====== command ====== #
-        self._stop = False
-        self._valid_now = False
+        self._stop_now = False
         self._restart_now = False
 
         self._iter_mode = 1
 
     # =============== Callback interface for task =============== #
-    def _batch_start(self, nepoch, niter, dat):
+    def _batch_start_callback(self, task, nepoch, niter, dat):
+        self.task = task
         self.epoch = nepoch
         self.iter = niter
         self.data = dat
         self._batch_start(self)
         return self.data
 
-    def _batch_end(self, nepoch, niter, result):
+    def _batch_end_callback(self, task, nepoch, niter, result):
+        self.task = task
         self.epoch = nepoch
         self.iter = niter
         self.output = result
         self._batch_end(self)
 
-    def _epoch_start(self, nepoch, niter):
+    def _epoch_start_callback(self, task, nepoch, niter):
+        self.task = task
         self.epoch = nepoch
         self.iter = niter
         self._epoch_start(self)
 
-    def _epoch_end(self, nepoch, niter, results):
+    def _epoch_end_callback(self, task, nepoch, niter, results):
+        self.task = task
         self.epoch = nepoch
         self.niter = niter
         self.output = results
@@ -338,11 +366,7 @@ class trainer(OdinObject):
     # ==================== Trigger Command ==================== #
     def stop(self):
         ''' Stop current activity of this trainer immediatelly '''
-        self._stop = True
-
-    def valid(self):
-        ''' Trigger validation immediatelly, asap '''
-        self._valid_now = True
+        self._stop_now = True
 
     def restart(self):
         ''' Trigger restart current process immediatelly '''
@@ -368,14 +392,44 @@ class trainer(OdinObject):
         for i in self._task_list:
             i._mode = mode
 
-    def add_dataset(self, name, data, ds=None):
+    def _create_dataset(self, ds):
+        if isinstance(ds, dataset):
+            self._loaded_dataset[','.join(ds.get_path())] = ds
+            return ds
+
+        if type(ds) not in (tuple, list):
+            ds = [ds]
+        ds_key = ','.join(ds)
+        if ds_key in self._loaded_dataset:
+            return self._loaded_dataset[ds_key]
+
+        ds = dataset(ds, 'r')
+        self._del_able_dataset.append(ds)
+        self._loaded_dataset[','.join(ds.get_path())] = ds
+        return ds
+
+    def _validate_data(self, data, ds, parent_ds=None):
+        if isinstance(data, str) and data in self._data_map:
+            data = self._data_map[data]
+            if data._ds is None and parent_ds is not None:
+                data.set_dataset(parent_ds)
+            return data
+        elif type(data) not in (tuple, list):
+            data = [data]
+
+        if ds:
+            ds = self._create_dataset(ds)
+        return _data(ds=ds).set(data)
+
+    def add_data(self, name, data, ds=None):
         ''' Set dataset for trainer.
 
         Parameters
         ----------
         name : str
             name of given dataset
-        data : str, list(str), np.ndarray, dnntoolkit.batch, iter, func(batch, shuffle, seed, mode)-return iter
+        data : str, list(str), ``ndarray``, ``batch``, iter,
+               func(batch, shuffle, seed, mode)->return iter
             list of data used for given task name
         ds : ``odin.dataset`` (optional)
             dataset instance that conatin all given str in data
@@ -384,21 +438,14 @@ class trainer(OdinObject):
         -------
         return : trainer
             for method chaining
-
         '''
-        if ds:
-            if not isinstance(ds, dataset):
-                ds = dataset(ds, 'r')
-            self._loaded_dataset[ds.get_path()] = ds
-
+        if ds: ds = self._create_dataset(ds)
         self._data_map[name] = _data(ds=ds).set(data)
         return self
 
     def set_callback(self, epoch_start=_callback, epoch_end=_callback,
                      batch_start=_callback, batch_end=_callback,
-                     train_start=_callback, train_end=_callback,
-                     valid_start=_callback, valid_end=_callback,
-                     test_start=_callback, test_end=_callback):
+                     task_start=_callback, task_end=_callback):
         ''' Set Callback while training, validating or testing the model.
 
         Parameters
@@ -414,122 +461,133 @@ class trainer(OdinObject):
         self._epoch_end = epoch_end
         self._batch_start = batch_start
         self._batch_end = batch_end
-
-        self._train_start = train_start
-        self._valid_start = valid_start
-        self._test_start = test_start
-
-        self._train_end = train_end
-        self._valid_end = valid_end
-        self._test_end = test_end
+        self._task_start = task_start
+        self._task_end = task_end
         return self
-
-    def _validate_data(self, data, ds):
-        if isinstance(data, str):
-            if data in self._data_map:
-                return self._data_map[data]
-        if ds and not isinstance(ds, dataset):
-            ds = dataset(ds, 'r')
-            self._loaded_dataset[ds.get_path()] = ds
-        return _data(ds=ds).set(data)
 
     def add_task(self, name, func, data, ds=None,
                  epoch=1, p=1.,
-                 batch=128, shuffle=True, seed=None,
+                 bs=128, shuffle=True, seed=None,
                  start=0., end=1.):
-        data = self._validate_data(data, ds)
-        task = _task(name, func, data, epoch=epoch, p=p, seed=seed)
-        task.set_iter(batch, start, end, shuffle, self._iter_mode)
-        self._task_list.append(task)
-
-    def set_strategy(self, task=None, data=None,
-                     epoch=1, batch=512, validfreq=0.4,
-                     shuffle=True, seed=None, yaml=None,
-                     cross=None, pcross=None):
-        ''' Set strategy for training.
+        ''' Set task for running.
+        A task is a function operates on a list of ``odin.dataset.batch``, the
+        batch return an iterator with add necessary data for the function.
 
         Parameters
         ----------
-        task : str
-            train, valid, or test
-        data : str, list(str), map
+        name : str
+            identification of a task
+        func : function
             for training, data contain all training data and validation data names
             example: [['X_train','y_train'],['X_valid','y_valid']]
                   or {'train':['X_train','y_train'],'valid':['X_valid','y_valid']}
             In case of missing data, strategy will take default data names form
             set_dataset method
+        data : str, list(str), ``ndarray``, ``batch``, iter,
+               func(batch, shuffle, seed, mode)->return iter
+            list of data used for given task name
+        ds : ``odin.dataset.dataset``, paths
+            if ds is a paths (strings), we create a dataset to handle all string
+            specified in ``data``
         epoch : int
-            number of epoch for training (NO need for valid and test)
-        batch : int, 'auto'
-            number of samples for each batch
-        validfreq : int(number of iteration), float(0.-1.)
-            validation frequency when training, when float, it mean percentage
-            of dataset
+            number of epoch to run this batch
+        p : float (0.-1.)
+            probability this task will be execute during its epoches
+        bs : int
+            batch size, number of samples for each batch
         shuffle : boolean
             shuffle dataset while training
         seed : int
             set seed for shuffle so the result is reproducible
-        yaml : str
-            path to yaml strategy file. When specify this arguments,
-            all other arguments are ignored
-        cross : str, list(str), numpy.ndarray
-            list of dataset used for cross training
-        pcross : float (0.0-1.0)
-            probablity of doing cross training when training
+        start : int, float(0.-1.)
+            starting point within each ``odin.dataset.batch``
+        end : int, float(0.-1.)
+            ending point within each ``odin.dataset.batch``
 
         Returns
         -------
         return : trainer
-            for chaining method calling
+            for chaining method calling, subtasks can be add after calling this
+            function
         '''
-        if yaml is not None:
-            import yaml as yaml_
-            f = open(yaml, 'r')
-            strategy = yaml_.load(f)
-            f.close()
-            for s in strategy:
-                if 'dataset' in s:
-                    self._dataset = dataset(s['dataset'])
-                    continue
-                if 'validfreq' not in s: s['validfreq'] = validfreq
-                if 'batch' not in s: s['batch'] = batch
-                if 'epoch' not in s: s['epoch'] = epoch
-                if 'shuffle' not in s: s['shuffle'] = shuffle
-                if 'data' not in s: s['data'] = data
-                if 'cross' not in s: s['cross'] = cross
-                if 'pcross' not in s: s['pcross'] = pcross
-                if 'seed' in s: self._seed = RandomState(seed)
-                self._strategy.append(s)
-            return
+        data = self._validate_data(data, ds)
+        # ====== create task ====== #
+        task = _task(name, func, data, epoch=epoch, p=p, seed=seed)
+        task.ds = ds
+        task.set_iter(bs, start, end, shuffle, self._iter_mode)
+        task.set_callback(self)
+        # ====== store the task ====== #
+        self._task_list.append(task)
+        self._last_task = task # store last task for adding subtask
+        return self
 
-        if task is None:
-            raise ValueError('Must specify both [task] and [data] arguments')
+    def add_subtask(self, func, data, ds=None,
+                 single_run=False, freq=0.,
+                 epoch=1, p=1.,
+                 bs=128, shuffle=True, seed=None,
+                 start=0., end=1.):
+        ''' Set task for running.
+        A task is a function operates on a list of ``odin.dataset.batch``, the
+        batch return an iterator with add necessary data for the function.
 
-        self._strategy.append({
-            'task': task,
-            'data': data,
-            'epoch': epoch,
-            'batch': batch,
-            'shuffle': shuffle,
-            'validfreq': validfreq,
-            'cross': cross,
-            'pcross': pcross
-        })
-        if seed is not None:
-            self._seed = RandomState(seed)
+        Parameters
+        ----------
+        func : function
+            for training, data contain all training data and validation data names
+            example: [['X_train','y_train'],['X_valid','y_valid']]
+                  or {'train':['X_train','y_train'],'valid':['X_valid','y_valid']}
+            In case of missing data, strategy will take default data names form
+            set_dataset method
+        data : str, ``odin.dataset.batch``, iterator, function
+            check document of ``add_data``
+        ds : ``odin.dataset.dataset``, paths
+            if ds is a paths (strings), we create a dataset to handle all string
+            specified in ``data``
+        single_run : bool
+            only run one time after each main task batch, or run until finished
+        freq : int, float(0.-1.)
+            after fixed amount of iteration, execute this subtask
+        epoch : int
+            number of epoch to run this batch
+        p : float (0.-1.)
+            probability this task will be execute during its epoches
+        bs : int
+            batch size, number of samples for each batch
+        shuffle : boolean
+            shuffle dataset while training
+        seed : int
+            set seed for shuffle so the result is reproducible
+        start : int, float(0.-1.)
+            starting point within each ``odin.dataset.batch``
+        end : int, float(0.-1.)
+            ending point within each ``odin.dataset.batch``
+
+        Returns
+        -------
+        return : trainer
+            for chaining method calling, subtasks can be add after calling this
+            function
+        '''
+        if self._last_task is None:
+            raise ValueError('Call add_task first to set parents task')
+        n = len(self._subtask_map[self._last_task])
+        name = self._last_task.name + '_' + 'subtask[%d]' % n
+        data = self._validate_data(data, ds, self._last_task.ds)
+        # ====== create task ====== #
+        task = _task(name, func, data, epoch=epoch, p=p, seed=seed)
+        task.set_iter(bs, start, end, shuffle, self._iter_mode)
+        task.set_callback(self)
+        # ====== add subtask ====== #
+        self._subtask_map[self._last_task].append(task)
+        self._subtask_single_run[task] = single_run
+        self._subtask_freq[task] = freq
         return self
 
     # ==================== Helper function ==================== #
     def _early_stop(self):
         # just a function reset stop flag and return its value
-        tmp = self._stop
-        self._stop = False
-        return tmp
-
-    def _early_valid(self):
-        # just a function reset valid flag and return its value
-        tmp = self._valid_now
-        self._valid_now = False
+        tmp = self._stop_now
+        self._stop_now = False
         return tmp
 
     def _early_restart(self):
@@ -776,68 +834,43 @@ class trainer(OdinObject):
         raise NotImplementedError()
 
     def run(self):
-        ''' run specified strategies
-        Returns
-        -------
-        return : bool
-            if exception raised, return False, otherwise return True
-        '''
         try:
-            while self.idx < len(self._strategy):
-                config = self._strategy[self.idx]
-                task = config['task']
-                train, valid, test = _parse_data_config(task, config['data'])
-                if train is None: train = self._train_data
-                if test is None: test = self._test_data
-                if valid is None: valid = self._valid_data
-                cross = config['cross']
-                pcross = config['pcross']
-                if pcross is None: pcross = self._pcross
-                if cross is None: cross = self._cross_data
-                elif not hasattr(cross, '__len__'):
-                    cross = [cross]
+            for i in range(self.idx, len(self._task_list)):
+                task = self._task_list[i]
+                niter = task.est_niter()
+                subtasks = self._subtask_map[task]
+                task_it = task.run_iter()
+                sub_it = {i: i.run_iter() for i in subtasks}
+                # task_start
+                self.task = task.name
+                self.idx = i
+                self.iter = 0
+                self._task_start(self)
+                while True:
+                    # ====== run task ====== #
+                    run_signal = task_it.next()
+                    current_it = self.iter
+                    if run_signal: # update exact niter
+                        niter = current_it / (self.epoch + 1)
+                    # ====== run subtasks ====== #
+                    for i, j in sub_it.iteritems():
+                        single_run = self._subtask_single_run[i]
+                        freq = self._subtask_freq[i]
+                        freq = freq if freq > 1 else max(1, int(freq * niter))
+                        if current_it % freq == 0:
+                            if single_run:
+                                j.next()
+                            else:
+                                while j.next() is not None: pass
+                                sub_it[i] = i.run_iter() # new run_iter
 
-                epoch = config['epoch']
-                batch = config['batch']
-                validfreq = config['validfreq']
-                shuffle = config['shuffle']
-
-                if self._log_enable:
-                    self.log('\n******* %d-th run, with configuration: *******' % self.idx, 0)
-                    self.log(' - Task:%s' % task, 0)
-                    self.log(' - Train data:%s' % self._get_str_datalist(train), 0)
-                    self.log(' - Valid data:%s' % self._get_str_datalist(valid), 0)
-                    self.log(' - Test data:%s' % self._get_str_datalist(test), 0)
-                    self.log(' - Cross data:%s' % self._get_str_datalist(cross), 0)
-                    self.log(' - Cross prob:%s' % str(pcross), 0)
-                    self.log(' - Epoch:%d' % epoch, 0)
-                    self.log(' - Batch:%d' % batch, 0)
-                    self.log(' - Validfreq:%d' % validfreq, 0)
-                    self.log(' - Shuffle:%s' % str(shuffle), 0)
-                    self.log('**********************************************', 0)
-
-                if 'train' in task:
-                    if train is None:
-                        self.log('*** no TRAIN data found, ignored **', 30)
-                    else:
-                        while (not self._train(
-                                train, valid, epoch, batch, validfreq, shuffle,
-                                cross, pcross)):
-                            pass
-                elif 'valid' in task:
-                    if valid is None:
-                        self.log('*** no VALID data found, ignored **', 30)
-                    else:
-                        while (not self._cost('valid', valid, batch)):
-                            pass
-                elif 'test' in task:
-                    if test is None:
-                        self.log('*** no TEST data found, ignored **', 30)
-                    else:
-                        while (not self._cost('test', test, batch)):
-                            pass
-                # only increase idx after finish the task
-                self.idx += 1
+                    # ====== check signal ====== #
+                    if run_signal is None or self._early_stop():
+                        break
+                    elif self._early_restart():
+                        task_it = task.run_iter()
+                # task_end
+                self._task_end(self)
         except Exception, e:
             self.log(str(e), 40)
             import traceback; traceback.print_exc();
@@ -845,50 +878,25 @@ class trainer(OdinObject):
         return True
 
     # ==================== Debug ==================== #
+    def __del__(self):
+        for i in self._del_able_dataset:
+            i.close()
+
     def __str__(self):
         s = '\n'
-        s += 'Dataset:' + str(self._dataset) + '\n'
-        s += 'Current run:%d' % self.idx + '\n'
-        s += '============ \n'
-        s += 'defTrain:' + self._get_str_datalist(self._train_data) + '\n'
-        s += 'defValid:' + self._get_str_datalist(self._valid_data) + '\n'
-        s += 'defTest:' + self._get_str_datalist(self._test_data) + '\n'
-        s += 'defCross:' + self._get_str_datalist(self._cross_data) + '\n'
-        s += 'pCross:' + str(self._pcross) + '\n'
-        s += '============ \n'
-        s += 'Cost_func:' + str(self._cost_func) + '\n'
-        s += 'Updates_func:' + str(self._updates_func) + '\n'
-        s += '============ \n'
+        s += '=============== Current run:%d \n' % self.idx
         s += 'Epoch start:' + str(self._epoch_start) + '\n'
         s += 'Epoch end:' + str(self._epoch_end) + '\n'
         s += 'Batch start:' + str(self._batch_start) + '\n'
         s += 'Batch end:' + str(self._batch_end) + '\n'
-        s += 'Train start:' + str(self._train_start) + '\n'
-        s += 'Train end:' + str(self._train_end) + '\n'
-        s += 'Valid start:' + str(self._valid_start) + '\n'
-        s += 'Valid end:' + str(self._valid_end) + '\n'
-        s += 'Test start:' + str(self._test_start) + '\n'
-        s += 'Test end:' + str(self._test_end) + '\n'
-
-        for i, st in enumerate(self._strategy):
-            train, valid, test = _parse_data_config(st['task'], st['data'])
-            if train is None: train = self._train_data
-            if test is None: test = self._test_data
-            if valid is None: valid = self._valid_data
-            cross = st['cross']
-            pcross = st['pcross']
-            if cross and not hasattr(cross, '__len__'):
-                cross = [cross]
-
-            s += '====== Strategy %d-th ======\n' % i
-            s += ' - Task:%s' % st['task'] + '\n'
-            s += ' - Train:%s' % self._get_str_datalist(train) + '\n'
-            s += ' - Valid:%s' % self._get_str_datalist(valid) + '\n'
-            s += ' - Test:%s' % self._get_str_datalist(test) + '\n'
-            s += ' - Cross:%s' % self._get_str_datalist(cross) + '\n'
-            s += ' - pCross:%s' % str(pcross) + '\n'
-            s += ' - Epoch:%d' % st['epoch'] + '\n'
-            s += ' - Batch:%d' % st['batch'] + '\n'
-            s += ' - Shuffle:%s' % st['shuffle'] + '\n'
-
+        s += 'Task start:' + str(self._task_start) + '\n'
+        s += 'Task end:' + str(self._task_end) + '\n'
+        for i, j in enumerate(self._task_list):
+            s += '=============== Task:%d \n' % i
+            s += str(j)
+            for k, n in enumerate(self._subtask_map[j]):
+                s += ' ======= Subtask: %d\n' % k
+                s += 'Single run: %s\n' % self._subtask_single_run[n]
+                s += 'Freq: %s\n' % self._subtask_freq[n]
+                s += str(n)
         return s
