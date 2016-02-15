@@ -1,4 +1,4 @@
-from __future__ import print_function, division
+from __future__ import print_function, division, absolute_import
 from six.moves import range, zip
 
 from .base import OdinObject
@@ -87,6 +87,35 @@ def _convert_weights(model, weights, original_api, target_api):
     else:
         raise ValueError('Currently not support API')
     return W
+
+def _get_variables(model, api):
+    '''For lasagne, X_train and X_pred is the same'''
+    if api == 'lasagne':
+        import lasagne
+        X_train = [l.input_var for l in lasagne.layers.find_layers(
+            model, types=lasagne.layers.InputLayer)]
+        X_pred = [l.input_var for l in lasagne.layers.find_layers(
+            model, types=lasagne.layers.InputLayer)]
+        y_pred = lasagne.layers.get_output(model, deterministic=True)
+        y_train = lasagne.layers.get_output(model, deterministic=False)
+    elif api == 'keras':
+        X_train = model.get_input(train=True)
+        if type(X_train) not in (list, tuple):
+            X_train = [X_train]
+        X_pred = model.get_input(train=False)
+        if type(X_pred) not in (list, tuple):
+            X_pred = [X_pred]
+        y_pred = model.get_output(train=False)
+        y_train = model.get_output(train=True)
+    y_true = tensor.placeholder(ndim=tensor.ndim(y_pred))
+
+    var = {}
+    var['X_train'] = X_train
+    var['X_pred'] = X_pred
+    var['y_true'] = y_true
+    var['y_pred'] = y_pred
+    var['y_train'] = y_train
+    return var
 
 # ===========================================================================
 # Model
@@ -253,6 +282,9 @@ class model(OdinObject):
         if self._need_update_model or self._model is None:
             self.log('*** Creating network ... ***', 20)
             self._model = self._model_func()
+            if self._model is None:
+                raise ValueError(
+                    'Model function doesn\'t return appropriate model')
             self._need_update_model = False
             # reset all function
             self._pred_func = None
@@ -280,23 +312,7 @@ class model(OdinObject):
                         raise e
                     f.close()
             # ====== store model's variables ====== #
-            if self._api == 'lasagne':
-                import lasagne
-                X = [l.input_var for l in lasagne.layers.find_layers(
-                    self._model, types=lasagne.layers.InputLayer)]
-                y_pred = lasagne.layers.get_output(self._model, deterministic=True)
-                y_train = lasagne.layers.get_output(self._model, deterministic=False)
-            elif self._api == 'keras':
-                X = self._model.get_input(train=False)
-                if type(X) not in (list, tuple):
-                    X = [X]
-                y_pred = self._model.get_output(train=False)
-                y_train = self._model.get_output(train=True)
-            y_true = tensor.placeholder(ndim=tensor.ndim(y_pred))
-            self._model_var['X'] = X
-            self._model_var['y_true'] = y_true
-            self._model_var['y_pred'] = y_pred
-            self._model_var['y_train'] = y_train
+            self._model_var = _get_variables(self._model, self._api)
         return self._model
 
     # ==================== Network function ==================== #
@@ -314,7 +330,7 @@ class model(OdinObject):
                 raise ValueError('Currently not support API: %s' % self._api)
             # create prediction function
             self._pred_func = tensor.function(
-                inputs=var['X'],
+                inputs=var['X_pred'],
                 outputs=var['y_pred'],
                 updates=updates)
             self.log(
@@ -348,7 +364,7 @@ class model(OdinObject):
             # create cost function
             cost = cost_func(var['y_pred'], var['y_true'])
             self._cost_func = tensor.function(
-                inputs=var['X'] + [var['y_true']],
+                inputs=var['X_pred'] + [var['y_true']],
                 outputs=cost,
                 updates=updates)
             self.log(
@@ -377,6 +393,7 @@ class model(OdinObject):
             self._updates_func_old = updates_func
             self._objective_func_old = objective_func
             var = self._model_var
+            # always take mean
             obj = tensor.mean(objective_func(var['y_pred'], var['y_true']))
             if self._api == 'lasagne':
                 import lasagne
@@ -388,7 +405,7 @@ class model(OdinObject):
             # create updates function
             updates = updates_func(obj, params)
             self._updates_func = tensor.function(
-                inputs=var['X'] + [var['y_true']],
+                inputs=var['X_train'] + [var['y_true']],
                 outputs=obj,
                 updates=updates)
             self.log(

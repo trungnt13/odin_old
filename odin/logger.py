@@ -8,7 +8,7 @@
 #  - DEBUG   : 10
 #  - UNSET   : 0
 # ===========================================================================
-from __future__ import print_function, division
+from __future__ import print_function, division, absolute_import
 
 import sys
 import logging

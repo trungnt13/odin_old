@@ -1,8 +1,12 @@
+# ===========================================================================
+# This module is adpated from: https://github.com/fchollet/keras
+# Revision: @20728c9
+# Greate thanks to all keras contributors!
+# ===========================================================================
 import tensorflow as tf
 import numpy as np
-from .. import config
-_FLOATX = config.floatX()
-_EPSILON = config.epsilon()
+import os
+from .common import _FLOATX, _EPSILON
 
 # INTERNAL UTILS
 
@@ -12,7 +16,11 @@ _SESSION = None
 def _get_session():
     global _SESSION
     if _SESSION is None:
-        _SESSION = tf.Session('')
+        if not os.environ.get('OMP_NUM_THREADS'):
+            _SESSION = tf.Session('')
+        else:
+            nb_thread = int(os.environ.get('OMP_NUM_THREADS'))
+            _SESSION = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=nb_thread))
     return _SESSION
 
 
@@ -28,28 +36,38 @@ def variable(value, dtype=_FLOATX, name=None):
     _get_session().run(v.initializer)
     return v
 
-
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if not shape:
         if ndim:
             shape = [None for _ in range(ndim)]
     return tf.placeholder(dtype, shape=shape, name=name)
 
-
-def shape(x):
-    return x.get_shape()
-
-
-def ndim(x):
-    return len(x.get_shape())
-
-
 def eval(x):
     '''Run a graph.
     '''
     return x.eval(session=_get_session())
 
+# ===========================================================================
+# Shape operators
+# ===========================================================================
+def shape(x):
+    return x.get_shape()
 
+def ndim(x):
+    return len(x.get_shape())
+
+def reverse(x, axis=-1):
+    '''Apply [::-1] to appropriate axis'''
+    ndim = len(x.get_shape())
+    dims = [False] * ndim
+    if axis < 0:
+        axis = axis % ndim
+    dims[axis] = True
+    return tf.reverse(x, dims)
+
+# ===========================================================================
+# Predefined data
+# ===========================================================================
 def zeros(shape, dtype=_FLOATX, name=None):
     return variable(np.zeros(shape), dtype, name)
 
@@ -170,6 +188,15 @@ def argmax(x, axis=-1):
     return tf.argmax(x, axis)
 
 
+def argsort(x, axis=-1):
+    raise NotImplementedError
+
+
+def argtop_k(x, k=1):
+    ''' See also: tf.nn.in_top_k '''
+    return tf.nn.top_k(x, k)[1]
+
+
 def argmin(x, axis=-1):
     if axis < 0:
         axis = axis % len(x.get_shape())
@@ -211,14 +238,6 @@ def clip(x, min_value, max_value):
         max_value = min_value
     return tf.clip_by_value(x, tf.cast(min_value, dtype=_FLOATX),
                             tf.cast(max_value, dtype=_FLOATX))
-
-
-def equal(x, y):
-    return tf.equal(x, y)
-
-
-def not_equal(x, y):
-    return tf.not_equal(x, y)
 
 
 def maximum(x, y):
@@ -372,7 +391,8 @@ class Function(object):
         with tf.control_dependencies(self.outputs):
             self.updates = [tf.assign(p, new_p) for (p, new_p) in updates]
 
-    def __call__(self, *inputs):
+    def __call__(self, inputs):
+        assert type(inputs) in {list, tuple}
         names = [v.name for v in self.inputs]
         feed_dict = dict(zip(names, inputs))
         session = _get_session()
@@ -441,7 +461,7 @@ def rnn(step_function, inputs, initial_states,
     if mask is not None:
         # Transpose not supported by bool tensor types, hence round-trip to uint8.
         mask = tf.cast(mask, tf.uint8)
-        if len(mask.get_shape()) == ndim-1:
+        if len(mask.get_shape()) == ndim - 1:
             mask = expand_dims(mask)
         mask = tf.cast(tf.transpose(mask, axes), tf.bool)
         mask_list = tf.unpack(mask)
@@ -501,7 +521,9 @@ def switch(condition, then_expression, else_expression):
 def relu(x, alpha=0., max_value=None):
     '''ReLU.
 
-    alpha: slope of negative section.
+    # Arguments
+        alpha: slope of negative section.
+        max_value: saturation threshold.
     '''
     negative_part = tf.nn.relu(-x)
     x = tf.nn.relu(x)
@@ -527,13 +549,13 @@ def categorical_crossentropy(output, target, from_logits=False):
     if not from_logits:
         # scale preds so that the class probas of each sample sum to 1
         output /= tf.reduce_sum(output,
-                                reduction_indices=len(output.get_shape())-1,
+                                reduction_indices=len(output.get_shape()) - 1,
                                 keep_dims=True)
         # manual computation of crossentropy
         output = tf.clip_by_value(output, tf.cast(_EPSILON, dtype=_FLOATX),
-                                  tf.cast(1.-_EPSILON, dtype=_FLOATX))
+                                  tf.cast(1. - _EPSILON, dtype=_FLOATX))
         return - tf.reduce_sum(target * tf.log(output),
-                               reduction_indices=len(output.get_shape())-1)
+                               reduction_indices=len(output.get_shape()) - 1)
     else:
         return tf.nn.softmax_cross_entropy_with_logits(output, target)
 
@@ -545,7 +567,7 @@ def binary_crossentropy(output, target, from_logits=False):
     if not from_logits:
         # transform back to logits
         output = tf.clip_by_value(output, tf.cast(_EPSILON, dtype=_FLOATX),
-                                  tf.cast(1.-_EPSILON, dtype=_FLOATX))
+                                  tf.cast(1. - _EPSILON, dtype=_FLOATX))
         output = tf.log(output / (1 - output))
     return tf.nn.sigmoid_cross_entropy_with_logits(output, target)
 
@@ -585,11 +607,12 @@ def l2_normalize(x, axis):
 
 def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
-    '''
-    Run on cuDNN if available.
-    border_mode: string, "same" or "valid".
-    dim_ordering: whether to use Theano or TensorFlow dimension ordering
-    in inputs/kernels/ouputs.
+    '''Runs on cuDNN if available.
+
+    # Arguments
+        border_mode: string, "same" or "valid".
+        dim_ordering: whether to use Theano or TensorFlow dimension ordering
+        in inputs/kernels/ouputs.
     '''
     if border_mode == 'same':
         padding = 'SAME'
@@ -629,10 +652,11 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
 def pool2d(x, pool_size, strides=(1, 1),
            border_mode='valid', dim_ordering='th', pool_mode='max'):
     '''
-    pool_size: tuple of 2 integers.
-    strides: tuple of 2 integers.
-    border_mode: one of "valid", "same".
-    dim_ordering: one of "th", "tf".
+    # Arguments
+        pool_size: tuple of 2 integers.
+        strides: tuple of 2 integers.
+        border_mode: one of "valid", "same".
+        dim_ordering: one of "th", "tf".
     '''
     if border_mode == 'same':
         padding = 'SAME'
@@ -687,3 +711,34 @@ def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
         seed = np.random.randint(10e6)
     return tf.random_uniform(shape, minval=low, maxval=high,
                              dtype=dtype, seed=seed)
+
+def eq(x, y):
+    """a == b"""
+    return tf.equal(x, y)
+
+def neq(x, y):
+    """a != b"""
+    return tf.not_equal(x, y)
+
+def gt(a, b):
+    """a > b"""
+    return tf.greater(a, b)
+
+def ge(a, b):
+    """a >= b"""
+    return tf.greater_equal(a, b)
+
+def lt(a, b):
+    """a < b"""
+    return tf.less(a, b)
+
+def le(a, b):
+    """a <= b"""
+    return tf.less_equal(a, b)
+
+def to_one_hot(x, nb_class):
+    ''' x: 1D-integer vector '''
+    shape = x.get_shape()
+    ret = tf.zeros((shape[0].value, nb_class), dtype=_FLOATX)
+    ret[np.arange(shape[0].value), x] = 1
+    return ret

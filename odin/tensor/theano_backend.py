@@ -1,3 +1,8 @@
+# ===========================================================================
+# This module is adpated from: https://github.com/fchollet/keras
+# Revision: @7b72163
+# Greate thanks to all keras contributors!
+# ===========================================================================
 import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
@@ -45,7 +50,14 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     broadcast = (False,) * ndim
     return T.TensorType(dtype, broadcast)(name)
 
+def eval(x):
+    '''Run a graph.
+    '''
+    return x.eval()
 
+# ===========================================================================
+# Shape operator
+# ===========================================================================
 def shape(x):
     '''Return the shape of a tensor.
 
@@ -54,17 +66,18 @@ def shape(x):
     '''
     return x.shape
 
+def reverse(x, axis=-1):
+    '''Apply [::-1] to appropriate axis'''
+    if axis < 0:
+        axis += x.ndim
+    return x[(slice(None),) * axis + (slice(None, None, -1),)]
 
 def ndim(x):
     return x.ndim
 
-
-def eval(x):
-    '''Run a graph.
-    '''
-    return x.eval()
-
-
+# ===========================================================================
+# Predefined data
+# ===========================================================================
 def zeros(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-zeros variable.
     '''
@@ -163,6 +176,20 @@ def argmax(x, axis=-1):
     return T.argmax(x, axis=axis, keepdims=False)
 
 
+def argsort(x, axis=-1):
+    return T.argsort(x, axis)
+
+
+def argtop_k(x, k=1):
+    # top-k accuracy
+    top = T.argsort(x, axis=-1)
+    # (Theano cannot index with [..., -top_k:], we need to simulate that)
+    top = top[[slice(None) for _ in range(top.ndim - 1)] +
+              [slice(-k, None)]]
+    top = top[(slice(None),) * (top.ndim - 1) + (slice(None, None, -1),)]
+    return top
+
+
 def argmin(x, axis=-1):
     return T.argmin(x, axis=axis, keepdims=False)
 
@@ -200,15 +227,6 @@ def clip(x, min_value, max_value):
     if max_value < min_value:
         max_value = min_value
     return T.clip(x, min_value, max_value)
-
-
-def equal(x, y):
-    return T.eq(x, y)
-
-
-def not_equal(x, y):
-    return T.neq(x, y)
-
 
 def maximum(x, y):
     return T.maximum(x, y)
@@ -699,3 +717,33 @@ more TODO:
 tensordot -> soon to be introduced in TF
 batched_tensordot -> reimplement
 '''
+
+def neq(a, b):
+    """a != b"""
+    return T.neq(a, b)
+
+def eq(a, b):
+    """a == b"""
+    return T.eq(a, b)
+
+def gt(a, b):
+    """a > b"""
+    return T.gt(a, b)
+
+def ge(a, b):
+    """a >= b"""
+    return T.ge(a, b)
+
+def lt(a, b):
+    """a < b"""
+    return T.lt(a, b)
+
+def le(a, b):
+    """a <= b"""
+    return T.le(a, b)
+
+def to_one_hot(x, nb_class):
+    ''' x: 1D-integer vector '''
+    ret = T.zeros((x.shape[0], nb_class), dtype=_FLOATX)
+    ret = T.set_subtensor(ret[T.arange(x.shape[0]), x], 1)
+    return ret
