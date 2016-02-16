@@ -1,8 +1,10 @@
 # ===========================================================================
 # This module is adpated from: https://github.com/fchollet/keras
 # Revision: @20728c9
-# Greate thanks to all keras contributors!
+# Original work Copyright (c) 2014-2015 keras contributors
+# Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
+
 import tensorflow as tf
 import numpy as np
 import os

@@ -1,8 +1,10 @@
 # ===========================================================================
 # This module is adpated from: https://github.com/fchollet/keras
 # Revision: @7b72163
-# Greate thanks to all keras contributors!
+# Original work Copyright (c) 2014-2015 keras contributors
+# Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
+
 import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams

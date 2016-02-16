@@ -5,31 +5,16 @@ Odin: Organized Digital Intelligent Networks
 [![image](https://travis-ci.org/Lasagne/Lasagne.svg)](https://travis-ci.org/Lasagne/Lasagne)
 [![image](https://img.shields.io/coveralls/Lasagne/Lasagne.svg)](https://coveralls.io/r/Lasagne/Lasagne)
 
-[![image](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Lasagne/Lasagne/blob/master/LICENSE)
+Odin contains a number of ultilities to accelerate the development of neural network using existing libraries, includes: keras and Lasagne. The library is written in Python supported constructing computational graph on top of either [Theano](https://github.com/Theano/Theano) or [TensorFlow](https://github.com/tensorflow/tensorflow). 
 
-Odin is a minimalist, highly modular neural networks library, written in Python and capable of running on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
+Our goal is creating minimalism and flexible design to speed up the overall pipeline. By simplifying the understand of Artificial Neural Networks as a "nested composition of funcitons", our library concentrate on advancing 4 components:
 
-Use Keras if you need a deep learning library that:
-
-- allows for easy and fast prototyping (through total modularity, minimalism, and extensibility).
-- supports both convolutional networks and recurrent networks, as well as combinations of the two.
-- supports arbitrary connectivity schemes (including multi-input and multi-output training).
-- runs seamlessly on CPU and GPU.
+- Accelerate features preprocessing using MapReduce based MPI to distribute the computation of large dataset.
+- High performance data manipulation using [h5py](http://docs.h5py.org/en/latest/index.html), provides high level of abstraction with extremely fast batching and shuffling data during training.
+- A general purpose training procudure which optimizes any differentiable functions.
+- Mechanism to store model from any frameworks as creator function.
 
 Odin is compatible with: __Python 2.7-3.5__.
-
-Its design is governed by `six principles:
-
-* Simplicity: Be easy to use, easy to understand and easy to extend, to
-  facilitate use in research
-* Transparency: Do not hide Theano behind abstractions, directly process and
-  return Theano expressions or Python / numpy data types
-* Modularity: Allow all parts (layers, regularizers, optimizers, ...) to be
-  used independently of Lasagne
-* Pragmatism: Make common use cases easy, do not overrate uncommon cases
-* Restraint: Do not obstruct users with features they decide not to use
-* Focus: "Do one thing and do it well"
-
 
 Installation
 ------------
@@ -37,9 +22,8 @@ Installation
 Odin uses the following dependencies:
 
 - numpy, scipy
-- pyyaml
-- HDF5 and h5py (optional, required if you use model saving/loading functions)
-- Optional but recommended if you use CNNs: cuDNN.
+- theano, tensorflow or both
+- HDF5 and h5py (optional, required if you use model/dataset saving/loading)
 
 *When using the Theano backend:*
 
