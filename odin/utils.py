@@ -1,11 +1,14 @@
 from __future__ import print_function, division, absolute_import
 
 from .base import OdinObject
+import os
 import numpy as np
 import types
 import time
 from collections import defaultdict
 
+from six.moves import zip, range
+from six import string_types
 # ===========================================================================
 # RandomStates
 # ===========================================================================
@@ -335,7 +338,7 @@ def segment_list(l, n_seg):
         size = int(np.floor(len(l) / float(n_seg)))
     # start segmenting
     segments = []
-    for i in xrange(n_seg):
+    for i in range(n_seg):
         start = i * size
         if i < n_seg - 1:
             end = start + size
@@ -407,7 +410,7 @@ def create_batch(n_samples, batch_size,
     if n_batch < 1 and keep_size:
         raise ValueError('Cannot keep size when number of data < batch size')
     i = -1
-    for i in xrange(int(n_batch)):
+    for i in range(int(n_batch)):
         jobs.append((start + i * batch_size, start + (i + 1) * batch_size))
     if not n_batch.is_integer():
         if keep_size:
@@ -556,8 +559,130 @@ class function(OdinObject):
 # ===========================================================================
 # Python
 # ===========================================================================
-def classlookup(cls):
-    c = list(cls.__bases__)
-    for base in c: c.extend(classlookup(base))
-    return list(set(c))
+def search_files(path, filter_func=None):
+    ''' Recurrsively get all files in the given path '''
+    file_list = []
+    q = queue()
+    # init queue
+    if os.access(path, os.R_OK):
+        for p in os.listdir(path):
+            q.put(os.path.join(path, p))
+    # process
+    while not q.empty():
+        p = q.pop()
+        if os.path.isdir(p):
+            if os.access(p, os.R_OK):
+                for i in os.listdir(p):
+                    q.put(os.path.join(p, i))
+        else:
+            if filter_func is not None and not filter_func(p):
+                continue
+            file_list.append(p)
+    return file_list
 
+def get_from_module(module, identifier, environment=None):
+    '''
+    Parameters
+    ----------
+    module : ModuleType, str
+        module contain the identifier
+    identifier : str
+        str, name of identifier
+    environment : map
+        map from globals() or locals()
+    Returns
+    -------
+    object : with the same name as identifier
+    None : not found
+    '''
+    if isinstance(module, string_types):
+        if environment and module in environment:
+            module = environment[module]
+        elif module in globals():
+            module = globals()[module]
+        else:
+            return None
+    from inspect import getmembers
+    for i in getmembers(module):
+        if identifier in i:
+            return i[1]
+    return None
+
+def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
+              prefer_compiled=False):
+    ''' Algorithms:
+     - Search all files in the `path` matched `prefix` and `suffix`
+     - Exclude all files contain any str in `exclude`
+     - Sorted all files based on alphabet
+     - Load all modules based on `prefer_compiled`
+     - return list of identifier found in all modules
+
+    Parameters
+    ----------
+    identifier : str
+        identifier of object, function or anything in script files
+    prefix : str
+        prefix of file to search in the `path`
+    suffix : str
+        suffix of file to search in the `path`
+    path : str
+        searching path of script files
+    exclude : str, list(str)
+        any files contain str in this list will be excluded
+    prefer_compiled : bool
+        True mean prefer .pyc file, otherwise prefer .py
+
+    Returns
+    -------
+    list(object, function, ..) :
+        any thing match given identifier in all found script file
+
+    Notes
+    -----
+    File with multiple . character my procedure wrong results
+    If the script run this this function match the searching process, a
+    infinite loop may happen!
+    '''
+    import re
+    import imp
+    from inspect import getmembers
+    # ====== validate input ====== #
+    if exclude == '': exclude = []
+    if type(exclude) not in (list, tuple, np.ndarray):
+        exclude = [exclude]
+    prefer_flag = -1
+    if prefer_compiled: prefer_flag = 1
+    # ====== create pattern and load files ====== #
+    pattern = re.compile('^%s.*%s\.pyc?' % (prefix, suffix)) # py or pyc
+    files = os.listdir(path)
+    files = [f for f in files
+             if pattern.match(f) and
+             sum([i in f for i in exclude]) == 0]
+    # ====== remove duplicated pyc files ====== #
+    files = sorted(files, key=lambda x: prefer_flag * len(x)) # pyc is longer
+    # .pyc go first get overrided by .py
+    files = sorted({f.split('.')[0]: f for f in files}.values())
+    # ====== load all modules ====== #
+    modules = []
+    for f in files:
+        try:
+            if '.pyc' in f:
+                modules.append(
+                    imp.load_compiled(f.split('.')[0],
+                                      os.path.join(path, f))
+                )
+            else:
+                modules.append(
+                    imp.load_source(f.split('.')[0],
+                                    os.path.join(path, f))
+                )
+        except:
+            pass
+    # ====== Find all identifier in modules ====== #
+    ids = []
+    for m in modules:
+        for i in getmembers(m):
+            if identifier in i:
+                ids.append(i[1])
+    # remove duplicate py
+    return ids

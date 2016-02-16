@@ -744,9 +744,42 @@ def le(a, b):
     """a <= b"""
     return tf.less_equal(a, b)
 
-def to_one_hot(x, nb_class):
+def one_hot(x, nb_class):
     ''' x: 1D-integer vector '''
     shape = x.get_shape()
     ret = tf.zeros((shape[0].value, nb_class), dtype=_FLOATX)
     ret[np.arange(shape[0].value), x] = 1
     return ret
+
+def one_hot_max(x, axis=-1):
+    '''
+    Example
+    -------
+    >>> Input: [[0.0, 0.0, 0.5],
+    >>>         [0.0, 0.3, 0.1],
+    >>>         [0.6, 0.0, 0.2]]
+    >>> Output: [[0.0, 0.0, 1.0],
+    >>>         [0.0, 1.0, 0.0],
+    >>>         [1.0, 0.0, 0.0]]
+    '''
+    if axis < 0:
+        axis = axis % len(x.get_shape())
+    shape = x.get_shape()[axis].value
+    return tf.cast(
+        tf.equal(tf.cast(tf.range(shape), 'int64'),
+                expand_dims(tf.argmax(x, axis))),
+        _FLOATX
+    )
+
+def apply_mask(x, mask):
+    '''
+    x : 3D tensor
+    mask : 2D tensor
+
+    Example
+    -------
+    >>> Input: [128, 500, 120]
+    >>> Mask:  [1, 1, 0]
+    >>> Output: [128, 500, 0]
+    '''
+    return tf.mul(x, tf.expand_dims(mask, -1))

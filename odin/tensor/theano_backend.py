@@ -756,8 +756,38 @@ def le(a, b):
     """a <= b"""
     return T.le(a, b)
 
-def to_one_hot(x, nb_class):
+def one_hot(x, nb_class):
     ''' x: 1D-integer vector '''
     ret = T.zeros((x.shape[0], nb_class), dtype=_FLOATX)
     ret = T.set_subtensor(ret[T.arange(x.shape[0]), x], 1)
     return ret
+
+def one_hot_max(x, axis=-1):
+    '''
+    Example
+    -------
+    >>> Input: [[0.0, 0.0, 0.5],
+    >>>         [0.0, 0.3, 0.1],
+    >>>         [0.6, 0.0, 0.2]]
+    >>> Output: [[0.0, 0.0, 1.0],
+    >>>         [0.0, 1.0, 0.0],
+    >>>         [1.0, 0.0, 0.0]]
+    '''
+    return T.cast(
+        T.eq(T.arange(x.shape[axis])[None, :],
+             T.argmax(x, axis=axis, keepdims=True)),
+        _FLOATX
+    )
+
+def apply_mask(x, mask):
+    '''
+    x : 3D tensor
+    mask : 2D tensor
+
+    Example
+    -------
+    >>> Input: [128, 500, 120]
+    >>> Mask:  [1, 1, 0]
+    >>> Output: [128, 500, 0]
+    '''
+    return T.mul(x, expand_dims(mask, -1))

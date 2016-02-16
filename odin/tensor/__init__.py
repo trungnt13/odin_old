@@ -3,6 +3,8 @@ import os
 
 from .. import config
 from .. import logger
+from .numpy_backend import *
+
 
 def _load_theano_config():
     flags = "mode=FAST_RUN,device=%s,floatX=%s" % (config.device(), config.floatX())

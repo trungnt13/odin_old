@@ -1,6 +1,6 @@
 # ===========================================================================
 # This module is created based on the code from 2 library: Lasagne and keras
-# Original work Copyright (c) 2014-2015 keras contributors
+# Original work Copyright (c) 2014-2015 keras contributors and
 # Original work Copyright (c) 2014-2015 Lasagne contributors
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
