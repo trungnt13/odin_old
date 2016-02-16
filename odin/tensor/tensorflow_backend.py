@@ -6,6 +6,7 @@
 import tensorflow as tf
 import numpy as np
 import os
+from collections import OrderedDict
 from .common import _FLOATX, _EPSILON
 
 # INTERNAL UTILS
@@ -29,12 +30,16 @@ def _set_session(session):
     _SESSION = session
 
 
+# ===========================================================================
 # VARIABLE MANIPULATION
-
-def variable(value, dtype=_FLOATX, name=None):
+# ===========================================================================
+def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     v = tf.Variable(np.asarray(value, dtype=dtype), name=name)
     _get_session().run(v.initializer)
     return v
+
+def is_variable(v):
+    return isinstance(v, tf.python.Variable)
 
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if not shape:
@@ -45,6 +50,8 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
 def eval(x):
     '''Run a graph.
     '''
+    if isinstance(x, tf.TensorShape):
+        return x.as_list()
     return x.eval(session=_get_session())
 
 # ===========================================================================
@@ -56,14 +63,8 @@ def shape(x):
 def ndim(x):
     return len(x.get_shape())
 
-def reverse(x, axis=-1):
-    '''Apply [::-1] to appropriate axis'''
-    ndim = len(x.get_shape())
-    dims = [False] * ndim
-    if axis < 0:
-        axis = axis % ndim
-    dims[axis] = True
-    return tf.reverse(x, dims)
+def broadcastable(x):
+    return None
 
 # ===========================================================================
 # Predefined data
@@ -92,11 +93,16 @@ def count_params(x):
 
 
 def cast(x, dtype):
-    return tf.cast(x, dtype)
+    if 'tensorflow' in str(x.__class__):
+        return tf.cast(x, dtype)
+    return np.cast[dtype](x)
 
+def castX(x):
+    return cast(x, _FLOATX)
 
+# ===========================================================================
 # LINEAR ALGEBRA
-
+# ===========================================================================
 def dot(x, y):
     return tf.matmul(x, y)
 
@@ -248,17 +254,25 @@ def minimum(x, y):
     return tf.minimum(x, y)
 
 
+# ===========================================================================
 # SHAPE OPERATIONS
+# ===========================================================================
+def reverse(x, axis=-1):
+    '''Apply [::-1] to appropriate axis'''
+    ndim = len(x.get_shape())
+    dims = [False] * ndim
+    if axis < 0:
+        axis = axis % ndim
+    dims[axis] = True
+    return tf.reverse(x, dims)
 
 def concatenate(tensors, axis=-1):
     if axis < 0:
         axis = axis % len(tensors[0].get_shape())
     return tf.concat(axis, tensors)
 
-
 def reshape(x, shape):
     return tf.reshape(x, shape)
-
 
 def permute_dimensions(x, pattern):
     '''Transpose dimensions.
@@ -267,7 +281,6 @@ def permute_dimensions(x, pattern):
     dimension indices, e.g. [0, 2, 1].
     '''
     return tf.transpose(x, perm=pattern)
-
 
 def resize_images(X, height_factor, width_factor, dim_ordering):
     '''Resize the images contained in a 4D tensor of shape
@@ -288,7 +301,6 @@ def resize_images(X, height_factor, width_factor, dim_ordering):
         return tf.image.resize_nearest_neighbor(X, (new_height, new_width))
     else:
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
-
 
 def repeat_elements(x, rep, axis):
     '''Repeats the elements of a tensor along an axis, like np.repeat
@@ -315,14 +327,11 @@ def repeat(x, n):
     stacked = tf.pack(tensors)
     return tf.transpose(stacked, (1, 0, 2))
 
-
 def tile(x, n):
     return tf.tile(x, n)
 
-
 def flatten(x):
     return tf.reshape(x, [-1])
-
 
 def batch_flatten(x):
     '''Turn a n-D tensor into a 2D tensor where
@@ -331,18 +340,15 @@ def batch_flatten(x):
     x = tf.reshape(x, [-1, np.prod(x.get_shape()[1:].as_list())])
     return x
 
-
 def expand_dims(x, dim=-1):
     '''Add a 1-sized dimension at index "dim".
     '''
     return tf.expand_dims(x, dim)
 
-
 def squeeze(x, axis):
     '''Remove a 1-dimension from the tensor at index "axis".
     '''
     return tf.squeeze(x, [axis])
-
 
 def temporal_padding(x, padding=1):
     '''Pad the middle dimension of a 3D tensor
@@ -350,7 +356,6 @@ def temporal_padding(x, padding=1):
     '''
     pattern = [[0, 0], [padding, padding], [0, 0]]
     return tf.pad(x, pattern)
-
 
 def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
     '''Pad the 2nd and 3rd dimensions of a 4D tensor
@@ -365,40 +370,41 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
                    [0, 0]]
     return tf.pad(x, pattern)
 
-
+# ===========================================================================
 # VALUE MANIPULATION
-
-def get_value(x):
+# ===========================================================================
+def get_value(x, borrow=False):
     '''Technically the same as eval() for TF.
     '''
     return x.eval(session=_get_session())
 
-
 def set_value(x, value):
     tf.assign(x, np.asarray(value)).op.run(session=_get_session())
 
-
+# ===========================================================================
 # GRAPH MANIPULATION
-
+# ===========================================================================
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[]):
         assert type(inputs) in {list, tuple}
-        assert type(outputs) in {list, tuple}
+        if type(outputs) not in {list, tuple}:
+            outputs = [outputs]
+        if isinstance(updates, OrderedDict):
+            updates = updates.items()
         assert type(updates) in {list, tuple}
         self.inputs = list(inputs)
         self.outputs = list(outputs)
         with tf.control_dependencies(self.outputs):
             self.updates = [tf.assign(p, new_p) for (p, new_p) in updates]
 
-    def __call__(self, inputs):
+    def __call__(self, *inputs):
         assert type(inputs) in {list, tuple}
         names = [v.name for v in self.inputs]
         feed_dict = dict(zip(names, inputs))
         session = _get_session()
         updated = session.run(self.outputs + self.updates, feed_dict=feed_dict)
         return updated[:len(self.outputs)]
-
 
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)

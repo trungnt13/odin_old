@@ -1,10 +1,9 @@
+from __future__ import print_function, division, absolute_import
+
 from collections import OrderedDict
 
 import numpy as np
-
-import theano
-import theano.tensor as T
-from . import utils
+from . import tensor as T
 
 __all__ = [
     "sgd",
@@ -48,17 +47,15 @@ def get_or_compute_grads(loss_or_grads, params):
         any element of `params` is not a shared variable (while we could still
         compute its gradient, we can never update it and want to fail early).
     """
-    if any(not isinstance(p, theano.compile.SharedVariable) for p in params):
-        raise ValueError("params must contain shared variables only. If it "
-                         "contains arbitrary parameter expressions, then "
-                         "lasagne.utils.collect_shared_vars() may help you.")
+    if any(not T.is_variable(p) for p in params):
+        raise ValueError("params must contain shared variables only.")
     if isinstance(loss_or_grads, list):
         if not len(loss_or_grads) == len(params):
             raise ValueError("Got %d gradient expressions for %d parameters" %
                              (len(loss_or_grads), len(params)))
         return loss_or_grads
     else:
-        return theano.grad(loss_or_grads, params)
+        return T.gradients(loss_or_grads, params)
 
 
 def sgd(loss_or_grads, params, learning_rate):
@@ -129,9 +126,8 @@ def apply_momentum(updates, params=None, momentum=0.9):
     updates = OrderedDict(updates)
 
     for param in params:
-        value = param.get_value(borrow=True)
-        velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                                 broadcastable=param.broadcastable)
+        shape = T.eval(T.shape(param))
+        velocity = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
         x = momentum * velocity + updates[param]
         updates[velocity] = x - param
         updates[param] = x
@@ -222,9 +218,8 @@ def apply_nesterov_momentum(updates, params=None, momentum=0.9):
     updates = OrderedDict(updates)
 
     for param in params:
-        value = param.get_value(borrow=True)
-        velocity = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                                 broadcastable=param.broadcastable)
+        shape = T.eval(T.shape(param))
+        velocity = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
         x = momentum * velocity + updates[param] - param
         updates[velocity] = x
         updates[param] = momentum * x + updates[param]
@@ -324,10 +319,9 @@ def adagrad(loss_or_grads, params, learning_rate=1.0, epsilon=1e-6):
     updates = OrderedDict()
 
     for param, grad in zip(params, grads):
-        value = param.get_value(borrow=True)
-        accu = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                             broadcastable=param.broadcastable)
-        accu_new = accu + grad ** 2
+        shape = T.eval(T.shape(param))
+        accu = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
+        accu_new = accu + T.pow(grad, 2)
         updates[accu] = accu_new
         updates[param] = param - (learning_rate * grad /
                                   T.sqrt(accu_new + epsilon))
@@ -382,10 +376,9 @@ def rmsprop(loss_or_grads, params, learning_rate=1.0, rho=0.9, epsilon=1e-6):
     updates = OrderedDict()
 
     for param, grad in zip(params, grads):
-        value = param.get_value(borrow=True)
-        accu = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                             broadcastable=param.broadcastable)
-        accu_new = rho * accu + (1 - rho) * grad ** 2
+        shape = T.eval(T.shape(param))
+        accu = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
+        accu_new = rho * accu + (1 - rho) * T.pow(grad, 2)
         updates[accu] = accu_new
         updates[param] = param - (learning_rate * grad /
                                   T.sqrt(accu_new + epsilon))
@@ -450,16 +443,14 @@ def adadelta(loss_or_grads, params, learning_rate=1.0, rho=0.95, epsilon=1e-6):
     updates = OrderedDict()
 
     for param, grad in zip(params, grads):
-        value = param.get_value(borrow=True)
+        shape = T.eval(T.shape(param))
         # accu: accumulate gradient magnitudes
-        accu = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                             broadcastable=param.broadcastable)
+        accu = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
         # delta_accu: accumulate update magnitudes (recursively!)
-        delta_accu = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                                   broadcastable=param.broadcastable)
+        delta_accu = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
 
         # update accu (as in rmsprop)
-        accu_new = rho * accu + (1 - rho) * grad ** 2
+        accu_new = rho * accu + (1 - rho) * T.pow(grad, 2)
         updates[accu] = accu_new
 
         # compute parameter update, using the 'old' delta_accu
@@ -468,7 +459,7 @@ def adadelta(loss_or_grads, params, learning_rate=1.0, rho=0.95, epsilon=1e-6):
         updates[param] = param - learning_rate * update
 
         # update delta_accu (as accu, but accumulating updates)
-        delta_accu_new = rho * delta_accu + (1 - rho) * update ** 2
+        delta_accu_new = rho * delta_accu + (1 - rho) * T.pow(update, 2)
         updates[delta_accu] = delta_accu_new
 
     return updates
@@ -513,22 +504,20 @@ def adam(loss_or_grads, params, learning_rate=0.001, beta1=0.9,
            arXiv preprint arXiv:1412.6980.
     """
     all_grads = get_or_compute_grads(loss_or_grads, params)
-    t_prev = theano.shared(utils.floatX(0.))
+    t_prev = T.variable(0.)
     updates = OrderedDict()
 
     t = t_prev + 1
-    a_t = learning_rate*T.sqrt(1-beta2**t)/(1-beta1**t)
+    a_t = learning_rate * T.sqrt(1 - T.pow(beta2, t)) / (1 - T.pow(beta1, t))
 
     for param, g_t in zip(params, all_grads):
-        value = param.get_value(borrow=True)
-        m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                               broadcastable=param.broadcastable)
-        v_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                               broadcastable=param.broadcastable)
+        shape = T.eval(T.shape(param))
+        m_prev = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
+        v_prev = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
 
-        m_t = beta1*m_prev + (1-beta1)*g_t
-        v_t = beta2*v_prev + (1-beta2)*g_t**2
-        step = a_t*m_t/(T.sqrt(v_t) + epsilon)
+        m_t = beta1 * m_prev + (1 - beta1) * g_t
+        v_t = beta2 * v_prev + (1 - beta2) * T.pow(g_t, 2)
+        step = a_t * m_t / (T.sqrt(v_t) + epsilon)
 
         updates[m_prev] = m_t
         updates[v_prev] = v_t
@@ -572,22 +561,20 @@ def adamax(loss_or_grads, params, learning_rate=0.002, beta1=0.9,
            arXiv preprint arXiv:1412.6980.
     """
     all_grads = get_or_compute_grads(loss_or_grads, params)
-    t_prev = theano.shared(utils.floatX(0.))
+    t_prev = T.variable(0.)
     updates = OrderedDict()
 
     t = t_prev + 1
-    a_t = learning_rate/(1-beta1**t)
+    a_t = learning_rate / (1 - T.pow(beta1, t))
 
     for param, g_t in zip(params, all_grads):
-        value = param.get_value(borrow=True)
-        m_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                               broadcastable=param.broadcastable)
-        u_prev = theano.shared(np.zeros(value.shape, dtype=value.dtype),
-                               broadcastable=param.broadcastable)
+        shape = T.eval(T.shape(param))
+        m_prev = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
+        u_prev = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
 
-        m_t = beta1*m_prev + (1-beta1)*g_t
-        u_t = T.maximum(beta2*u_prev, abs(g_t))
-        step = a_t*m_t/(u_t + epsilon)
+        m_t = beta1 * m_prev + (1 - beta1) * g_t
+        u_t = T.maximum(beta2 * u_prev, abs(g_t))
+        step = a_t * m_t / (u_t + epsilon)
 
         updates[m_prev] = m_t
         updates[u_prev] = u_t
@@ -668,19 +655,12 @@ def norm_constraint(tensor_var, max_norm, norm_axes=None, epsilon=1e-7):
             "Must specify `norm_axes`".format(ndim)
         )
 
-    dtype = np.dtype(theano.config.floatX).type
-    if hasattr(max_norm, 'astype'):
-        max_norm = max_norm.astype(theano.config.floatX)
-    else:
-        max_norm = dtype(max_norm)
-    if hasattr(epsilon, 'astype'):
-        epsilon = epsilon.astype(theano.config.floatX)
-    else:
-        epsilon = dtype(epsilon)
-    norms = T.sqrt(T.sum(T.sqr(tensor_var), axis=sum_over, keepdims=True))
-    target_norms = T.clip(norms, 0, dtype(max_norm))
-    constrained_output = \
-        (tensor_var * (target_norms / (dtype(epsilon) + norms)))
+    max_norm = T.castX(max_norm)
+    epsilon = T.castX(epsilon)
+
+    norms = T.sqrt(T.sum(T.pow(tensor_var, 2), axis=sum_over, keepdims=True))
+    target_norms = T.clip(norms, 0, max_norm)
+    constrained_output = (tensor_var * (target_norms / (epsilon + norms)))
 
     return constrained_output
 
@@ -741,19 +721,13 @@ def total_norm_constraint(tensor_vars, max_norm, epsilon=1e-7,
        learning with neural networks. In Advances in Neural Information
        Processing Systems (pp. 3104-3112).
     """
-    dtype = np.dtype(theano.config.floatX).type
-    if hasattr(max_norm, 'astype'):
-        max_norm = max_norm.astype(theano.config.floatX)
-    else:
-        max_norm = dtype(max_norm)
-    if hasattr(epsilon, 'astype'):
-        epsilon = epsilon.astype(theano.config.floatX)
-    else:
-        epsilon = dtype(epsilon)
-    norm = T.sqrt(sum(T.sum(tensor**2) for tensor in tensor_vars))
+    max_norm = T.castX(max_norm)
+    epsilon = T.castX(epsilon)
+
+    norm = T.sqrt(sum(T.sum(T.pow(tensor, 2)) for tensor in tensor_vars))
     target_norm = T.clip(norm, 0, max_norm)
     multiplier = target_norm / (epsilon + norm)
-    tensor_vars_scaled = [step*multiplier for step in tensor_vars]
+    tensor_vars_scaled = [step * multiplier for step in tensor_vars]
 
     if return_norm:
         return tensor_vars_scaled, norm

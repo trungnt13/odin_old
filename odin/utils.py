@@ -553,3 +553,11 @@ class function(OdinObject):
         func = types.FunctionType(func, sandbox, func_name)
         return function(func, *func_args, **func_kwargs)
 
+# ===========================================================================
+# Python
+# ===========================================================================
+def classlookup(cls):
+    c = list(cls.__bases__)
+    for base in c: c.extend(classlookup(base))
+    return list(set(c))
+

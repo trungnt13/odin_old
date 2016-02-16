@@ -3,20 +3,35 @@ import numpy as np
 from . import tensor
 from .config import epsilon
 
+__all__ = [
+    "squared_loss",
+    "absolute_loss",
+    "absolute_percentage_loss",
+    "squared_logarithmic_loss",
+    "squared_hinge",
+    "hinge",
+    "categorical_crossentropy",
+    "binary_crossentropy",
+    "poisson",
+    "cosine_proximity",
+    "binary_accuracy",
+    "categorical_accuracy"
+]
+
 # ===========================================================================
 # Differentiable
 # ===========================================================================
-def squared_error(y_pred, y_true):
+def squared_loss(y_pred, y_true):
     return tensor.square(y_pred - y_true)
 
-def absolute_error(y_pred, y_true):
+def absolute_loss(y_pred, y_true):
     return tensor.abs(y_pred - y_true)
 
-def absolute_percentage_error(y_pred, y_true):
+def absolute_percentage_loss(y_pred, y_true):
     diff = tensor.abs((y_true - y_pred) / tensor.clip(tensor.abs(y_true), epsilon(), np.inf))
     return 100. * diff
 
-def squared_logarithmic_error(y_pred, y_true):
+def squared_logarithmic_loss(y_pred, y_true):
     first_log = tensor.log(tensor.clip(y_pred, epsilon(), np.inf) + 1.)
     second_log = tensor.log(tensor.clip(y_true, epsilon(), np.inf) + 1.)
     return tensor.square(first_log - second_log)

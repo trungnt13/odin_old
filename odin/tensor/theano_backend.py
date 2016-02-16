@@ -33,12 +33,17 @@ if _on_gpu():
 
 # VARIABLE MANIPULATION
 
-def variable(value, dtype=_FLOATX, name=None):
+def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     '''Instantiate a tensor variable.
     '''
     value = np.asarray(value, dtype=dtype)
+    if broadcastable:
+        return theano.shared(value=value, name=name, strict=False,
+                             broadcastable=broadcastable)
     return theano.shared(value=value, name=name, strict=False)
 
+def is_variable(v):
+    return isinstance(v, theano.compile.SharedVariable)
 
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     '''Instantiate an input data placeholder variable.
@@ -66,14 +71,11 @@ def shape(x):
     '''
     return x.shape
 
-def reverse(x, axis=-1):
-    '''Apply [::-1] to appropriate axis'''
-    if axis < 0:
-        axis += x.ndim
-    return x[(slice(None),) * axis + (slice(None, None, -1),)]
-
 def ndim(x):
     return x.ndim
+
+def broadcastable(x):
+    return x.broadcastable
 
 # ===========================================================================
 # Predefined data
@@ -105,10 +107,13 @@ def count_params(x):
     '''
     return np.prod(x.shape.eval())
 
-
 def cast(x, dtype):
-    return T.cast(x, dtype)
+    if 'theano' in str(x.__class__):
+        return T.cast(x, dtype)
+    return np.cast[dtype](x)
 
+def castX(x):
+    return cast(x, _FLOATX)
 
 # LINEAR ALGEBRA
 
@@ -235,8 +240,14 @@ def maximum(x, y):
 def minimum(x, y):
     return T.minimum(x, y)
 
-
+# ===========================================================================
 # SHAPE OPERATIONS
+# ===========================================================================
+def reverse(x, axis=-1):
+    '''Apply [::-1] to appropriate axis'''
+    if axis < 0:
+        axis += x.ndim
+    return x[(slice(None),) * axis + (slice(None, None, -1),)]
 
 def concatenate(tensors, axis=-1):
     return T.concatenate(tensors, axis=axis)
@@ -376,14 +387,14 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
     return T.set_subtensor(output[indices], x)
 
+# ===========================================================================
 # VALUE MANIPULATION
-
-
-def get_value(x):
+# ===========================================================================
+def get_value(x, borrow=False):
     if not hasattr(x, 'get_value'):
         raise Exception("'get_value() can only be called on a variable. " +
                         "If you have an expression instead, use eval().")
-    return x.get_value()
+    return x.get_value(borrow=borrow)
 
 
 def set_value(x, value):
@@ -410,8 +421,9 @@ def gradients(loss, variables):
     return T.grad(loss, variables)
 
 
+# ===========================================================================
 # CONTROL FLOW
-
+# ===========================================================================
 def rnn(step_function, inputs, initial_states,
         go_backwards=False, mask=None):
     '''Iterates over the time dimension of a tensor.
