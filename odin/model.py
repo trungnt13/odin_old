@@ -118,6 +118,103 @@ def _get_variables(model, api):
     return var
 
 # ===========================================================================
+# Eearly stopping
+# ===========================================================================
+def _check_gs(validation):
+    ''' Generalization sensitive:
+    validation is list of cost values (assumpt: lower is better)
+    '''
+    if len(validation) == 0:
+        return 0, 0
+    shouldStop = 0
+    shouldSave = 0
+
+    if validation[-1] > min(validation):
+        shouldStop = 1
+        shouldSave = -1
+    else:
+        shouldStop = -1
+        shouldSave = 1
+
+    return shouldSave, shouldStop
+
+def _check_gl(validation, threshold=5):
+    ''' Generalization loss:
+    validation is list of cost values (assumpt: lower is better)
+    Note
+    ----
+    This strategy prefer to keep the model remain when the cost unchange
+    '''
+    gl_exit_threshold = threshold
+    epsilon = 1e-5
+
+    if len(validation) == 0:
+        return 0, 0
+    shouldStop = 0
+    shouldSave = 0
+
+    gl_t = 100 * (validation[-1] / (min(validation) + epsilon) - 1)
+    if gl_t <= 0 and np.argmin(validation) == (len(validation) - 1):
+        shouldSave = 1
+        shouldStop = -1
+    elif gl_t > gl_exit_threshold:
+        shouldStop = 1
+        shouldSave = -1
+
+    # check stay the same performance for so long
+    if len(validation) > threshold:
+        remain_detected = 0
+        j = validation[-int(threshold)]
+        for i in validation[-int(threshold):]:
+            if abs(i - j) < epsilon:
+                remain_detected += 1
+        if remain_detected >= threshold:
+            shouldStop = 1
+    return shouldSave, shouldStop
+
+
+def _check_hope_and_hop(validation):
+    ''' Hope and hop:
+    validation is list of cost values (assumpt: lower is better)
+    '''
+    patience = 5
+    patience_increase = 0.5
+    improvement_threshold = 0.998
+
+    if len(validation) == 0:
+        return 0, 0
+    shouldStop = 0
+    shouldSave = 0
+
+    # one more iteration
+    i = len(validation)
+    if len(validation) == 1: # cold start
+        shouldSave = 1
+        shouldStop = -1
+    else: # warm up
+        last_best_validation = min(validation[:-1])
+        # significant improvement
+        if min(validation) < last_best_validation * improvement_threshold:
+            patience += i * patience_increase
+            shouldSave = 1
+            shouldStop = -1
+        # punish
+        else:
+            # the more increase the faster we running out of patience
+            rate = validation[-1] / last_best_validation
+            patience -= i * patience_increase * rate
+            # if still little bit better, just save it
+            if min(validation) < last_best_validation:
+                shouldSave = 1
+            else:
+                shouldSave = -1
+
+    if patience <= 0:
+        shouldStop = 1
+        shouldSave = -1
+    return shouldSave, shouldStop
+
+# ===========================================================================
 # Model
 # ===========================================================================
 class model(OdinObject):
@@ -152,6 +249,57 @@ class model(OdinObject):
         self._updates_func_old = None
         self._objective_func_old = None
         self._updates_func = None
+
+    # ==================== DNN operators ==================== #
+    def earlystop(self, tags, generalization_loss = False,
+        generalization_sensitive=False, hope_hop=False,
+        threshold=None):
+        ''' Early stop.
+
+        Parameters
+        ----------
+        generalization_loss : type
+            note
+        generalization_sensitive : type
+            note
+        hope_hop : type
+            note
+
+        Returns
+        -------
+        return : boolean, boolean
+            shouldSave, shouldStop
+
+        '''
+        costs = self.select(tags,
+            filter_value=lambda x: isinstance(x, float) or isinstance(x, int))
+
+        if len(costs) == 0:
+            shouldSave, shouldStop = False, False
+        else:
+            values = costs
+            shouldSave = 0
+            shouldStop = 0
+            if generalization_loss:
+                if threshold is not None:
+                    save, stop = _check_gl(values, threshold)
+                else:
+                    save, stop = _check_gl(values)
+                shouldSave += save
+                shouldStop += stop
+            if generalization_sensitive:
+                save, stop = _check_gs(values)
+                shouldSave += save
+                shouldStop += stop
+            if hope_hop:
+                save, stop = _check_hope_and_hop(values)
+                shouldSave += save
+                shouldStop += stop
+            shouldSave, shouldStop = shouldSave > 0, shouldStop > 0
+        self.log(
+            'Earlystop: shouldSave=%s, shouldStop=%s' % (shouldSave, shouldStop),
+            20)
+        return shouldSave, shouldStop
 
     # ==================== Weights ==================== #
     def set_weights(self, weights, api=None):
@@ -284,7 +432,7 @@ class model(OdinObject):
             self._model = self._model_func()
             if self._model is None:
                 raise ValueError(
-                    'Model function doesn\'t return appropriate model')
+                    'Model\'s creator function doesn\'t return appropriate model')
             self._need_update_model = False
             # reset all function
             self._pred_func = None
@@ -516,7 +664,7 @@ class model(OdinObject):
     #         after, before, n, absolute)
     #     self._history_updated = True
 
-    def select(self, tags, default=None, after=None, before=None, n=None,
+    def select(self, tags, default=None, after=None, before=None,
         filter_value=None, absolute=False, newest=False, return_time=False):
         ''' Query in history, default working history is the newest frame.
 
@@ -545,7 +693,7 @@ class model(OdinObject):
             always return list, in case of no value, return empty list
         '''
         self._check_current_working_history()
-        return self._working_history.select(tags, default, after, before, n,
+        return self._working_history.select(tags, default, after, before,
             filter_value, absolute, newest, return_time)
 
     def print_history(self):

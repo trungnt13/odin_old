@@ -32,9 +32,12 @@ if _on_gpu():
     '''
     from theano.sandbox.cuda import dnn
 
+def get_session():
+    return _on_gpu()
 
+# ===========================================================================
 # VARIABLE MANIPULATION
-
+# ===========================================================================
 def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     '''Instantiate a tensor variable.
     '''

@@ -559,7 +559,7 @@ class function(OdinObject):
 # ===========================================================================
 # Python
 # ===========================================================================
-def search_files(path, filter_func=None):
+def get_all_files(path, filter_func=None):
     ''' Recurrsively get all files in the given path '''
     file_list = []
     q = queue()
@@ -579,6 +579,14 @@ def search_files(path, filter_func=None):
                 continue
             file_list.append(p)
     return file_list
+
+def get_tmp_dir():
+    import pwd
+    user_name = pwd.getpwuid(os.getuid())[0]
+    tmp_path = os.path.join('/tmp', user_name, '.odin')
+    if not os.path.exists(tmp_path):
+        os.makedirs(tmp_path)
+    return tmp_path
 
 def get_from_module(module, identifier, environment=None):
     '''

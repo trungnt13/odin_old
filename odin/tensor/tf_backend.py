@@ -16,7 +16,7 @@ from .common import _FLOATX, _EPSILON
 _SESSION = None
 
 
-def _get_session():
+def get_session():
     global _SESSION
     if _SESSION is None:
         if not os.environ.get('OMP_NUM_THREADS'):
@@ -37,7 +37,7 @@ def _set_session(session):
 # ===========================================================================
 def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     v = tf.Variable(np.asarray(value, dtype=dtype), name=name)
-    _get_session().run(v.initializer)
+    get_session().run(v.initializer)
     return v
 
 def is_variable(v):
@@ -54,7 +54,7 @@ def eval(x):
     '''
     if isinstance(x, tf.TensorShape):
         return x.as_list()
-    return x.eval(session=_get_session())
+    return x.eval(session=get_session())
 
 # ===========================================================================
 # Shape operators
@@ -378,10 +378,10 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
 def get_value(x, borrow=False):
     '''Technically the same as eval() for TF.
     '''
-    return x.eval(session=_get_session())
+    return x.eval(session=get_session())
 
 def set_value(x, value):
-    tf.assign(x, np.asarray(value)).op.run(session=_get_session())
+    tf.assign(x, np.asarray(value)).op.run(session=get_session())
 
 # ===========================================================================
 # GRAPH MANIPULATION
@@ -404,7 +404,7 @@ class Function(object):
         assert type(inputs) in {list, tuple}
         names = [v.name for v in self.inputs]
         feed_dict = dict(zip(names, inputs))
-        session = _get_session()
+        session = get_session()
         updated = session.run(self.outputs + self.updates, feed_dict=feed_dict)
         return updated[:len(self.outputs)]
 

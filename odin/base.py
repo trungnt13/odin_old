@@ -27,6 +27,15 @@ class OdinObject(object):
         self._logging = enable
 
     def log(self, msg, level=20):
+        '''
+        VERBOSITY level:
+         - CRITICAL: 50
+         - ERROR   : 40
+         - WARNING : 30
+         - INFO    : 20
+         - DEBUG   : 10
+         - UNSET   : 0
+        '''
         if not self._logging:
             return
         msg = '[%s]: %s' % (self.__class__.__name__, str(msg))

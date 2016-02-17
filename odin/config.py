@@ -44,6 +44,17 @@ def _parse_config():
             except:
                 pass
 
+def set_backend(backend):
+    global _BACKEND
+    if _BACKEND is not None:
+        raise ValueError('Cannot set backend after program started!')
+    if 'theano' in backend:
+        _BACKEND = 'theano'
+    elif 'tensorflow' in backend or 'tf' in backend:
+        _BACKEND = 'tensorflow'
+    else:
+        raise ValueError('Unsupport backend: %d!' % backend)
+
 # ===========================================================================
 # Parse and get configuration
 # ===========================================================================

@@ -21,20 +21,24 @@ elif config.backend() == 'tensorflow':
     from .tf_backend import *
 else:
     is_load_backend = False
+
     try:
         _load_theano_config()
         import theano
         logger.critical('Auto load theano_backend backend.')
         from .theano_backend import *
         is_load_backend = True
+        config.set_backend('theano')
     except:
         pass
+
     if not is_load_backend:
         try:
             import tensorflow
             from .tf_backend import *
             logger.critical('Auto load tensorflow_backend backend.')
             is_load_backend = True
+            config.set_backend('tensorflow')
         except:
             pass
     if not is_load_backend:

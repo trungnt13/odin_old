@@ -24,6 +24,7 @@ Odin uses the following dependencies:
 - numpy, scipy
 - theano, tensorflow or both
 - HDF5 and h5py (optional, required if you use model/dataset saving/loading)
+- matplotlib for visualization library
 
 *When using the Theano backend:*
 
