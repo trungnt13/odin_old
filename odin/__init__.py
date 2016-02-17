@@ -1,6 +1,7 @@
 from . import config
 from . import utils
 from . import tests
+from . import visual
 
 from . import tensor
 from . import objectives

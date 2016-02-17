@@ -7,12 +7,21 @@
 
 from __future__ import print_function, absolute_import, division
 
-from .utils.helpers import *
-from .histogram import calc_bins, read_numbers
+import math
+import numpy as np
+from .. import logger
 
+__all__ = [
+    'print_hist',
+    'print_bar',
+    'print_scatter',
+    'print_hinton'
+]
 # ===========================================================================
-# Utils
+# Helper
 # ===========================================================================
+_chars = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
 isiterable = lambda x: hasattr(x, '__iter__') or hasattr(x, '__getitem__')
 
 bcolours = {
@@ -38,12 +47,12 @@ def get_colour(colour):
     """
     return bcolours.get(colour, bcolours['ENDC'])
 
-def print_return_str(text, end='\n', return_str=False):
-    if not return_str:
-        print(text, end=end)
+def print_return_str(text, end='\n'):
+    # if not return_str:
+        # print(text, end=end)
     return text + end
 
-def printcolour(text, sameline=False, colour=get_colour("ENDC"), return_str=False):
+def printcolour(text, sameline=False, colour=get_colour("ENDC")):
     """
     Print color text using escape codes
     """
@@ -52,9 +61,8 @@ def printcolour(text, sameline=False, colour=get_colour("ENDC"), return_str=Fals
     else:
         sep = '\n'
     if colour == 'default' or colour == 'ENDC' or colour is None:
-        return print_return_str(text, sep, return_str)
-    return print_return_str(get_colour(colour) + text + bcolours["ENDC"],
-                            sep, return_str)
+        return print_return_str(text, sep)
+    return print_return_str(get_colour(colour) + text + bcolours["ENDC"], sep)
 
 def drange(start, stop, step=1.0, include_stop=False):
     """
@@ -85,10 +93,213 @@ def box_text(text, width, offset=0):
     box += " " * offset + "-" * (width + 2)
     return box
 
+
+def get_scale(series, is_y=False, steps=20):
+    min_val = min(series)
+    max_val = max(series)
+    scaled_series = []
+    for x in drange(min_val, max_val, (max_val - min_val) / steps,
+                    include_stop=True):
+        if x > 0 and scaled_series and max(scaled_series) < 0:
+            scaled_series.append(0.0)
+        scaled_series.append(x)
+
+    if is_y:
+        scaled_series.reverse()
+    return scaled_series
+
+
+def calc_bins(n, min_val, max_val, h=None, binwidth=None):
+    """
+    Calculate number of bins for the histogram
+    """
+    if not h:
+        h = max(10, math.log(n + 1, 2))
+    if binwidth == 0:
+        binwidth = 0.1
+    if binwidth is None:
+        binwidth = (max_val - min_val) / h
+    for b in drange(min_val, max_val, step=binwidth, include_stop=True):
+        if b.is_integer():
+            yield int(b)
+        else:
+            yield b
+
+
+def read_numbers(numbers):
+    """
+    Read the input data in the most optimal way
+    """
+    if isiterable(numbers):
+        for number in numbers:
+            yield float(str(number).strip())
+    else:
+        for number in open(numbers):
+            yield float(number.strip())
+
 # ===========================================================================
 # Main
 # ===========================================================================
-def plot_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
+def print_hist(f, height=20.0, bincount=None, binwidth=None, pch="o",
+    colour="default", title="", xlab=None, showSummary=False,
+    regular=False, return_str=False):
+    ''' Plot histogram.
+     1801|       oo
+     1681|       oo
+     1561|      oooo
+      961|      oooo
+      841|      oooo
+      721|     ooooo
+      601|     oooooo
+      241|     oooooo
+      121|    oooooooo
+        1| oooooooooooooo
+          --------------
+    Parameters
+    ----------
+    f : list(number), numpy.ndarray, str(filepath)
+        input array
+    height : float
+        the height of the histogram in # of lines
+    bincount : int
+        number of bins in the histogram
+    binwidth : int
+        width of bins in the histogram
+    pch : str
+        shape of the bars in the plot, e.g 'o'
+    colour : str
+        white,aqua,pink,blue,yellow,green,red,grey,black,default,ENDC
+    title : str
+        title at the top of the plot, None = no title
+    xlab : boolean
+        whether or not to display x-axis labels
+    showSummary : boolean
+        whether or not to display a summary
+    regular : boolean
+        whether or not to start y-labels at 0
+    return_str : boolean
+        return string represent the plot or print it out, default: False
+    '''
+    if pch is None:
+        pch = "o"
+    splot = ''
+    if isinstance(f, str):
+        f = open(f).readlines()
+
+    min_val, max_val = None, None
+    n, mean, sd = 0.0, 0.0, 0.0
+
+    for number in read_numbers(f):
+        n += 1
+        if min_val is None or number < min_val:
+            min_val = number
+        if max_val is None or number > max_val:
+            max_val = number
+        mean += number
+
+    mean /= n
+
+    for number in read_numbers(f):
+        sd += (mean - number)**2
+
+    sd /= (n - 1)
+    sd **= 0.5
+
+    bins = list(calc_bins(n, min_val, max_val, bincount, binwidth))
+    hist = dict((i, 0) for i in range(len(bins)))
+
+    for number in read_numbers(f):
+        for i, b in enumerate(bins):
+            if number <= b:
+                hist[i] += 1
+                break
+        if number == max_val and max_val > bins[len(bins) - 1]:
+            hist[len(hist) - 1] += 1
+
+    min_y, max_y = min(hist.values()), max(hist.values())
+
+    start = max(min_y, 1)
+    stop = max_y + 1
+
+    if regular:
+        start = 1
+
+    if height is None:
+        height = stop - start
+        if height > 20:
+            height = 20
+
+    ys = list(drange(start, stop, float(stop - start) / height))
+    ys.reverse()
+
+    nlen = max(len(str(min_y)), len(str(max_y))) + 1
+
+    if title:
+        splot += print_return_str(
+            box_text(title, max(len(hist) * 2, len(title)), nlen),
+            return_str=return_str)
+    splot += print_return_str('')
+
+    used_labs = set()
+    for y in ys:
+        ylab = str(int(y))
+        if ylab in used_labs:
+            ylab = ""
+        else:
+            used_labs.add(ylab)
+        ylab = " " * (nlen - len(ylab)) + ylab + "|"
+
+        splot += print_return_str(ylab, end=' ')
+
+        for i in range(len(hist)):
+            if int(y) <= hist[i]:
+                splot += printcolour(pch, True, colour)
+            else:
+                splot += printcolour(" ", True, colour)
+        splot += print_return_str('')
+    xs = hist.keys()
+
+    splot += print_return_str(" " * (nlen + 1) + "-" * len(xs),
+                              return_str=return_str)
+
+    if xlab:
+        xlen = len(str(float((max_y) / height) + max_y))
+        for i in range(0, xlen):
+            splot += printcolour(" " * (nlen + 1), True, colour)
+            for x in range(0, len(hist)):
+                num = str(bins[x])
+                if x % 2 != 0:
+                    pass
+                elif i < len(num):
+                    splot += print_return_str(num[i], end=' ',
+                                              return_str=return_str)
+                else:
+                    splot += print_return_str(" ", end=' ',
+                                            return_str=return_str)
+            splot += print_return_str('')
+
+    center = max(map(len, map(str, [n, min_val, mean, max_val])))
+    center += 15
+
+    if showSummary:
+        splot += print_return_str('')
+        splot += print_return_str("-" * (2 + center))
+        splot += print_return_str("|" + "Summary".center(center) + "|",
+                                  return_str=return_str)
+        splot += print_return_str("-" * (2 + center))
+        summary = "|" + ("observations: %d" % n).center(center) + "|\n"
+        summary += "|" + ("min value: %f" % min_val).center(center) + "|\n"
+        summary += "|" + ("mean : %f" % mean).center(center) + "|\n"
+        summary += "|" + ("sd : %f" % sd).center(center) + "|\n"
+        summary += "|" + ("max value: %f" % max_val).center(center) + "|\n"
+        summary += "-" * (2 + center)
+        splot += print_return_str(summary)
+    if return_str:
+        return splot
+    else:
+        logger.log(splot)
+
+def print_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     colour="default", title="", xlab=None, showSummary=False,
     regular=False, return_str=False):
     ''' Plot bar.
@@ -121,7 +332,7 @@ def plot_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     Example
     -------
     >>> y = np.random.rand(50)
-    >>> plot_bar(y, bincount=50, colour='red')
+    >>> bash_bar(y, bincount=50, colour='red')
 
     >>> 0.971|
     >>> 0.923|                o         o             o   o
@@ -210,7 +421,7 @@ def plot_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
         splot += print_return_str(
             box_text(title, max(len(hist) * 2, len(title)), nlen),
             return_str=return_str)
-    splot += print_return_str('', return_str=return_str)
+    splot += print_return_str('')
 
     used_labs = set()
     for y in ys:
@@ -224,23 +435,22 @@ def plot_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
             used_labs.add(ylab)
         ylab = " " * (nlen - len(ylab)) + ylab + "|"
 
-        splot += print_return_str(ylab, end=' ', return_str=return_str)
+        splot += print_return_str(ylab, end=' ')
 
         for i in range(len(hist)):
             if int(y) <= hist[i]:
-                splot += printcolour(pch, True, colour, return_str)
+                splot += printcolour(pch, True, colour)
             else:
-                splot += printcolour(" ", True, colour, return_str)
-        splot += print_return_str('', return_str=return_str)
+                splot += printcolour(" ", True, colour)
+        splot += print_return_str('')
     xs = hist.keys()
 
-    splot += print_return_str(" " * (nlen + 1) + "-" * len(xs),
-                              return_str=return_str)
+    splot += print_return_str(" " * (nlen + 1) + "-" * len(xs))
 
     if xlab:
         xlen = len(str(float((max_y) / height) + max_y))
         for i in range(0, xlen):
-            splot += printcolour(" " * (nlen + 1), True, colour, return_str)
+            splot += printcolour(" " * (nlen + 1), True, colour)
             for x in range(0, len(hist)):
                 num = str(bins[x])
                 if x % 2 != 0:
@@ -251,24 +461,146 @@ def plot_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
                 else:
                     splot += print_return_str(" ", end=' ',
                                             return_str=return_str)
-            splot += print_return_str('', return_str=return_str)
+            splot += print_return_str('')
 
     center = max(map(len, map(str, [n, min_val, mean, max_val])))
     center += 15
 
     if showSummary:
-        splot += print_return_str('', return_str=return_str)
-        splot += print_return_str("-" * (2 + center), return_str=return_str)
+        splot += print_return_str('')
+        splot += print_return_str("-" * (2 + center))
         splot += print_return_str("|" + "Summary".center(center) + "|",
                                   return_str=return_str)
-        splot += print_return_str("-" * (2 + center), return_str=return_str)
+        splot += print_return_str("-" * (2 + center))
         summary = "|" + ("observations: %d" % n).center(center) + "|\n"
         summary += "|" + ("min value: %f" % min_val).center(center) + "|\n"
         summary += "|" + ("mean : %f" % mean).center(center) + "|\n"
         summary += "|" + ("sd : %f" % sd).center(center) + "|\n"
         summary += "|" + ("max value: %f" % max_val).center(center) + "|\n"
         summary += "-" * (2 + center)
-        splot += print_return_str(summary, return_str=return_str)
+        splot += print_return_str(summary)
 
     if return_str:
         return splot
+    else:
+        logger.log(splot)
+
+def print_scatter(xs, ys, size=None, pch='o',
+                colour='red', title=None, return_str=False):
+    ''' Scatter plot.
+    ----------------------
+    |                 *   |
+    |               *     |
+    |             *       |
+    |           *         |
+    |         *           |
+    |        *            |
+    |       *             |
+    |      *              |
+    -----------------------
+    Parameters
+    ----------
+    xs : list, numpy.ndarray
+        list of x series
+    ys : list, numpy.ndarray
+        list of y series
+    size : int
+        width of plot
+    pch : str
+        any character to represent a points
+    colour : str, list(str)
+        white,aqua,pink,blue,yellow,green,red,grey,black,default,ENDC
+    title : str
+        title for the plot, None = not show
+    return_str : boolean
+        return string represent the plot or print it out, default: False
+    '''
+    splot = ''
+    plotted = set()
+    cs = colour
+
+    if size is None:
+        size = 13
+
+    if title:
+        splot += print_return_str(
+            box_text(title, 2 * len(get_scale(xs, False, size)) + 1),
+            return_str=return_str)
+
+    # ====== Top line ====== #
+    splot += print_return_str(' ' + "-" * (len(get_scale(xs, False, size)) + 2),
+                              return_str=return_str)
+    # ====== Main plot ====== #
+    for y in get_scale(ys, True, size):
+        splot += print_return_str("|", end=' ')
+        for x in get_scale(xs, False, size):
+            point = " "
+            for (i, (xp, yp)) in enumerate(zip(xs, ys)):
+                if xp <= x and yp >= y and (xp, yp) not in plotted:
+                    point = pch
+                    plotted.add((xp, yp))
+                    if isinstance(cs, list):
+                        colour = cs[i]
+            splot += printcolour(point, True, colour)
+        splot += print_return_str(" |")
+    # ====== Bottom line ====== #
+    splot += print_return_str(' ' + "-" * (len(get_scale(xs, False, size)) + 2),
+                              return_str=return_str)
+    if return_str:
+        return splot
+    else:
+        logger.log(splot)
+
+def print_hinton(arr, max_arr=None, return_str=False):
+    ''' Print bar string, fast way to visual magnitude of value in terminal
+
+    Example:
+    -------
+    >>> W = np.random.rand(10,10)
+    >>> print_hinton(W)
+    >>> ▁▃▄█▅█ ▅▃▅
+    >>> ▅▂▆▄▄ ▅▅
+    >>> ▄██▆▇▆▆█▆▅
+    >>> ▄▄▅▂▂▆▅▁▅▆
+    >>> ▂ ▁  ▁▄▆▅▁
+    >>> ██▃█▃▃▆ ▆█
+    >>>  ▁▂▁ ▁▃▃▆▂
+    >>> ▅▂▂█ ▂ █▄▅
+    >>> ▃▆▁▄▁▆▇▃▅▁
+    >>> ▄▁▇ ██▅ ▂▃
+    Returns
+    -------
+    return : str
+        plot of array, for example: ▄▅▆▇
+    '''
+    arr = np.asarray(arr)
+    if len(arr.shape) == 1:
+        arr = arr[None, :]
+
+    def visual_func(val, max_val):
+        if abs(val) == max_val:
+            step = len(_chars) - 1
+        else:
+            step = int(abs(float(val) / max_val) * len(_chars))
+        colourstart = ""
+        colourend = ""
+        if val < 0:
+            colourstart, colourend = '\033[90m', '\033[0m'
+        return colourstart + _chars[step] + colourend
+
+    if max_arr is None:
+        max_arr = arr
+    max_val = max(abs(np.max(max_arr)), abs(np.min(max_arr)))
+    # print(np.array2string(arr,
+    #                       formatter={'float_kind': lambda x: visual(x, max_val)},
+    #                       max_line_width=5000)
+    # )
+    f = np.vectorize(visual_func)
+    result = f(arr, max_val) # array of ▄▅▆▇
+    rval = ''
+    for r in result:
+        rval += ''.join(r) + '\n'
+    if return_str:
+        return rval[:-1]
+    else:
+        logger.log(rval)
