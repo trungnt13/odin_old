@@ -340,8 +340,7 @@ class model(OdinObject):
         newest weights from AI
         '''
         # create model to have weights
-        if self._model_func:
-            self.get_model()
+        self.get_model()
         # always update the newest weights of model
         self._weights = _get_weights(self._model)
         return self._weights
@@ -359,22 +358,23 @@ class model(OdinObject):
 
     def get_nlayers(self):
         ''' Return number of layers (only layers with trainable params) '''
-        if self._model is not None:
-            if self._api == 'lasagne':
-                import lasagne
-                return len([i for i in lasagne.layers.get_all_layers(self._model)
-                            if len(i.get_params(trainable=True)) > 0])
-            elif self._api == 'keras':
-                count = 0
-                for l in self._model.layers:
-                    if len(l.trainable_weights) > 0:
-                        count += 1
-                return count
-            else:
-                raise ValueError('Currently not support API: %s' % self._api)
+        self.get_model()
+        if self._api == 'lasagne':
+            import lasagne
+            return len([i for i in lasagne.layers.get_all_layers(self._model)
+                        if len(i.get_params(trainable=True)) > 0])
+        elif self._api == 'keras':
+            count = 0
+            for l in self._model.layers:
+                if len(l.trainable_weights) > 0:
+                    count += 1
+            return count
+        else:
+            raise ValueError('Currently not support API: %s' % self._api)
         return 0
 
     def get_vars(self):
+        self.get_model()
         return self._model_var
 
     # ==================== Model ==================== #
