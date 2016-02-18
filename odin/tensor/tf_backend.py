@@ -101,7 +101,7 @@ def count_params(x):
 
 
 def cast(x, dtype):
-    if 'tensorflow' in str(x.__class__):
+    if 'tensorflow.' in str(x.__class__):
         return tf.cast(x, dtype)
     return np.cast[dtype](x)
 

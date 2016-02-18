@@ -1,6 +1,6 @@
 # ===========================================================================
-# This module is created based on the code from 2 library: Lasagne and keras
-# Original work Copyright (c) 2014-2015 keras contributors and
+# This module is created based on the code from 2 libraries: Lasagne and keras
+# Original work Copyright (c) 2014-2015 keras contributors
 # Original work Copyright (c) 2014-2015 Lasagne contributors
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
@@ -513,11 +513,10 @@ def adam(loss_or_grads, params, learning_rate=0.001, beta1=0.9,
     all_grads = get_or_compute_grads(loss_or_grads, params)
     t_prev = T.variable(0.)
     updates = OrderedDict()
-    beta1 = T.castX(beta1)
-    beta2 = T.castX(beta2)
 
     t = t_prev + 1
-    a_t = learning_rate * T.sqrt(1 - T.pow(beta2, t)) / (1 - T.pow(beta1, t))
+    a_t = learning_rate * \
+        T.sqrt(1 - T.pow(T.castX(beta2), t)) / (1 - T.pow(T.castX(beta1), t))
 
     for param, g_t in zip(params, all_grads):
         shape = T.eval(T.shape(param))
@@ -572,11 +571,9 @@ def adamax(loss_or_grads, params, learning_rate=0.002, beta1=0.9,
     all_grads = get_or_compute_grads(loss_or_grads, params)
     t_prev = T.variable(0.)
     updates = OrderedDict()
-    beta1 = T.castX(beta1)
-    beta2 = T.castX(beta2)
 
     t = t_prev + 1
-    a_t = learning_rate / (1 - T.pow(beta1, t))
+    a_t = learning_rate / (1 - T.pow(T.castX(beta1), t))
 
     for param, g_t in zip(params, all_grads):
         shape = T.eval(T.shape(param))
@@ -584,7 +581,7 @@ def adamax(loss_or_grads, params, learning_rate=0.002, beta1=0.9,
         u_prev = T.variable(np.zeros(shape), broadcastable=T.broadcastable(param))
 
         m_t = beta1 * m_prev + (1 - beta1) * g_t
-        u_t = T.maximum(beta2 * u_prev, abs(g_t))
+        u_t = T.maximum(beta2 * u_prev, T.abs(g_t))
         step = a_t * m_t / (u_t + epsilon)
 
         updates[m_prev] = m_t

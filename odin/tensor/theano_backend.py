@@ -119,7 +119,7 @@ def count_params(x):
     return np.prod(x.shape.eval())
 
 def cast(x, dtype):
-    if 'theano' in str(x.__class__):
+    if 'theano.' in str(x.__class__):
         return T.cast(x, dtype)
     return np.cast[dtype](x)
 

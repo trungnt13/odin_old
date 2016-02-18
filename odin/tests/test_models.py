@@ -124,7 +124,8 @@ class ModelTest(unittest.TestCase):
         m2.create_cost(tensor.categorical_crossentropy)
 
         m1.set_weights(m2.get_weights(), 'keras')
-        self.assertEqual(m1.pred(X).tolist(), m2.pred(X).tolist())
+        self.assertEqual(np.round(m1.pred(X), 6).tolist(),
+                         np.round(m2.pred(X), 6).tolist())
         self.assertEqual(m1.cost(X, y).tolist(),
                          m2.cost(X, y).tolist())
 
