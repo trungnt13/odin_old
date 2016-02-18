@@ -49,6 +49,25 @@ class FunctionsTest(unittest.TestCase):
         cost2 = np.round((np.dot(x, p) - y)**2, 6)
         self.assertLessEqual(np.sum(np.abs(cost1 - cost2)), 10e-5)
 
+    def test_summation_merge(self):
+        d1 = funcs.Dense((None, 10), num_units=5)
+        d2 = funcs.Dense((None, 20), num_units=5)
+        d3 = funcs.Summation((d1, d2))
+
+        params = d3.get_params_value(True)
+        p1 = params[0]
+        p2 = params[2]
+
+        f_pred = T.function(d3.input_var, d3())
+
+        x1 = np.random.rand(16, 10)
+        x2 = np.random.rand(16, 20)
+
+        pred1 = np.round(f_pred(x1, x2), 6)
+        pred2 = np.round(np.dot(x1, p1) + np.dot(x2, p2), 6)
+
+        self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
+
 # ===========================================================================
 # Main
 # ===========================================================================

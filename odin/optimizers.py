@@ -513,6 +513,8 @@ def adam(loss_or_grads, params, learning_rate=0.001, beta1=0.9,
     all_grads = get_or_compute_grads(loss_or_grads, params)
     t_prev = T.variable(0.)
     updates = OrderedDict()
+    beta1 = T.castX(beta1)
+    beta2 = T.castX(beta2)
 
     t = t_prev + 1
     a_t = learning_rate * T.sqrt(1 - T.pow(beta2, t)) / (1 - T.pow(beta1, t))
@@ -570,6 +572,8 @@ def adamax(loss_or_grads, params, learning_rate=0.002, beta1=0.9,
     all_grads = get_or_compute_grads(loss_or_grads, params)
     t_prev = T.variable(0.)
     updates = OrderedDict()
+    beta1 = T.castX(beta1)
+    beta2 = T.castX(beta2)
 
     t = t_prev + 1
     a_t = learning_rate / (1 - T.pow(beta1, t))
