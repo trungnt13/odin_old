@@ -2,7 +2,7 @@ from __future__ import print_function, division, absolute_import
 
 from .base import OdinObject
 from .dataset import dataset, batch
-from .utils import get_magic_seed
+from .tensor import get_magic_seed
 from . import logger
 
 import numpy as np

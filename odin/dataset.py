@@ -4,8 +4,9 @@ import numpy as np
 from numpy.random import RandomState
 
 from .base import OdinObject
-from .utils import create_batch, queue, get_magic_seed
+from .utils import create_batch, queue
 from .ie import get_file
+from .tensor import get_magic_seed
 
 from six.moves import zip_longest
 from collections import defaultdict

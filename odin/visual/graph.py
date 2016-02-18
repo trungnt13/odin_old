@@ -1,9 +1,6 @@
 from __future__ import print_function, division, absolute_import
 
 import os
-from matplotlib import pyplot as plt
-import matplotlib.image as mpimg
-
 from .. import config
 from .. import utils
 from .. import tensor
@@ -13,6 +10,9 @@ def draw_computational_graph(var_or_func, save_path=None):
     Use d3viz to provide interactive html graph for theano
     For tensorflow, use: tensorboard --logdir [save_path]
     '''
+    from matplotlib import pyplot as plt
+    import matplotlib.image as mpimg
+
     if save_path is None:
         save_path = os.path.join(utils.get_tmp_dir(), 'tmp.html')
 

@@ -3,7 +3,7 @@
 # ======================================================================
 from __future__ import print_function, division
 
-from ..utils import function, get_magic_seed, frame
+from ..utils import function, frame
 from ..model import model
 from .. import tensor
 from .. import logger
@@ -50,7 +50,7 @@ class ModelTest(unittest.TestCase):
         logger.set_enable(False)
 
         m = model('tmp.ai')
-        m.set_model(_test, 'lasagne', dim=10)
+        m.set_model(_test, dim=10)
         m.create_cost(tensor.categorical_crossentropy)
         ai1 = m.get_model()
         w1 = lasagne.layers.get_all_param_values(ai1)
@@ -78,7 +78,7 @@ class ModelTest(unittest.TestCase):
         y = np.random.rand(32, 3)
 
         m = model('tmp.ai')
-        m.set_model(_test_keras, 'keras', dim=10)
+        m.set_model(_test_keras, dim=10)
         m.create_cost(tensor.categorical_crossentropy)
         y1 = m.pred(X)
         c1 = m.cost(X, y)
@@ -99,11 +99,11 @@ class ModelTest(unittest.TestCase):
         y = np.random.rand(64, 3)
 
         m1 = model()
-        m1.set_model(_test, 'lasagne', dim=10)
+        m1.set_model(_test, dim=10)
         m1.create_cost(tensor.categorical_crossentropy)
 
         m2 = model()
-        m2.set_model(_test_keras, 'keras', dim=10)
+        m2.set_model(_test_keras, dim=10)
         m2.create_cost(tensor.categorical_crossentropy)
 
         m2.set_weights(m1.get_weights(), 'lasagne')
@@ -116,11 +116,11 @@ class ModelTest(unittest.TestCase):
         y = np.random.rand(64, 3)
 
         m1 = model()
-        m1.set_model(_test, 'lasagne', dim=10)
+        m1.set_model(_test, dim=10)
         m1.create_cost(tensor.categorical_crossentropy)
 
         m2 = model()
-        m2.set_model(_test_keras, 'keras', dim=10)
+        m2.set_model(_test_keras, dim=10)
         m2.create_cost(tensor.categorical_crossentropy)
 
         m1.set_weights(m2.get_weights(), 'keras')
@@ -133,12 +133,12 @@ class ModelTest(unittest.TestCase):
         y = np.random.rand(64, 3)
 
         m1 = model()
-        m1.set_model(_test, 'lasagne', dim=10)
+        m1.set_model(_test, dim=10)
         m1.create_cost(tensor.categorical_crossentropy)
         w1 = m1.get_weights()
 
         m2 = model()
-        m2.set_model(_test_keras, 'keras', dim=10)
+        m2.set_model(_test_keras, dim=10)
         m2.create_cost(tensor.categorical_crossentropy)
         m2.set_weights(w1, 'lasagne')
 

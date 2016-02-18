@@ -10,20 +10,23 @@ from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from theano.tensor.signal import downsample
 import numpy as np
+
 from .. import config
+from .numpy_backend import get_random_magic_seed
+
 _FLOATX = config.floatX()
 _EPSILON = config.epsilon()
 
+# ===========================================================================
 # INTERNAL UTILS
+# ===========================================================================
 theano.config.floatX = _FLOATX
-
 
 def _on_gpu():
     '''Return whether the session is set to
     run on GPU or not (i.e. on CPU).
     '''
     return theano.config.device[:3] == 'gpu' or theano.sandbox.cuda.cuda_enabled
-
 
 if _on_gpu():
     '''Import cuDNN only if running on GPU:
@@ -59,6 +62,9 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
         ndim = len(shape)
     broadcast = (False,) * ndim
     return T.TensorType(dtype, broadcast)(name)
+
+def is_placeholder(v):
+    return isinstance(v, theano.tensor.TensorVariable)
 
 def eval(x):
     '''Run a graph.
@@ -310,22 +316,11 @@ def repeat(x, n):
     x = x.dimshuffle((0, 'x', 1))
     return T.extra_ops.repeat(x, n, axis=1)
 
-
 def tile(x, n):
     return T.tile(x, n)
 
-
-def flatten(x):
-    return T.flatten(x)
-
-
-def batch_flatten(x):
-    '''Turn a n-D tensor into a 2D tensor where
-    the first dimension is conserved.
-    '''
-    x = T.reshape(x, (x.shape[0], T.prod(x.shape) // x.shape[0]))
-    return x
-
+def flatten(x, outdim=2):
+    return T.flatten(x, outdim)
 
 def expand_dims(x, dim=-1):
     '''Add a 1-sized dimension at index "dim".
@@ -711,22 +706,46 @@ def pool2d(x, pool_size, strides=(1, 1), border_mode='valid',
         pool_out = pool_out.dimshuffle((0, 2, 3, 1))
     return pool_out
 
-
+# ===========================================================================
 # RANDOMNESS
+# ===========================================================================
+class _RandomWrapper(object):
 
+    def __init__(self, rng):
+        super(_RandomWrapper, self).__init__()
+        self._rng = rng
+
+    def normal(self, shape, mean, std):
+        return self._rng.normal(size=shape, avg=mean, std=std, dtype=_FLOATX)
+
+    def uniform(self, shape, low, high):
+        return self._rng.uniform(size=shape, low=low, high=high, dtype=_FLOATX)
+
+    def binomial(self, shape, p):
+        return self._rng.binomial(size=shape, n=1, p=p, dtype=_FLOATX)
+
+def rng(seed=None):
+    if seed is None:
+        seed = get_random_magic_seed()
+    return _RandomWrapper(RandomStreams(seed=seed))
 
 def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
-        seed = np.random.randint(10e6)
+        seed = get_random_magic_seed()
     rng = RandomStreams(seed=seed)
     return rng.normal(size=shape, avg=mean, std=std, dtype=dtype)
 
-
 def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
-        seed = np.random.randint(10e6)
+        seed = get_random_magic_seed()
     rng = RandomStreams(seed=seed)
     return rng.uniform(shape, low=low, high=high, dtype=dtype)
+
+def random_binomial(shape, p, dtype=_FLOATX, seed=None):
+    if seed is None:
+        seed = get_random_magic_seed()
+    rng = RandomStreams(seed=seed)
+    return rng.binomial(size=shape, n=1, p=p, dtype=dtype)
 
 '''
 more TODO:
@@ -734,6 +753,9 @@ more TODO:
 tensordot -> soon to be introduced in TF
 batched_tensordot -> reimplement
 '''
+# ===========================================================================
+# Comparator
+# ===========================================================================
 
 def neq(a, b):
     """a != b"""

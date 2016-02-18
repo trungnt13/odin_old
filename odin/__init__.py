@@ -16,3 +16,5 @@ from .features import text
 from model import model
 from dataset import dataset
 from trainer import trainer
+
+from . import funcs

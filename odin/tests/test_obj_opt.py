@@ -44,7 +44,7 @@ class ObjectivesTest(unittest.TestCase):
             except:
                 print('%-24s' % func.__name__, "Non-Differentiable!")
             return round(T.eval(cost).tolist(), 3), diffable
-
+        print()
         self.assertEqual(calc_cost(squared_loss), (0.174, True))
         self.assertEqual(calc_cost(absolute_loss), (0.351, True))
         self.assertEqual(calc_cost(absolute_percentage_loss), (305.868, True))
@@ -90,7 +90,7 @@ class OptimizersTest(unittest.TestCase):
                 updates=updates)
             r = [f() for i in xrange(30)]
             self.assertGreater(r[:-1], r[1:])
-
+        print()
         print('%-18s OK!' % 'sgd'); test_opt(sgd(obj, params, 0.1))
         print('%-18s OK!' % 'momentum'); test_opt(momentum(obj, params, 0.1, 0.9))
         print('%-18s OK!' % 'nesterov_momentum'); test_opt(nesterov_momentum(obj, params, 0.1, 0.9))

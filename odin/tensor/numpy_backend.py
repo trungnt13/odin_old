@@ -9,65 +9,26 @@ from __future__ import division, absolute_import, print_function
 import numpy as np
 import scipy as sp
 
-def np_pad_sequences(sequences, maxlen=None, dtype='int32',
-                  padding='pre', truncating='pre', value=0.):
-    '''
-    Pad each sequence to the same length:
-    the length of the longest sequence.
+# ===========================================================================
+# RandomStates
+# ===========================================================================
+_MAGIC_SEED = 12082518
+_SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
 
-    If maxlen is provided, any sequence longer than maxlen is truncated
-    to maxlen. Truncation happens off either the beginning (default) or
-    the end of the sequence.
+def set_magic_seed(seed):
+    global _MAGIC_SEED, _SEED_GENERATOR
+    _MAGIC_SEED = seed
+    _SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
 
-    Supports post-padding and pre-padding (default).
+def get_magic_seed():
+    return _MAGIC_SEED
 
-    Parameters:
-    -----------
-        sequences: list of lists where each element is a sequence
-        maxlen: int, maximum length
-        dtype: type to cast the resulting sequence.
-        padding: 'pre' or 'post', pad either before or after each sequence.
-        truncating: 'pre' or 'post', remove values from sequences larger than
-            maxlen either in the beginning or in the end of the sequence
-        value: float, value to pad the sequences to the desired value.
+def get_random_magic_seed():
+    return _SEED_GENERATOR.randint(10e6)
 
-    Returns:
-    -------
-    x: numpy array with dimensions (number_of_sequences, maxlen)
-
-    Example:
-    -------
-        > pad_sequences([[1,2,3],
-                         [1,2],
-                         [1,2,3,4]], maxlen=3, padding='post', truncating='pre')
-        > [[1,2,3],
-           [1,2,0],
-           [2,3,4]]
-    '''
-    lengths = [len(s) for s in sequences]
-
-    nb_samples = len(sequences)
-    if maxlen is None:
-        maxlen = np.max(lengths)
-
-    x = (np.ones((nb_samples, maxlen)) * value).astype(dtype)
-    for idx, s in enumerate(sequences):
-        if len(s) == 0:
-            continue # empty list was found
-        if truncating == 'pre':
-            trunc = s[-maxlen:]
-        elif truncating == 'post':
-            trunc = s[:maxlen]
-        else:
-            raise ValueError("Truncating type '%s' not understood" % padding)
-
-        if padding == 'post':
-            x[idx, :len(trunc)] = trunc
-        elif padding == 'pre':
-            x[idx, -len(trunc):] = trunc
-        else:
-            raise ValueError("Padding type '%s' not understood" % padding)
-    return x
+# ===========================================================================
+# Main
+# ===========================================================================
 
 def np_masked_output(X, X_mask):
     '''

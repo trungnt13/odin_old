@@ -9,12 +9,17 @@ import tensorflow as tf
 import numpy as np
 import os
 from collections import OrderedDict
-from .common import _FLOATX, _EPSILON
 
+from .. import config
+from .numpy_backend import get_random_magic_seed
+
+_FLOATX = config.floatX()
+_EPSILON = config.epsilon()
+
+# ===========================================================================
 # INTERNAL UTILS
-
+# ===========================================================================
 _SESSION = None
-
 
 def get_session():
     global _SESSION
@@ -26,11 +31,9 @@ def get_session():
             _SESSION = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=nb_thread))
     return _SESSION
 
-
 def _set_session(session):
     global _SESSION
     _SESSION = session
-
 
 # ===========================================================================
 # VARIABLE MANIPULATION
@@ -48,6 +51,9 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
         if ndim:
             shape = [None for _ in range(ndim)]
     return tf.placeholder(dtype, shape=shape, name=name)
+
+def is_placeholder(v):
+    return isinstance(v, tf.python.Tensor)
 
 def eval(x):
     '''Run a graph.
@@ -332,15 +338,15 @@ def repeat(x, n):
 def tile(x, n):
     return tf.tile(x, n)
 
-def flatten(x):
-    return tf.reshape(x, [-1])
-
-def batch_flatten(x):
-    '''Turn a n-D tensor into a 2D tensor where
+def flatten(x, outdim=2):
+    '''Turn a n-D tensor into a m-D tensor (m < n) where
     the first dimension is conserved.
     '''
-    x = tf.reshape(x, [-1, np.prod(x.get_shape()[1:].as_list())])
-    return x
+    if outdim == 1:
+        pattern = [-1]
+    else:
+        pattern = [-1, np.prod(x.get_shape()[(outdim - 1):].as_list())]
+    return tf.reshape(x, pattern)
 
 def expand_dims(x, dim=-1):
     '''Add a 1-sized dimension at index "dim".
@@ -392,6 +398,9 @@ class Function(object):
         assert type(inputs) in {list, tuple}
         if type(outputs) not in {list, tuple}:
             outputs = [outputs]
+            self._return_list = False
+        else:
+            self._return_list = True
         if isinstance(updates, OrderedDict):
             updates = updates.items()
         assert type(updates) in {list, tuple}
@@ -406,7 +415,9 @@ class Function(object):
         feed_dict = dict(zip(names, inputs))
         session = get_session()
         updated = session.run(self.outputs + self.updates, feed_dict=feed_dict)
-        return updated[:len(self.outputs)]
+        if self._return_list:
+            return updated[:len(self.outputs)]
+        return updated[0]
 
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
@@ -704,22 +715,61 @@ def pool2d(x, pool_size, strides=(1, 1),
         x = tf.cast(x, 'float64')
     return x
 
-
+# ===========================================================================
 # RANDOMNESS
+# ===========================================================================
+class _RandomWrapper(object):
+
+    def __init__(self, rng):
+        super(_RandomWrapper, self).__init__()
+        self._rng = np.random.RandomState(rng)
+
+    def normal(self, shape, mean, std):
+        return tf.random_normal(shape=shape, mean=mean, stddev=std,
+            dtype=_FLOATX, seed=self._rng.randint(10e6))
+
+    def uniform(self, shape, low, high):
+        return tf.random_uniform(shape=shape, minval=low, maxval=high,
+                             dtype=_FLOATX, seed=self._rng.randint(10e6))
+
+    def binomial(self, shape, p):
+        return tf.cast(
+            tf.less(
+                tf.random_uniform(shape=shape, minval=0., maxval=1.,
+                             dtype=_FLOATX, seed=self._rng.randint(10e6)),
+                p),
+            _FLOATX)
+
+def rng(seed=None):
+    if seed is None:
+        seed = get_random_magic_seed()
+    return _RandomWrapper(seed)
 
 def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
-        seed = np.random.randint(10e6)
+        seed = get_random_magic_seed()
     return tf.random_normal(shape, mean=mean, stddev=std,
                             dtype=dtype, seed=seed)
 
-
 def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
-        seed = np.random.randint(10e6)
+        seed = get_random_magic_seed()
     return tf.random_uniform(shape, minval=low, maxval=high,
                              dtype=dtype, seed=seed)
 
+def random_binomial(shape, p, dtype=_FLOATX, seed=None):
+    if seed is None:
+        seed = get_random_magic_seed()
+    return tf.cast(
+        tf.less(
+            tf.random_uniform(shape=shape, minval=0., maxval=1.,
+                         dtype=dtype, seed=seed),
+            p),
+        dtype)
+
+# ===========================================================================
+# Comparator
+# ===========================================================================
 def eq(x, y):
     """a == b"""
     return tf.equal(x, y)

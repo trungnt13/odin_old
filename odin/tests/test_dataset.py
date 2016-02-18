@@ -543,7 +543,7 @@ class DatasetTest(unittest.TestCase):
             for j in ds['a'].iter(128):
                 pass
         iter_time = time.time() - start
-        print('Write time:%.2f, Iter time:%.2f' % (write_time, iter_time / 13.))
+        print('\nWrite time:%.2f, Iter time:%.2f' % (write_time, iter_time / 13.))
 
         if os.path.exists('tmp.ds'):
             os.remove('tmp.ds')
@@ -566,7 +566,7 @@ class DatasetTest(unittest.TestCase):
             for j in ds['a'].iter(128):
                 pass
         iter_time = time.time() - start
-        print('Write time:%.2f, Iter time:%.2f' % (write_time, iter_time / 13.))
+        print('\nWrite time:%.2f, Iter time:%.2f' % (write_time, iter_time / 13.))
 
         if os.path.exists('tmp.ds'):
             os.remove('tmp.ds')

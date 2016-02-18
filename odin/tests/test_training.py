@@ -97,7 +97,7 @@ class ModelTest(unittest.TestCase):
         import lasagne
         # ====== create model ====== #
         m = model()
-        m.set_model(model_func, 'lasagne')
+        m.set_model(model_func)
 
         f_cost = m.create_cost(
             lambda y_pred, y_true: tensor.mean(tensor.square(y_pred - y_true), axis=-1))

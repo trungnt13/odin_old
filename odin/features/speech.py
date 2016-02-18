@@ -1,8 +1,6 @@
 from __future__ import print_function, division, absolute_import
 
 import numpy as np
-import soundfile
-import sidekit
 
 from collections import OrderedDict
 
@@ -102,7 +100,9 @@ def read(f, pcm = False):
     '''
     if pcm or (isinstance(f, str) and 'pcm' in f):
         return np.memmap(f, dtype=np.int16, mode='r')
-    return soundfile.read(f)
+
+    from soundfile import read
+    return read(f)
 
 def preprocess(signal, add_noise=False):
     if len(signal.shape) > 1:
@@ -118,6 +118,8 @@ def logmel(signal, fs, n_filters=40, n_ceps=13,
         delta1=True, delta2=True, energy=True,
         normalize=True, clean=True,
         vad=True, returnVAD=False):
+    import sidekit
+
     if len(signal.shape) > 1:
         signal = signal.ravel()
     # 1. Some const.
@@ -170,6 +172,8 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
         delta1=True, delta2=True, energy=True,
         normalize=True, clean=True,
         vad=True, returnVAD=False):
+    import sidekit
+
     # 1. Const.
     f_min = 0. # The minimal frequency of the filter bank
     f_max = fs / 2
@@ -220,6 +224,8 @@ def spectrogram(signal, fs, n_ceps=13, n_filters=40,
         win=0.025, shift=0.01,
         normalize=False, clean=True,
         vad=True, returnVAD=False):
+    import sidekit
+
     # 1. Const.
     f_min = 0. # The minimal frequency of the filter bank
     f_max = fs / 2

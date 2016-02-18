@@ -1,9 +1,10 @@
 from __future__ import print_function, absolute_import, division
 
-from matplotlib import pyplot as plt
 import numpy as np
 
 def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
+    from matplotlib import pyplot as plt
+
     title = 'Confusion matrix'
     cmap = plt.cm.Blues
 
@@ -67,6 +68,7 @@ def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None, keep
     >>> plt.show()
     '''
     from matplotlib import pyplot as plt
+
     if colormap is None:
         colormap = plt.cm.Greys
 
@@ -109,6 +111,7 @@ def plot_weights3D(x, colormap = "Greys", path=None):
     >>> dnntoolkit.visual.plot_conv_weights(x)
     '''
     from matplotlib import pyplot as plt
+
     if colormap is None:
         colormap = plt.cm.Greys
 

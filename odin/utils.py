@@ -1,33 +1,29 @@
 from __future__ import print_function, division, absolute_import
 
-from .base import OdinObject
 import os
 import numpy as np
 import types
 import time
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 from six.moves import zip, range
 from six import string_types
 # ===========================================================================
-# RandomStates
+# API helper
 # ===========================================================================
-_MAGIC_SEED = 12082518
-_SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
-
-def set_magic_seed(seed):
-    global _MAGIC_SEED
-    _MAGIC_SEED = seed
-
-def get_magic_seed():
-    return _MAGIC_SEED
-
-def set_seed_generator(seed):
-    global _SEED_GENERATOR
-    _SEED_GENERATOR = np.random.RandomState(seed)
-
-def seed_generate():
-    return _SEED_GENERATOR.randint(0, 10e8)
+def get_object_api(o):
+    model_inherit = reversed([str(i) for i in type.mro(type(o))])
+    for i in model_inherit:
+        if 'lasagne.' in i:
+            return 'lasagne'
+        elif 'keras.' in i:
+            import keras.models
+            if not isinstance(o, keras.models.Model):
+                raise ValueError('Only support binding keras Model instance')
+            return 'keras'
+        elif 'odin.' in i:
+            return 'odin'
+    raise ValueError('Currently not support API: %s' % str(model_inherit))
 
 # ===========================================================================
 # DAA
@@ -58,7 +54,7 @@ def _is_tags_match(func, tags, absolute=False):
         return False
     return True
 
-class frame(OdinObject):
+class frame(object):
 
     """
     Simple object to record data row in form:
@@ -491,7 +487,7 @@ def deserialize_sandbox(sandbox):
             environment[k] = v
     return environment
 
-class function(OdinObject):
+class function(object):
 
     """ Class handles save and load a function with its arguments
     Note
@@ -528,7 +524,9 @@ class function(OdinObject):
         return False
 
     def get_config(self):
-        config = super(function, self).get_config()
+        config = OrderedDict()
+        config['class'] = self.__class__.__name__
+
         import marshal
         from array import array
 

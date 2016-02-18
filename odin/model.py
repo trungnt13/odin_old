@@ -2,7 +2,7 @@ from __future__ import print_function, division, absolute_import
 from six.moves import range, zip
 
 from .base import OdinObject
-from .utils import function, frame
+from .utils import function, frame, get_object_api
 from . import tensor
 
 import os
@@ -378,7 +378,7 @@ class model(OdinObject):
         return self._model_var
 
     # ==================== Model ==================== #
-    def set_model(self, model, api, *args, **kwargs):
+    def set_model(self, model, *args, **kwargs):
         ''' Save a function that create your model.
 
         Parameters
@@ -394,21 +394,10 @@ class model(OdinObject):
         '''
         if not hasattr(model, '__call__'):
             raise NotImplementedError('Model must be a function return computational graph')
-        api = api.lower()
         func = function(model, *args, **kwargs)
         if self._model_func and self._model_func != func:
             self._need_update_model = True
-        # ====== Lasagne ====== #
-        if 'lasagne' in api:
-            self._api = 'lasagne'
-            self._model_func = func
-        # ====== Keras ====== #
-        elif 'keras' in api:
-            self._api = 'keras'
-            self._model_func = func
-        elif 'blocks' in api:
-            self._api = 'blocks'
-            raise ValueError('Currently not support API: %s' % self._api)
+        self._model_func = func
 
     def get_model(self, checkpoint=True):
         '''
@@ -433,6 +422,7 @@ class model(OdinObject):
             if self._model is None:
                 raise ValueError(
                     'Model\'s creator function doesn\'t return appropriate model')
+            self._api = get_object_api(self._model)
             self._need_update_model = False
             # reset all function
             self._pred_func = None

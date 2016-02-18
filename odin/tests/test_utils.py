@@ -3,7 +3,8 @@
 # ======================================================================
 from __future__ import print_function, division
 
-from ..utils import function, get_magic_seed, frame
+from ..utils import function, frame
+from ..tensor import get_magic_seed
 import unittest
 import cPickle
 
