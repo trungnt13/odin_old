@@ -2,6 +2,10 @@
 # This module is adpated from: https://github.com/fchollet/keras
 # Revision: @20728c9
 # Original work Copyright (c) 2014-2015 keras contributors
+# Some idea are also borrowed from Lasagne library
+# Original work Copyright (c) 2014-2015 Lasagne contributors
+# Some work are adapted from tensorfuse library
+# Original work Copyright (c) [dementrock](https://github.com/dementrock)
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
 
@@ -12,6 +16,8 @@ from collections import OrderedDict
 
 from .. import config
 from .numpy_backend import get_random_magic_seed
+
+from six.moves import range, zip
 
 _FLOATX = config.floatX()
 _EPSILON = config.epsilon()
@@ -35,6 +41,45 @@ def _set_session(session):
     global _SESSION
     _SESSION = session
 
+# From Theano
+def _format_as(use_list, use_tuple, outputs):
+    """
+    Formats the outputs according to the flags `use_list` and `use_tuple`.
+    If `use_list` is True, `outputs` is returned as a list (if `outputs`
+    is not a list or a tuple then it is converted in a one element list).
+    If `use_tuple` is True, `outputs` is returned as a tuple (if `outputs`
+    is not a list or a tuple then it is converted into a one element tuple).
+    Otherwise (if both flags are false), `outputs` is returned.
+    """
+    assert not (use_list and use_tuple), \
+        "Both flags cannot be simultaneously True"
+    if (use_list or use_tuple) and not isinstance(outputs, (list, tuple)):
+        if use_list:
+            return [outputs]
+        else:
+            return (outputs,)
+    elif not (use_list or use_tuple) and isinstance(outputs, (list, tuple)):
+        assert len(outputs) == 1, \
+            "Wrong arguments. Expected a one element list"
+        return outputs[0]
+    elif use_list or use_tuple:
+        if use_list:
+            return list(outputs)
+        else:
+            return tuple(outputs)
+    else:
+        return outputs
+
+def _wrap_into_list(x):
+    """
+    Wrap the input into a list if it is not already a list.
+    """
+    if x is None:
+        return []
+    elif not isinstance(x, (list, tuple)):
+        return [x]
+    else:
+        return list(x)
 # ===========================================================================
 # VARIABLE MANIPULATION
 # ===========================================================================
@@ -389,6 +434,9 @@ def get_value(x, borrow=False):
 def set_value(x, value):
     tf.assign(x, np.asarray(value)).op.run(session=get_session())
 
+def set_subtensor(x, y):
+    raise NotImplementedError
+
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
@@ -423,11 +471,221 @@ def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
 
 
-def gradients(loss, variables):
-    return tf.gradients(loss, variables)
+def gradients(loss, variables, consider_constant=None, known_grads=None):
+    """
+    Return symbolic gradients for one or more variables with respect to some
+    cost.
 
+    For more information about how automatic differentiation works in Theano,
+    see :mod:`gradient`. For information on how to implement the gradient of
+    a certain Op, see :func:`grad`.
 
+    Parameters
+    ----------
+    cost : scalar (0-dimensional) tensor variable or None
+        Value with respect to which we are differentiating.  May be
+        `None` if known_grads is provided.
+    wrt : variable or list of variables
+        term[s] for which we want gradients
+    consider_constant : list of expressions(variables)
+        expressions not to backpropagate through
+    known_grads : dict, optional
+        A dictionary mapping variables to their gradients. This is
+        useful in the case where you know the gradient on some
+        variables but do not know the original cost.
+    Returns
+    -------
+    variable or list/tuple of variables (matches `wrt`)
+        symbolic expression of gradient of `cost` with respect to each
+        of the `wrt` terms.  If an element of `wrt` is not
+        differentiable with respect to the output, then a zero
+        variable is returned.
+
+    """
+    if consider_constant is not None:
+        for i in consider_constant:
+            tf.stop_gradient(i)
+        raise NotImplementedError
+    grad = tf.gradients(loss, variables)
+    if known_grads is not None:
+        grad = [known_grads[i] if i in known_grads else j
+                for i, j in zip(variables, grad)]
+    return grad
+
+def jacobian(expression, wrt):
+    # copying theano's implementation, which is based on scan
+    #from theano.tensor import arange
+    # Check inputs have the right format
+    assert is_variable(expression), \
+        "tensor.jacobian expects a Variable as `expression`"
+    assert expression.ndim < 2, \
+        ("tensor.jacobian expects a 1 dimensional variable as "
+         "`expression`. If not use flatten to make it a vector")
+    assert not is_variable(expression.shape[0]), \
+        "shape of the expression must be known"
+
+    using_list = isinstance(wrt, list)
+    using_tuple = isinstance(wrt, tuple)
+
+    if isinstance(wrt, (list, tuple)):
+        wrt = list(wrt)
+    else:
+        wrt = [wrt]
+
+    if expression.ndim == 0:
+        # expression is just a scalar, use grad
+        return _format_as(using_list, using_tuple, gradients(expression, wrt))
+
+    def inner_function(*args):
+        idx = args[0]
+        expr = args[1]
+        rvals = []
+        for inp in args[2:]:
+            try:
+                rval = gradients(expr[idx], inp)
+            except Exception as e:
+                import ipdb; ipdb.set_trace()
+            if rval is None:
+                import ipdb; ipdb.set_trace()
+            rvals.append(rval)
+        return rvals
+    # Computing the gradients does not affect the random seeds on any random
+    # generator used n expression (because during computing gradients we are
+    # just backtracking over old values. (rp Jan 2012 - if anyone has a
+    # counter example please show me)
+    jacobs, updates = scan(inner_function,
+                           sequences=[range(expression.shape[0])],
+                           non_sequences=[expression] + wrt,
+                           n_steps=expression.shape[0])
+    assert not updates
+    return _format_as(using_list, using_tuple, jacobs)
+
+def hessian(expression, wrt):
+    raise NotImplementedError
+
+# ===========================================================================
 # CONTROL FLOW
+# ===========================================================================
+def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
+    n_steps=None, truncate_gradient=-1, go_backwards=False):
+    from operator import itemgetter
+    # n_steps must be provided under cgt or tensorflow
+    if n_steps is None:
+        raise ValueError(
+            'n_steps must be provided for scan to work under TensorFlow')
+    sequences = _wrap_into_list(sequences)
+    non_sequences = _wrap_into_list(non_sequences)
+    if outputs_info is not None:
+        outputs_info = _wrap_into_list(outputs_info)
+    if go_backwards and n_steps < 0:
+        go_backwards = False
+        n_steps = -n_steps
+    if go_backwards or n_steps < 0:
+        go_backwards = True
+        n_steps = abs(n_steps)
+    step_outputs = []
+    cur_output = outputs_info
+    loop_range = range(n_steps - 1, -1, -1) if go_backwards else range(n_steps)
+    for i in loop_range:
+        # Only pass output if needed
+        if outputs_info is not None:
+            cur_output = step_fn(*(map(itemgetter(i), sequences) + cur_output + non_sequences))
+        else:
+            cur_output = step_fn(*(map(itemgetter(i), sequences) + non_sequences))
+        step_outputs.append(cur_output)
+    outputs = []
+    try:
+        if len(step_outputs) > 0:
+            if outputs_info is None:
+                for i in range(len(step_outputs[0])):
+                    outputs.append(tf.pack(map(itemgetter(i), step_outputs)))
+                #outputs = step_outputs
+            else:
+                for i in range(len(outputs_info)):
+                    outputs.append(tf.pack(map(itemgetter(i), step_outputs)))
+        else:
+            import ipdb; ipdb.set_trace()
+    except Exception as e:
+        raise e
+    # This is quite ugly, but unfortunately it's what theano does
+    if len(outputs) > 1:
+        # update is not supported yet
+        return outputs, None
+    elif len(outputs) == 1:
+        return outputs[0], None
+    else:
+        return None, None
+
+def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
+         go_backwards=False):
+    """
+    Helper function to unroll for loops. Can be used to unroll theano.scan.
+    The parameter names are identical to theano.scan, please refer to here
+    for more information.
+
+    Note that this function does not support the truncate_gradient
+    setting from theano.scan.
+
+    Parameters
+    ----------
+    step_fn : function
+        Function that defines calculations at each step.
+
+    sequences : TensorVariable or list of TensorVariables
+        List of TensorVariable with sequence data. The function iterates
+        over the first dimension of each TensorVariable.
+
+    outputs_info : list of TensorVariables
+        List of tensors specifying the initial values for each recurrent
+        value.
+
+    non_sequences: list of TensorVariables
+        List of theano.shared variables that are used in the step function.
+
+    n_steps: int
+        Number of steps to unroll.
+
+    go_backwards: bool
+        If true the recursion starts at sequences[-1] and iterates
+        backwards.
+
+    Returns
+    -------
+    List of TensorVariables. Each element in the list gives the recurrent
+    values at each time step.
+
+    """
+    if not isinstance(sequences, (list, tuple)):
+        sequences = [sequences]
+
+    # When backwards reverse the recursion direction
+    counter = range(n_steps)
+    if go_backwards:
+        counter = counter[::-1]
+
+    output = []
+    prev_vals = outputs_info
+    for i in counter:
+        step_input = [s[i] for s in sequences] + prev_vals + non_sequences
+        out_ = step_fn(*step_input)
+        # The returned values from step can be either a TensorVariable,
+        # a list, or a tuple.  Below, we force it to always be a list.
+        if isinstance(out_, tf.python.Tensor):
+            out_ = [out_]
+        if isinstance(out_, tuple):
+            out_ = list(out_)
+        output.append(out_)
+        prev_vals = output[-1]
+
+    # iterate over each scan output and convert it to same format as scan:
+    # [[output11, output12,...output1n],
+    # [output21, output22,...output2n],...]
+    output_scan = []
+    for i in range(len(output[0])):
+        l = map(lambda x: tf.expand_dims(x[i], 0), output)
+        output_scan.append(tf.concat(0, l))
+
+    return output_scan
 
 def rnn(step_function, inputs, initial_states,
         go_backwards=False, mask=None):
@@ -535,8 +793,9 @@ def switch(condition, then_expression, else_expression):
                                            lambda: else_expression)
 
 
+# ===========================================================================
 # NN OPERATIONS
-
+# ===========================================================================
 def relu(x, alpha=0., max_value=None):
     '''ReLU.
 
@@ -552,14 +811,14 @@ def relu(x, alpha=0., max_value=None):
     x -= tf.constant(alpha, dtype=_FLOATX) * negative_part
     return x
 
+def linear(x):
+    return x
 
 def softmax(x):
     return tf.nn.softmax(x)
 
-
 def softplus(x):
     return tf.nn.softplus(x)
-
 
 def categorical_crossentropy(output, target, from_logits=False):
     '''Note: tf.nn.softmax_cross_entropy_with_logits

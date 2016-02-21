@@ -7,6 +7,7 @@ from .. import funcs
 from .. import tensor as T
 from .. import logger
 from .. import objectives
+from .. import optimizers
 
 import unittest
 
@@ -28,7 +29,7 @@ class FunctionsTest(unittest.TestCase):
         logger.set_enable(True)
 
     def test_dense_func(self):
-        d3 = funcs.Dense((None, 10), num_units=5)
+        d3 = funcs.Dense((None, 10), num_units=5, nonlinearity=T.linear)
         f_pred = T.function(d3.input_var, d3())
 
         x = np.random.rand(16, 10)
@@ -39,19 +40,32 @@ class FunctionsTest(unittest.TestCase):
         pred2 = np.round(np.dot(x, p), 6)
         self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
 
-        cost = d3.get_cost(
-            objectives=objectives.squared_loss,
-            unsupervised=False,
-            training=True)
+        # ====== only cost ====== #
+        cost, _ = d3.get_optimization(
+            objective=objectives.squared_loss,
+            training=False)
         f_cost = T.function(d3.input_var + d3.output_var, cost)
 
         cost1 = np.round(f_cost(x, y), 6)
         cost2 = np.round((np.dot(x, p) - y)**2, 6)
         self.assertLessEqual(np.sum(np.abs(cost1 - cost2)), 10e-5)
 
+        # ====== optimization ====== #
+        cost, updates = d3.get_optimization(
+            objective=objectives.mean_squared_loss,
+            optimizer=optimizers.sgd)
+        f_updates = T.function(
+            inputs=d3.input_var + d3.output_var,
+            outputs=cost,
+            updates=updates)
+        cost = []
+        for i in range(10):
+            cost.append(f_updates(x, y))
+        self.assertGreater(cost[:-1], cost[1:])
+
     def test_summation_merge(self):
-        d1 = funcs.Dense((None, 10), num_units=5)
-        d2 = funcs.Dense((None, 20), num_units=5)
+        d1 = funcs.Dense((None, 10), num_units=5, nonlinearity=T.linear)
+        d2 = funcs.Dense((None, 20), num_units=5, nonlinearity=T.linear)
         d3 = funcs.Summation((d1, d2))
 
         params = d3.get_params_value(True)

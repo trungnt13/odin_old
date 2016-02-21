@@ -1,5 +1,6 @@
 from __future__ import print_function, division, absolute_import
 
+import os
 import numpy as np
 from numpy.random import RandomState
 
@@ -7,6 +8,7 @@ from .base import OdinObject
 from .utils import create_batch, queue
 from .ie import get_file
 from .tensor import get_magic_seed
+from . import logger
 
 from six.moves import zip_longest
 from collections import defaultdict
@@ -482,7 +484,7 @@ class batch(object):
             return self._iter_slow(batch_size, start, end, shuffle, seed,
                                    mode)
 
-    def iter_len(self, mode):
+    def iter_len(self, mode=0):
         '''This methods return estimated iteration length'''
         self._is_dataset_init()
         if mode == 2: #upsampling
@@ -803,14 +805,20 @@ class dataset(OdinObject):
 
     # ==================== Static loading ==================== #
     @staticmethod
-    def load_mnist(path='https://s3.amazonaws.com/ai-datasets/mnist.hdf'):
+    def load_mnist(path='https://s3.amazonaws.com/ai-datasets/mnist.h5'):
         '''
         path : str
             local path or url to hdf5 datafile
         '''
-        datapath = get_file('mnist.hdf', path)
-        ds = dataset(datapath, mode='r')
-        ds.log('Loading data from: %s' % datapath, 20)
+        datapath = get_file('mnist.h5', path)
+        logger.info('Loading data from: %s' % datapath)
+        try:
+            ds = dataset(datapath, mode='r')
+        except:
+            if os.path.exist(datapath):
+                os.remove(datapath)
+            datapath = get_file('mnist.h5', path)
+            ds = dataset(datapath, mode='r')
         return ds
 
     def load_imdb(path):

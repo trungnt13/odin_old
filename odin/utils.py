@@ -8,23 +8,195 @@ from collections import defaultdict, OrderedDict
 
 from six.moves import zip, range
 from six import string_types
+
+from . import tensor as T
+
 # ===========================================================================
 # API helper
 # ===========================================================================
-def get_object_api(o):
-    model_inherit = reversed([str(i) for i in type.mro(type(o))])
-    for i in model_inherit:
-        if 'lasagne.' in i:
-            return 'lasagne'
-        elif 'keras.' in i:
-            import keras.models
-            if not isinstance(o, keras.models.Model):
-                raise ValueError('Only support binding keras Model instance')
-            return 'keras'
-        elif 'odin.' in i:
-            return 'odin'
-    raise ValueError('Currently not support API: %s' % str(model_inherit))
+def _hdf5_save_overwrite(hdf5, key, value):
+    if key in hdf5:
+        del hdf5[key]
+    hdf5[key] = value
 
+class api(object):
+
+    @staticmethod
+    def get_object_api(o):
+        '''Inspect the inheritant tree of object to find it highest API'''
+        model_inherit = reversed([str(i) for i in type.mro(type(o))])
+        for i in model_inherit:
+            if 'lasagne.' in i:
+                return 'lasagne'
+            elif 'keras.' in i:
+                import keras.models
+                if not isinstance(o, keras.models.Model):
+                    raise ValueError('Only support binding keras Model instance')
+                return 'keras'
+            elif 'odin.' in i:
+                return 'odin'
+        raise ValueError('Currently not support API: %s' % str(model_inherit))
+
+    @staticmethod
+    def load_weights(hdf5, api):
+        weights = []
+        if 'nb_weights' in hdf5:
+            if api == 'lasagne':
+                for i in range(hdf5['nb_weights'].value):
+                    weights.append(hdf5['weight_%d' % i].value)
+            elif api == 'keras':
+                for i in range(hdf5['nb_weights'].value):
+                    w = []
+                    for j in range(hdf5['nb_layers_%d' % i].value):
+                        w.append(hdf5['weight_%d_%d' % (i, j)].value)
+                    weights.append(w)
+            else:
+                raise ValueError('Currently not support API: %s' % api)
+        return weights
+
+    @staticmethod
+    def save_weights(hdf5, api, weights):
+        if api == 'lasagne':
+            _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
+            for i, w in enumerate(weights):
+                _hdf5_save_overwrite(hdf5, 'weight_%d' % i, w)
+        elif api == 'keras':
+            _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
+            for i, W in enumerate(weights):
+                _hdf5_save_overwrite(hdf5, 'nb_layers_%d' % i, len(W))
+                for j, w in enumerate(W):
+                    _hdf5_save_overwrite(hdf5, 'weight_%d_%d' % (i, j), w)
+        else:
+            raise ValueError('Currently not support API: %s' % api)
+
+    @staticmethod
+    def set_weights(model, weights, api):
+        if api == 'lasagne':
+            import lasagne
+            lasagne.layers.set_all_param_values(model, weights)
+        elif api == 'keras':
+            for l, w in zip(model.layers, weights):
+                l.set_weights(w)
+        else:
+            raise ValueError('Currently not support API: %s' % api)
+
+    @staticmethod
+    def get_params(model, trainable=None, regularizable=None):
+        if 'lasagne' in str(model.__class__):
+            import lasagne
+            tags = {}
+            if trainable is not None:
+                tags['trainable'] = trainable
+            if regularizable is not None:
+                tags['regularizable'] = regularizable
+            return lasagne.layers.get_all_params(model, **tags)
+        elif 'keras' in str(model.__class__):
+            weights = []
+            for l in model.layers:
+                if trainable is None:
+                    weights += l.trainable_weights + l.non_trainable_weights
+                elif trainable is True:
+                    weights += l.trainable_weights
+                else:
+                    weights += l.non_trainable_weights
+            return weights
+        else:
+            raise ValueError('Currently not support API')
+
+    @staticmethod
+    def get_params_value(model, trainable=None, regularizable=None):
+        if 'lasagne' in str(model.__class__):
+            import lasagne
+            tags = {}
+            if trainable is not None:
+                tags['trainable'] = trainable
+            if regularizable is not None:
+                tags['regularizable'] = regularizable
+            return lasagne.layers.get_all_param_values(model, **tags)
+        elif 'keras' in str(model.__class__):
+            weights = []
+            for l in model.layers:
+                if trainable is None:
+                    w = l.trainable_weights + l.non_trainable_weights
+                elif trainable is True:
+                    w = l.trainable_weights
+                else:
+                    w = l.non_trainable_weights
+                weights.append([T.get_value(i) for i in w])
+            return weights
+        else:
+            raise ValueError('Currently not support API')
+
+    @staticmethod
+    def convert_weights(model, weights, original_api, target_api):
+        W = []
+        if original_api == 'keras' and target_api == 'lasagne':
+            for w in weights:
+                W += w
+        elif original_api == 'lasagne' and target_api == 'keras':
+            count = 0
+            for l in model.layers:
+                n = len(l.trainable_weights + l.non_trainable_weights)
+                W.append([weights[i] for i in range(count, count + n)])
+                count += n
+        else:
+            raise ValueError('Currently not support API')
+        return W
+
+    @staticmethod
+    def get_variables(model, api):
+        '''For lasagne, X_train and X_pred is the same'''
+        if api == 'lasagne':
+            import lasagne
+            X_train = [l.input_var for l in lasagne.layers.find_layers(
+                model, types=lasagne.layers.InputLayer)]
+            X_pred = [l.input_var for l in lasagne.layers.find_layers(
+                model, types=lasagne.layers.InputLayer)]
+            y_pred = lasagne.layers.get_output(model, deterministic=True)
+            y_train = lasagne.layers.get_output(model, deterministic=False)
+        elif api == 'keras':
+            X_train = model.get_input(train=True)
+            if type(X_train) not in (list, tuple):
+                X_train = [X_train]
+            X_pred = model.get_input(train=False)
+            if type(X_pred) not in (list, tuple):
+                X_pred = [X_pred]
+            y_pred = model.get_output(train=False)
+            y_train = model.get_output(train=True)
+
+        y_true = T.placeholder(ndim=T.ndim(y_pred))
+        var = {}
+        var['X_train'] = X_train
+        var['X_pred'] = X_pred
+        var['y_true'] = y_true
+        var['y_pred'] = y_pred
+        var['y_train'] = y_train
+        return var
+
+    @staticmethod
+    def get_nlayers(model, api):
+        if api == 'lasagne':
+            import lasagne
+            return len([i for i in lasagne.layers.get_all_layers(model)
+                        if len(i.get_params(trainable=True)) > 0])
+        elif api == 'keras':
+            count = 0
+            for l in model.layers:
+                if len(l.trainable_weights) > 0:
+                    count += 1
+            return count
+        else:
+            raise ValueError('Currently not support API: %s' % api)
+
+    @staticmethod
+    def get_states_updates(model, api):
+        if api == 'lasagne':
+            updates = []
+        elif api == 'keras':
+            updates = model.state_updates
+        else:
+            raise ValueError('Currently not support API: %s' % api)
+        return updates
 # ===========================================================================
 # DAA
 # ===========================================================================

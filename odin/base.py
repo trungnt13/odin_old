@@ -12,7 +12,7 @@ from six.moves import zip, range
 
 from . import logger
 from . import tensor as T
-from .utils import get_object_api
+from .utils import api as API
 
 # ===========================================================================
 # Based class design
@@ -62,14 +62,19 @@ class OdinObject(object):
         else:
             logger.log(msg)
 
+    def raise_arguments(self, msg):
+        raise ValueError('[%s] ' % self.__class__.__name__ + msg)
+
+
 class OdinFunction(OdinObject):
     __metaclass__ = ABCMeta
 
     '''
     Properties
     ----------
-    input_shape : list(shape_tuple)
-        always a list of shape tuple
+    input_shape : list(shape_tuple, lasagne_layers, keras_model, odin_funciton,
+                       shared_variable)
+        always a list of input to the function
     input_function : list
         a list of theano, tensorflow expression or placeholder
     input_var : list
@@ -79,26 +84,47 @@ class OdinFunction(OdinObject):
 
     Parameters
     ----------
-    incoming : a :class:`OdinFunction` instance or a tuple
+    incoming : a :class:`OdinFunction`, Lasagne :class:`Layer` instance,
+               keras :class:`Models` instance, or a tuple
         The layer feeding into this layer, or the expected input shape.
+    unsupervised : bool
+        whether or not this is unsupervised model, this affect the output_var
+        will be the same as input_var(unsupervised) or based-on output_shape
+        (supervised)
+    strict_batch : bool
+        whether it is necessary to enforce similar batch size for training for
+        this function
     tags : a string, None or list of string
         An optional identifiers to attach to this layer.
 
     '''
 
-    def __init__(self, incoming, tags=None):
+    def __init__(self, incoming, unsupervised, strict_batch=False, tags=None):
         super(OdinFunction, self).__init__()
+        self._unsupervised = unsupervised
+        self._strict_batch = strict_batch
 
-        if isinstance(incoming, (tuple, list)) and \
-           isinstance(incoming[-1], int):
-            self.input_shape = [tuple(incoming)]
-            self.input_function = [None]
-        else:
-            if not isinstance(incoming, (tuple, list)):
-                incoming = [incoming]
-            self.input_function = incoming
-            self.input_shape = [i.output_shape for i in incoming]
+        # ====== parse incoming ====== #
+        if not isinstance(incoming, (tuple, list)) or \
+           isinstance(incoming[-1], (int, long, float)):
+           incoming = [incoming]
+        input_function = []
+        input_shape = []
+        for i in incoming:
+            if isinstance(i, (tuple, list)): # shape_tuple
+                input_function.append(None)
+                input_shape.append(
+                    tuple([j if j is None else int(j) for j in i]))
+            elif hasattr(i, 'output_shape'):
+                input_function.append(i)
+                input_shape.append(i.output_shape)
+            else:
+                self.raise_arguments(
+                    'Unsupport incomming type %s' % i.__class__)
+        self._input_function = input_function
+        self._input_shape = input_shape
 
+        # ====== other properties ====== #
         if not isinstance(tags, (tuple, list)):
             self.tags = [tags]
 
@@ -108,20 +134,82 @@ class OdinFunction(OdinObject):
         self._input_var = None
         self._output_var = None
 
+    # ==================== Helper private functions ==================== #
+    def _validation_optimization_params(self, objective, optimizer):
+        if objective is None or not hasattr(objective, '__call__'):
+            raise ValueError('objectives must be a function!')
+        if optimizer is not None and not hasattr(optimizer, '__call__'):
+            raise ValueError('optimizer must be a function!')
+
+    def _is_support_unsupervised(self):
+        input_shape = self._input_shape
+        output_shape = self.output_shape
+        if not isinstance(self.output_shape[-1], (tuple, list)):
+            output_shape = [output_shape]
+        return input_shape == output_shape
+
+    def _deterministic_optimization_procedure(self, objective, optimizer,
+                                              globals, training):
+        self._validation_optimization_params(objective, optimizer)
+        y_pred = self(training=training)
+        output_var = self.output_var
+        obj = objective(y_pred, *output_var)
+        if optimizer is None:
+            opt = None
+        else:
+            opt = optimizer(obj, self.get_params(globals=globals, trainable=True))
+        return obj, opt
+
     # ==================== Abstract methods ==================== #
     @abstractproperty
     def output_shape(self):
         raise NotImplementedError
 
     @abstractmethod
-    def get_cost(self, objectives=None, training=True):
+    def __call__(self, training=False, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, training=False):
+    def get_optimization(self, objective=None, optimizer=None,
+                         globals=True, training=True):
+        '''
+        Parameters
+        ----------
+        objective : function
+            often a function(y_pred, y_true) for supervised function, however,
+            can have different form for unsupervised task
+        optimizer : function (optional)
+            function(loss_or_grads, params)
+        globals : bool
+            training on globals' parameters, or just optimize locals' parameters
+        training : bool
+            use output for training or output for prediction (in production)
+
+        Return
+        ------
+        cost, updates : computational expression, OrderDict
+            cost for monitoring the training process, and the update for the
+            optimization
+        '''
         raise NotImplementedError
 
     # ==================== Built-in ==================== #
+    @property
+    def strict_batch(self):
+        return self._strict_batch
+
+    @property
+    def input_shape(self):
+        return self._input_shape
+
+    @property
+    def input_function(self):
+        return self._input_function
+
+    @property
+    def unsupervised(self):
+        return self._unsupervised
+
     @property
     def input_var(self):
         '''
@@ -133,13 +221,13 @@ class OdinFunction(OdinObject):
 
         if self._input_var is None:
             self._input_var = []
-            for i, j in zip(self.input_function, self.input_shape):
+            for i, j in zip(self._input_function, self._input_shape):
                 if i is None:
                     self._input_var.append(T.placeholder(shape=j))
                 elif T.is_placeholder(i):
                     self._input_var.append(i)
-                else:
-                    api = get_object_api(i)
+                else: # input from API layers
+                    api = API.get_object_api(i)
                     if api == 'lasagne':
                         import lasagne
                         self._input_var += [l.input_var
@@ -158,10 +246,18 @@ class OdinFunction(OdinObject):
     @property
     def output_var(self):
         if self._output_var is None:
-            outshape = self.output_shape
-            if not isinstance(outshape[0], (tuple, list)):
-                outshape = [outshape]
-            self._output_var = [T.placeholder(ndim=len(i)) for i in outshape]
+            if self.unsupervised:
+                if not self._is_support_unsupervised():
+                    self.raise_arguments(
+                        'Unsupervised function must has output_shape identical \
+                        to input_shape')
+                self._output_var = self.input_var
+            else:
+                outshape = self.output_shape
+                if not isinstance(outshape[0], (tuple, list)):
+                    outshape = [outshape]
+                self._output_var = [T.placeholder(ndim=len(i))
+                                    for i in outshape]
         return self._output_var
 
     def get_inputs(self, training=True):
@@ -181,13 +277,13 @@ class OdinFunction(OdinObject):
         '''
         inputs = []
 
-        for i in self.input_function:
+        for i in self._input_function:
             # this is InputLayer
             if i is None or T.is_placeholder(i):
                 return self.input_var
             # this is expression
             else:
-                api = get_object_api(i)
+                api = API.get_object_api(i)
                 if api == 'lasagne':
                     import lasagne
                     inputs.append(lasagne.layers.get_output(i, deterministic=(not training)))
@@ -195,14 +291,14 @@ class OdinFunction(OdinObject):
                     inputs.append(i.get_output(train=training))
                 elif api == 'odin':
                     inputs.append(i(training=training))
-                elif T.is_variable(self.input_function):
+                elif T.is_variable(self._input_function):
                     inputs.append(i)
         return inputs
 
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
         if globals:
-            for i in self.input_function:
+            for i in self._input_function:
                 if i is not None:
                     params += i.get_params(globals, trainable, regularizable)
 
@@ -231,12 +327,6 @@ class OdinFunction(OdinObject):
         self.get_params(globals, trainable, regularizable)]
 
     def create_params(self, spec, shape, name, regularizable, trainable):
-        shape = tuple(shape)  # convert to tuple if needed
-        if any(d <= 0 for d in shape):
-            raise ValueError((
-                "Cannot create param with a non-positive shape dimension. "
-                "Tried to create param with shape=%r, name=%r") % (shape, name))
-
         if T.is_variable(spec):
             # We cannot check the shape here, Theano expressions (even shared
             # variables) do not have a fixed compile-time shape. We can check the
@@ -244,15 +334,22 @@ class OdinFunction(OdinObject):
             # Note that we cannot assign a name here. We could assign to the
             # `name` attribute of the variable, but the user may have already
             # named the variable and we don't want to override this.
-            if T.ndim(spec) != len(shape):
+            if shape is not None and T.ndim(spec) != len(shape):
                 raise RuntimeError("parameter variable has %d dimensions, "
                                    "should be %d" % (spec.ndim, len(shape)))
         elif isinstance(spec, np.ndarray):
-            if spec.shape != shape:
+            if shape is not None and spec.shape != shape:
                 raise RuntimeError("parameter array has shape %s, should be "
                                    "%s" % (spec.shape, shape))
             spec = T.variable(spec, name=name)
         elif hasattr(spec, '__call__'):
+            shape = tuple(shape)  # convert to tuple if needed
+            if any(d <= 0 for d in shape):
+                raise ValueError((
+                    "Cannot create param with a non-positive shape dimension. "
+                    "Tried to create param with shape=%r, name=%r") %
+                    (shape, name))
+
             arr = spec(shape)
             if T.is_variable(arr):
                 spec = arr

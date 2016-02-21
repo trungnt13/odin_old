@@ -65,7 +65,7 @@ def get_or_compute_grads(loss_or_grads, params):
         return T.gradients(loss_or_grads, params)
 
 
-def sgd(loss_or_grads, params, learning_rate):
+def sgd(loss_or_grads, params, learning_rate=0.1):
     """Stochastic Gradient Descent (SGD) updates
 
     Generates update expressions of the form:
@@ -142,7 +142,7 @@ def apply_momentum(updates, params=None, momentum=0.9):
     return updates
 
 
-def momentum(loss_or_grads, params, learning_rate, momentum=0.9):
+def momentum(loss_or_grads, params, learning_rate=0.1, momentum=0.9):
     """Stochastic Gradient Descent (SGD) updates with momentum
 
     Generates update expressions of the form:
@@ -234,7 +234,7 @@ def apply_nesterov_momentum(updates, params=None, momentum=0.9):
     return updates
 
 
-def nesterov_momentum(loss_or_grads, params, learning_rate, momentum=0.9):
+def nesterov_momentum(loss_or_grads, params, learning_rate=0.1, momentum=0.9):
     """Stochastic Gradient Descent (SGD) updates with Nesterov momentum
 
     Generates update expressions of the form:

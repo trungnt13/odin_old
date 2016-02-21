@@ -1,6 +1,45 @@
 from __future__ import print_function, absolute_import, division
 
 import numpy as np
+from six.moves import zip, range
+
+def plot_images(x, fig=None, titles=None, path=None):
+    from matplotlib import pyplot as plt
+    if x.ndim == 3 or x.ndim == 2:
+        cmap = plt.cm.Greys_r
+    elif x.ndim == 4:
+        cmap = None
+    else:
+        raise ValueError('NO support for %d dimensions image!' % x.ndim)
+
+    if x.ndim == 2:
+        ncols = 1
+        nrows = 1
+    else:
+        ncols = int(np.ceil(np.sqrt(x.shape[0])))
+        nrows = int(ncols)
+
+    if fig is None:
+        fig = plt.figure()
+    if titles is not None:
+        if not isinstance(titles, (tuple, list)):
+            titles = [titles]
+        if len(titles) != x.shape(0):
+            raise ValueError('Titles must have the same length with \
+                the number of images!')
+
+    for i in range(ncols):
+        for j in range(nrows):
+            idx = i * ncols + j
+            if idx < x.shape[0]:
+                subplot = fig.add_subplot(nrows, ncols, idx + 1)
+                subplot.imshow(x[idx], cmap=cmap)
+                if titles is not None:
+                    subplot.set_title(titles[idx])
+                subplot.axis('off')
+    if path:
+        plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
+    return fig
 
 def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
     from matplotlib import pyplot as plt
@@ -30,7 +69,8 @@ def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
     # axis.tight_layout()
     return axis
 
-def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None, keep_aspect=True):
+def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None,
+    keep_aspect=True):
     '''
     Parameters
     ----------
@@ -127,8 +167,8 @@ def plot_weights3D(x, colormap = "Greys", path=None):
 
     fig = plt.figure()
     count = 0
-    for i in xrange(nrows):
-        for j in xrange(ncols):
+    for i in range(nrows):
+        for j in range(ncols):
             count += 1
             # skip
             if x.ndim == 3 and count > shape[0]:

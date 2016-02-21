@@ -2,7 +2,8 @@ from __future__ import print_function, division, absolute_import
 from six.moves import range, zip
 
 from .base import OdinObject
-from .utils import function, frame, get_object_api
+from .utils import function, frame
+from .utils import api as API
 from . import tensor
 
 import os
@@ -20,102 +21,6 @@ def _hdf5_save_overwrite(hdf5, key, value):
     if key in hdf5:
         del hdf5[key]
     hdf5[key] = value
-
-def _load_weights(hdf5, api):
-    weights = []
-    if 'nb_weights' in hdf5:
-        if api == 'lasagne':
-            for i in range(hdf5['nb_weights'].value):
-                weights.append(hdf5['weight_%d' % i].value)
-        elif api == 'keras':
-            for i in range(hdf5['nb_weights'].value):
-                w = []
-                for j in range(hdf5['nb_layers_%d' % i].value):
-                    w.append(hdf5['weight_%d_%d' % (i, j)].value)
-                weights.append(w)
-        else:
-            raise ValueError('Currently not support API: %s' % api)
-    return weights
-
-def _save_weights(hdf5, api, weights):
-    if api == 'lasagne':
-        _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
-        for i, w in enumerate(weights):
-            _hdf5_save_overwrite(hdf5, 'weight_%d' % i, w)
-    elif api == 'keras':
-        _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
-        for i, W in enumerate(weights):
-            _hdf5_save_overwrite(hdf5, 'nb_layers_%d' % i, len(W))
-            for j, w in enumerate(W):
-                _hdf5_save_overwrite(hdf5, 'weight_%d_%d' % (i, j), w)
-    else:
-        raise ValueError('Currently not support API: %s' % api)
-
-def _set_weights(model, weights, api):
-    if api == 'lasagne':
-        import lasagne
-        lasagne.layers.set_all_param_values(model, weights)
-    elif api == 'keras':
-        for l, w in zip(model.layers, weights):
-            l.set_weights(w)
-    else:
-        raise ValueError('Currently not support API: %s' % api)
-
-def _get_weights(model):
-    if 'lasagne' in str(model.__class__):
-        import lasagne
-        return lasagne.layers.get_all_param_values(model)
-    elif 'keras' in str(model.__class__):
-        weights = []
-        for l in model.layers:
-            weights.append(l.get_weights())
-        return weights
-    else:
-        raise ValueError('Currently not support API')
-
-def _convert_weights(model, weights, original_api, target_api):
-    W = []
-    if original_api == 'keras' and target_api == 'lasagne':
-        for w in weights:
-            W += w
-    elif original_api == 'lasagne' and target_api == 'keras':
-        count = 0
-        for l in model.layers:
-            n = len(l.trainable_weights + l.non_trainable_weights)
-            W.append([weights[i] for i in range(count, count + n)])
-            count += n
-    else:
-        raise ValueError('Currently not support API')
-    return W
-
-def _get_variables(model, api):
-    '''For lasagne, X_train and X_pred is the same'''
-    if api == 'lasagne':
-        import lasagne
-        X_train = [l.input_var for l in lasagne.layers.find_layers(
-            model, types=lasagne.layers.InputLayer)]
-        X_pred = [l.input_var for l in lasagne.layers.find_layers(
-            model, types=lasagne.layers.InputLayer)]
-        y_pred = lasagne.layers.get_output(model, deterministic=True)
-        y_train = lasagne.layers.get_output(model, deterministic=False)
-    elif api == 'keras':
-        X_train = model.get_input(train=True)
-        if type(X_train) not in (list, tuple):
-            X_train = [X_train]
-        X_pred = model.get_input(train=False)
-        if type(X_pred) not in (list, tuple):
-            X_pred = [X_pred]
-        y_pred = model.get_output(train=False)
-        y_train = model.get_output(train=True)
-    y_true = tensor.placeholder(ndim=tensor.ndim(y_pred))
-
-    var = {}
-    var['X_train'] = X_train
-    var['X_pred'] = X_pred
-    var['y_true'] = y_true
-    var['y_pred'] = y_pred
-    var['y_train'] = y_train
-    return var
 
 # ===========================================================================
 # Eearly stopping
@@ -322,11 +227,11 @@ class model(OdinObject):
             if self._model:
                 # convert weights between api
                 if api and api != self._api:
-                    self._weights = _convert_weights(
+                    self._weights = API.convert_weights(
                         self._model, weights, api, self._api)
                 else:
                     self._weights = weights
-                _set_weights(self._model, self._weights, self._api)
+                API.set_weights(self._model, self._weights, self._api)
             elif api is not None:
                 raise ValueError('Cannot convert weights when model haven\'t created!')
         # ====== fetch new weights directly ====== #
@@ -342,7 +247,7 @@ class model(OdinObject):
         # create model to have weights
         self.get_model()
         # always update the newest weights of model
-        self._weights = _get_weights(self._model)
+        self._weights = API.get_params_value(self._model)
         return self._weights
 
     def get_nweights(self):
@@ -359,19 +264,7 @@ class model(OdinObject):
     def get_nlayers(self):
         ''' Return number of layers (only layers with trainable params) '''
         self.get_model()
-        if self._api == 'lasagne':
-            import lasagne
-            return len([i for i in lasagne.layers.get_all_layers(self._model)
-                        if len(i.get_params(trainable=True)) > 0])
-        elif self._api == 'keras':
-            count = 0
-            for l in self._model.layers:
-                if len(l.trainable_weights) > 0:
-                    count += 1
-            return count
-        else:
-            raise ValueError('Currently not support API: %s' % self._api)
-        return 0
+        return API.get_nlayers(self._model, self._api)
 
     def get_vars(self):
         self.get_model()
@@ -422,7 +315,7 @@ class model(OdinObject):
             if self._model is None:
                 raise ValueError(
                     'Model\'s creator function doesn\'t return appropriate model')
-            self._api = get_object_api(self._model)
+            self._api = API.get_object_api(self._model)
             self._need_update_model = False
             # reset all function
             self._pred_func = None
@@ -431,7 +324,7 @@ class model(OdinObject):
             # ====== load old weight ====== #
             if len(self._weights) > 0:
                 try:
-                    _set_weights(self._model, self._weights, self._api)
+                    API.set_weights(self._model, self._weights, self._api)
                     self.log('*** Successfully load old weights ***', 20)
                 except Exception, e:
                     self.log('*** Cannot load old weights ***', 50)
@@ -443,14 +336,14 @@ class model(OdinObject):
                 if self._save_path is not None and checkpoint:
                     f = h5py.File(self._save_path, mode='a')
                     try:
-                        _save_weights(f, self._api, weights)
+                        API.save_weights(f, self._api, weights)
                         self.log('*** Created checkpoint ... ***', 20)
                     except Exception, e:
                         self.log('Error Creating checkpoint: %s' % str(e), 40)
                         raise e
                     f.close()
             # ====== store model's variables ====== #
-            self._model_var = _get_variables(self._model, self._api)
+            self._model_var = API.get_variables(self._model, self._api)
         return self._model
 
     # ==================== Network function ==================== #
@@ -460,12 +353,7 @@ class model(OdinObject):
         # ====== Create prediction function ====== #
         if not self._pred_func:
             var = self._model_var
-            if self._api == 'lasagne':
-                updates = []
-            elif self._api == 'keras':
-                updates = self._model.state_updates
-            else:
-                raise ValueError('Currently not support API: %s' % self._api)
+            updates = API.get_states_updates(self._model, self._api)
             # create prediction function
             self._pred_func = tensor.function(
                 inputs=var['X_pred'],
@@ -493,12 +381,7 @@ class model(OdinObject):
            self._cost_func_old != cost_func:
             self._cost_func_old = cost_func
             var = self._model_var
-            if self._api == 'lasagne':
-                updates = []
-            elif self._api == 'keras':
-                updates = self._model.state_updates
-            else:
-                raise ValueError('Currently not support API: %s' % self._api)
+            updates = API.get_states_updates(self._model, self._api)
             # create cost function
             cost = cost_func(var['y_pred'], var['y_true'])
             self._cost_func = tensor.function(
@@ -533,13 +416,7 @@ class model(OdinObject):
             var = self._model_var
             # always take mean
             obj = tensor.mean(objective_func(var['y_pred'], var['y_true']))
-            if self._api == 'lasagne':
-                import lasagne
-                params = lasagne.layers.get_all_params(self._model, trainable=True)
-            elif self._api == 'keras':
-                params = self._model.trainable_weights
-            else:
-                raise ValueError('Currently not support API: %s' % self._api)
+            params = API.get_params(self._model, trainable=True)
             # create updates function
             updates = updates_func(obj, params)
             self._updates_func = tensor.function(
@@ -580,11 +457,11 @@ class model(OdinObject):
             f = h5py.File(self._save_path, 'r')
 
             # rollback weights
-            weights = _load_weights(f, self._api)
+            weights = API.load_weights(f, self._api)
             if len(weights) > 0:
                 self._weights = weights
                 if self._model is not None:
-                    _set_weights(self._model, self._weights, self._api)
+                    API.set_weights(self._model, self._weights, self._api)
                     self.log(' *** Weights rolled-back! ***', 20)
 
             # rollback history
@@ -743,7 +620,7 @@ class model(OdinObject):
         # ====== save weights ====== #
         # check weights, always fetch newest weights from model
         weights = self.get_weights()
-        _save_weights(f, self._api, weights)
+        API.save_weights(f, self._api, weights)
 
         f.close()
 
@@ -775,7 +652,7 @@ class model(OdinObject):
                 cPickle.loads(f['model_func'].value))
         else: m._model_func = None
         # ====== load weights ====== #
-        m._weights = _load_weights(f, m._api)
+        m._weights = API.load_weights(f, m._api)
 
         f.close()
         return m

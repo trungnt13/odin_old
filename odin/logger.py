@@ -185,7 +185,7 @@ def log(*anything, **kwargs):
 _last_progress_idx = None
 _progress_map = {}
 
-def progress(p, max_val=1.0,
+def progress(p, max_val,
              title='Progress', bar='=',
              newline=False, idx='default',
              titlelen=13):

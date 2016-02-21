@@ -2,6 +2,8 @@
 # This module is adpated from: https://github.com/fchollet/keras
 # Revision: @7b72163
 # Original work Copyright (c) 2014-2015 keras contributors
+# Some idea are also borrowed from Lasagne library
+# Original work Copyright (c) 2014-2015 Lasagne contributors
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
 
@@ -396,18 +398,22 @@ def get_value(x, borrow=False):
                         "If you have an expression instead, use eval().")
     return x.get_value(borrow=borrow)
 
-
 def set_value(x, value):
     x.set_value(np.asarray(value, dtype=x.dtype))
 
+def set_subtensor(x, y):
+    return T.set_subtensor(x, y)
 
+# ===========================================================================
 # GRAPH MANIPULATION
-
+# ===========================================================================
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[], **kwargs):
-        self.function = theano.function(inputs, outputs, updates=updates,
-                                        allow_input_downcast=True, **kwargs)
+        self.function = theano.function(
+            inputs, outputs,
+            updates=updates,
+            allow_input_downcast=True, **kwargs)
 
     def __call__(self, *inputs):
         return self.function(*inputs)
@@ -416,14 +422,146 @@ class Function(object):
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
 
+def gradients(loss, variables, consider_constant=None, known_grads=None):
+    """
+    Return symbolic gradients for one or more variables with respect to some
+    cost.
 
-def gradients(loss, variables):
-    return T.grad(loss, variables)
+    For more information about how automatic differentiation works in Theano,
+    see :mod:`gradient`. For information on how to implement the gradient of
+    a certain Op, see :func:`grad`.
 
+    Parameters
+    ----------
+    cost : scalar (0-dimensional) tensor variable or None
+        Value with respect to which we are differentiating.  May be
+        `None` if known_grads is provided.
+    wrt : variable or list of variables
+        term[s] for which we want gradients
+    consider_constant : list of expressions(variables)
+        expressions not to backpropagate through
+    known_grads : dict, optional
+        A dictionary mapping variables to their gradients. This is
+        useful in the case where you know the gradient on some
+        variables but do not know the original cost.
+    Returns
+    -------
+    variable or list/tuple of variables (matches `wrt`)
+        symbolic expression of gradient of `cost` with respect to each
+        of the `wrt` terms.  If an element of `wrt` is not
+        differentiable with respect to the output, then a zero
+        variable is returned.
+
+    Example
+    -------
+    >>> # For consider_constant:
+    >>> a = T.variable(1.2)
+    >>> b = T.variable(1.3)
+    >>> x = a * b
+    >>>
+    >>> y = T.variable(2.)
+    >>> z = T.variable(1.)
+    >>>
+    >>> z_pred = x * y
+    >>> loss = T.pow((z - z_pred), 2)
+    >>>
+    >>> G = T.gradients(loss, [a, b, y], consider_constant=[x])
+    >>>
+    >>> for g in G:
+    >>>     print(g.eval())
+    >>> # a_grad=0. b_grad=0. y_grad=6.614
+    """
+    return T.grad(loss, variables,
+        consider_constant=consider_constant, known_grads=known_grads,
+        disconnected_inputs='warn')
+
+def jacobian(loss, variables):
+    return theano.gradient.jacobian(loss, variables, disconnected_inputs='warn')
+
+def hessian(loss, variables):
+    return theano.gradient.hessian(loss, variables, disconnected_inputs='warn')
 
 # ===========================================================================
 # CONTROL FLOW
 # ===========================================================================
+def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
+    n_steps=None, truncate_gradient=-1, go_backwards=False):
+    return theano.scan(step_fn,
+        sequences, outputs_info, non_sequences,
+        n_steps=n_steps, truncate_gradient=truncate_gradient,
+        go_backwards=go_backwards)
+
+def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
+         go_backwards=False):
+    """
+    Helper function to unroll for loops. Can be used to unroll theano.scan.
+    The parameter names are identical to theano.scan, please refer to here
+    for more information.
+
+    Note that this function does not support the truncate_gradient
+    setting from theano.scan.
+
+    Parameters
+    ----------
+    step_fn : function
+        Function that defines calculations at each step.
+
+    sequences : TensorVariable or list of TensorVariables
+        List of TensorVariable with sequence data. The function iterates
+        over the first dimension of each TensorVariable.
+
+    outputs_info : list of TensorVariables
+        List of tensors specifying the initial values for each recurrent
+        value.
+
+    non_sequences: list of TensorVariables
+        List of theano.shared variables that are used in the step function.
+
+    n_steps: int
+        Number of steps to unroll.
+
+    go_backwards: bool
+        If true the recursion starts at sequences[-1] and iterates
+        backwards.
+
+    Returns
+    -------
+    List of TensorVariables. Each element in the list gives the recurrent
+    values at each time step.
+
+    """
+    if not isinstance(sequences, (list, tuple)):
+        sequences = [sequences]
+
+    # When backwards reverse the recursion direction
+    counter = range(n_steps)
+    if go_backwards:
+        counter = counter[::-1]
+
+    output = []
+    prev_vals = outputs_info
+    for i in counter:
+        step_input = [s[i] for s in sequences] + prev_vals + non_sequences
+        out_ = step_fn(*step_input)
+        # The returned values from step can be either a TensorVariable,
+        # a list, or a tuple.  Below, we force it to always be a list.
+        if isinstance(out_, T.TensorVariable):
+            out_ = [out_]
+        if isinstance(out_, tuple):
+            out_ = list(out_)
+        output.append(out_)
+        prev_vals = output[-1]
+
+    # iterate over each scan output and convert it to same format as scan:
+    # [[output11, output12,...output1n],
+    # [output21, output22,...output2n],...]
+    output_scan = []
+    for i in range(len(output[0])):
+        l = map(lambda x: x[i], output)
+        output_scan.append(T.stack(*l))
+
+    return output_scan
+
 def rnn(step_function, inputs, initial_states,
         go_backwards=False, mask=None):
     '''Iterates over the time dimension of a tensor.
@@ -525,8 +663,9 @@ def switch(condition, then_expression, else_expression):
     return T.switch(condition, then_expression, else_expression)
 
 
+# ===========================================================================
 # NN OPERATIONS
-
+# ===========================================================================
 def relu(x, alpha=0., max_value=None):
     assert hasattr(T.nnet, 'relu'), ('It looks like like your version of '
                                      'Theano is out of date. '
@@ -537,14 +676,14 @@ def relu(x, alpha=0., max_value=None):
         x = T.minimum(x, max_value)
     return x
 
-
 def softmax(x):
     return T.nnet.softmax(x)
-
 
 def softplus(x):
     return T.nnet.softplus(x)
 
+def linear(x):
+    return x
 
 def categorical_crossentropy(output, target, from_logits=False):
     if from_logits:
