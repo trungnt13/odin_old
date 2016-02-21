@@ -132,6 +132,7 @@ class RBM(OdinFunction):
         X = inputs[0]
         if T.ndim(X) > 2:
             X = T.flatten(X, 2)
+        self._last_inputs = [X] # must update last inputs because we reshape X
 
         # ====== Training ====== #
         if training:
@@ -232,7 +233,7 @@ class RBM(OdinFunction):
 
         cost = T.mean(self.free_energy(X)) - T.mean(self.free_energy(chain_end))
         if optimizer is None:
-            return cost, None
+            return cost, updates
 
         params = self.get_params(globals=globals, trainable=True)
         # We must not compute the gradient through the gibbs sampling
