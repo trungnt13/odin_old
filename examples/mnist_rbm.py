@@ -24,10 +24,10 @@ def test_rbm():
     )
 
     cost = []
-    batch_size = 20
+    batch_size = 64
     niter = ds['X_train'].iter_len() / batch_size
-    for i, x in enumerate(ds['X_train'].iter(batch_size)):
-        x = x.astype(int)
+    for i, x in enumerate(ds['X_train'].iter(batch_size, seed=13)):
+        # x = x.astype(int) # this one can mess up the whole training process
         cost.append(train_rbm(x))
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])
     odin.visual.print_bar(cost, bincount=20)
@@ -54,4 +54,4 @@ def test_rbm():
         raw_input('<Enter>')
         plt.close('all')
 
-test_rbm()
+# test_rbm()
