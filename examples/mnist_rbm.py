@@ -17,6 +17,8 @@ def test_rbm():
     rbm = odin.funcs.RBM(input_, 500, persistent=persistent_chain)
     print(rbm.get_params(True))
     print(rbm.get_params(False))
+    print('Input variables:', rbm.input_var)
+    print('Output variables:', rbm.output_var)
     sgd = lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01)
     cost, updates = rbm.get_optimization(optimizer=sgd, globals=True)
     print('Building functions...')

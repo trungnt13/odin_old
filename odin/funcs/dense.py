@@ -37,10 +37,9 @@ class Dense(OdinFunction):
         return self._deterministic_optimization_procedure(
             objective, optimizer, globals, training)
 
-    def __call__(self, training=False, **kwargs):
-        X = self.get_inputs(training=True)
+    def _call(self, training, inputs, **kwargs):
         activation = T.castX(0.)
-        for x in X:
+        for x in inputs:
             if T.ndim(x) > 2:
                 # if the input has more than two dimensions, flatten it into a
                 # batch of feature vectors.

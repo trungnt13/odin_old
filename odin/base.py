@@ -80,7 +80,8 @@ class OdinFunction(OdinObject):
     input_var : list
         list of placeholders for input of this functions
     output_var : list
-        list of placeholders for output of this functions
+        list of placeholders for output of this functions, None if the function
+        is unsupervised function
 
     Parameters
     ----------
@@ -121,7 +122,7 @@ class OdinFunction(OdinObject):
             else:
                 self.raise_arguments(
                     'Unsupport incomming type %s' % i.__class__)
-        self._input_function = input_function
+        self._incoming = input_function
         self._input_shape = input_shape
 
         # ====== other properties ====== #
@@ -131,7 +132,11 @@ class OdinFunction(OdinObject):
         self.params = OrderedDict()
         self.params_tags = OrderedDict()
 
+        # store ALL placeholder necessary for inputs of this Function
         self._input_var = None
+        #{index : placeholder}, store placeholder created by this Function
+        self._local_input_var = {}
+
         self._output_var = None
 
     # ==================== Helper private functions ==================== #
@@ -146,7 +151,9 @@ class OdinFunction(OdinObject):
         output_shape = self.output_shape
         if not isinstance(self.output_shape[-1], (tuple, list)):
             output_shape = [output_shape]
-        return input_shape == output_shape
+        return input_shape == output_shape or \
+        (len(input_shape) == len(output_shape) and
+         np.prod(input_shape[1:]) == np.prod(output_shape[1:]))
 
     def _deterministic_optimization_procedure(self, objective, optimizer,
                                               globals, training):
@@ -173,7 +180,7 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, training=False, **kwargs):
+    def _call(self, training, inputs, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -201,6 +208,16 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     # ==================== Built-in ==================== #
+    def __call__(self, training=False, inputs=None, **kwargs):
+        if inputs is None:
+            X = self.get_inputs(training)
+        elif not isinstance(inputs, (tuple, list)):
+            X = [inputs]
+        else:
+            X = inputs
+        self._last_inputs = X # cached last input
+        return self._call(training, X, **kwargs)
+
     @property
     def strict_batch(self):
         return self._strict_batch
@@ -210,8 +227,9 @@ class OdinFunction(OdinObject):
         return self._input_shape
 
     @property
-    def input_function(self):
-        return self._input_function
+    def incoming(self):
+        ''' list of placeholder for input of this function '''
+        return self._incoming
 
     @property
     def unsupervised(self):
@@ -219,20 +237,24 @@ class OdinFunction(OdinObject):
 
     @property
     def input_var(self):
-        '''
-        Return
-        ------
-        placeholder : list
-            list of placeholder for input of this function
+        ''' list of placeholder for input of this function
+        Note
+        ----
+        This property doesn't return appropriate inputs for this funcitons,
+        just the placeholder to create T.function
         '''
 
         if self._input_var is None:
             self._input_var = []
-            for i, j in zip(self._input_function, self._input_shape):
+            for idx, (i, j) in enumerate(zip(self._incoming, self._input_shape)):
                 if i is None:
-                    self._input_var.append(T.placeholder(shape=j))
+                    x = T.placeholder(shape=j,
+                        name='in[%d]:' % idx + self.__class__.__name__)
+                    self._input_var.append(x)
+                    self._local_input_var[idx] = x
                 elif T.is_placeholder(i):
                     self._input_var.append(i)
+                    self._local_input_var[idx] = x
                 else: # input from API layers
                     api = API.get_object_api(i)
                     if api == 'lasagne':
@@ -258,13 +280,15 @@ class OdinFunction(OdinObject):
                     self.raise_arguments(
                         'Unsupervised function must has output_shape identical \
                         to input_shape')
-                self._output_var = self.input_var
+                self._output_var = None
             else:
                 outshape = self.output_shape
                 if not isinstance(outshape[0], (tuple, list)):
                     outshape = [outshape]
-                self._output_var = [T.placeholder(ndim=len(i))
-                                    for i in outshape]
+                self._output_var = [
+                    T.placeholder(ndim=len(i),
+                        name='out[%d]:' % idx + self.__class__.__name__)
+                    for idx, i in enumerate(outshape)]
         return self._output_var
 
     def get_inputs(self, training=True):
@@ -278,15 +302,22 @@ class OdinFunction(OdinObject):
 
         Return
         ------
-        input : list(expression)
-            theano or tensorflow expression which represent intermediate input
-            to this function.
+        training : bool
+            whether in training mode or not
+
+        Note
+        ----
+        DO NOT call this methods multiple times, it will create duplicated
+        unnecessary computation node on graph, self._last_inputs if you the
+        inputs already created
+
         '''
         inputs = []
-        for i in self._input_function:
+        self.input_var # make sure initialized all placeholder
+        for idx, i in enumerate(self._incoming):
             # this is InputLayer
             if i is None or T.is_placeholder(i):
-                return self.input_var
+                inputs.append(self._local_input_var[idx])
             # this is expression
             else:
                 api = API.get_object_api(i)
@@ -297,7 +328,7 @@ class OdinFunction(OdinObject):
                     inputs.append(i.get_output(train=training))
                 elif api == 'odin':
                     inputs.append(i(training=training))
-                elif T.is_variable(self._input_function):
+                elif T.is_variable(self._incoming):
                     inputs.append(i)
         # cache the last calculated inputs (if you want to disconnect
         # gradient from this input downward, don't re-build the input
@@ -308,7 +339,7 @@ class OdinFunction(OdinObject):
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
         if globals:
-            for i in self._input_function:
+            for i in self._incoming:
                 if i is not None:
                     params += i.get_params(globals, trainable, regularizable)
 

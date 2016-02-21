@@ -15,9 +15,8 @@ class Summation(OdinFunction):
     def output_shape(self):
         return self.input_shape[0]
 
-    def __call__(self, training=False, **kwargs):
-        X = self.get_inputs(training=training)
-        return sum(x for x in X)
+    def _call(self, training, inputs, **kwargs):
+        return sum(x for x in inputs)
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):

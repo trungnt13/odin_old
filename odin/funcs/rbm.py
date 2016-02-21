@@ -31,6 +31,9 @@ class RBM(OdinFunction):
         Initial value, expression or initializer for the biases. If set to
         ``None``, the layer will have no biases.
 
+    seed : int
+        seed for RandomState used for sampling
+
     Call
     ----
     gibbs_steps : int
@@ -52,7 +55,7 @@ class RBM(OdinFunction):
     ], updates : for training
     [vis_mean[-1],
      vis_samples[-1]
-    ], updates : for prediction
+    ], updates : for prediction (reshaped the same as input shape)
 
     """
 
@@ -113,9 +116,10 @@ class RBM(OdinFunction):
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return self.input_shape
+        shape = self.input_shape[0]
+        return (shape[0], np.prod(shape[1:]))
 
-    def __call__(self, training=False, **kwargs):
+    def _call(self, training, inputs, **kwargs):
         if 'gibbs_steps' in kwargs:
             k = kwargs['gibbs_steps']
         else:
@@ -125,7 +129,7 @@ class RBM(OdinFunction):
         if 'sample_hidden' in kwargs:
             sample_hidden = kwargs['sample_hidden']
 
-        X = self.get_inputs(training=training)[0]
+        X = inputs[0]
         if T.ndim(X) > 2:
             X = T.flatten(X, 2)
 
@@ -202,18 +206,12 @@ class RBM(OdinFunction):
                          globals=True, training=True):
         """This functions implements one step of CD-k or PCD-k
 
-        :param lr: learning rate used to train the RBM
-
-        :param persistent: None for CD. For PCD, shared variable
-            containing old state of Gibbs chain. This must be a shared
-            variable of size (batch size, number of hidden units).
-
-        :param k: number of Gibbs steps to do in CD-k/PCD-k
-
-        Returns a proxy for the cost and the updates dictionary. The
-        dictionary contains the update rules for weights and biases but
-        also an update of the shared variable used to store the persistent
-        chain, if one is used.
+        Returns
+        -------
+        cost : a proxy for the cost
+        updates : dictionary. The dictionary contains the update rules for
+        weights and biases but also an update of the shared variable used to
+        store the persistent chain, if one is used.
 
         """
         if training:
@@ -230,10 +228,8 @@ class RBM(OdinFunction):
             chain_end = nv_samples[-1]
         else:
             vis_mfs, chain_end, updates = self(training)
+        X = self._last_inputs[0] # get cached inputs
 
-        X = self.get_inputs(training=training)[0]
-        if T.ndim(X) > 2:
-            X = T.flatten(X, 2)
         cost = T.mean(self.free_energy(X)) - T.mean(self.free_energy(chain_end))
         if optimizer is None:
             return cost, None
