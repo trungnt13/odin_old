@@ -215,6 +215,9 @@ class RBM(OdinFunction):
         store the persistent chain, if one is used.
 
         """
+        if objective is not None:
+            self.log("Ignored objective:%s because RBM uses contrastive divergence"
+                     "as default" % str(objective), 30)
         if training:
             [
                 pre_sigmoid_nvs,
@@ -231,7 +234,7 @@ class RBM(OdinFunction):
             vis_mfs, chain_end, updates = self(training)
         X = self._last_inputs[0] # get cached inputs
 
-        cost = T.mean(self.free_energy(X)) - T.mean(self.free_energy(chain_end))
+        cost = T.mean(self._free_energy(X)) - T.mean(self._free_energy(chain_end))
         if optimizer is None:
             return cost, updates
 
@@ -261,7 +264,7 @@ class RBM(OdinFunction):
         return monitoring_cost, updates
 
     # ==================== Energy methods ==================== #
-    def free_energy(self, v_sample):
+    def _free_energy(self, v_sample):
         ''' Function to compute the free energy '''
         wx_b = T.dot(v_sample, self.W) + self.hbias
         vbias_term = T.dot(v_sample, self.vbias)
@@ -323,7 +326,7 @@ class RBM(OdinFunction):
         xi = T.round(X)
 
         # calculate free energy for the given bit configuration
-        fe_xi = self.free_energy(xi)
+        fe_xi = self._free_energy(xi)
 
         # flip bit x_i of matrix xi and preserve all other bits x_{\i}
         # Equivalent to xi[:,bit_i_idx] = 1-xi[:, bit_i_idx], but assigns
@@ -331,7 +334,7 @@ class RBM(OdinFunction):
         xi_flip = T.set_subtensor(xi[:, bit_i_idx], 1 - xi[:, bit_i_idx])
 
         # calculate free energy with bit flipped
-        fe_xi_flip = self.free_energy(xi_flip)
+        fe_xi_flip = self._free_energy(xi_flip)
 
         # equivalent to e^(-FE(x_i)) / (e^(-FE(x_i)) + e^(-FE(x_{\i})))
         cost = T.mean(
