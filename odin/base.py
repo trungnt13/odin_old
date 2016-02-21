@@ -154,10 +154,17 @@ class OdinFunction(OdinObject):
         y_pred = self(training=training)
         output_var = self.output_var
         obj = objective(y_pred, *output_var)
+
         if optimizer is None:
             opt = None
         else:
-            opt = optimizer(obj, self.get_params(globals=globals, trainable=True))
+            params = self.get_params(globals=globals, trainable=True)
+            if globals:
+                grad = T.gradients(obj, params)
+            else:
+                grad = T.gradients(obj, params,
+                    consider_constant=self._last_inputs)
+            opt = optimizer(grad, params)
         return obj, opt
 
     # ==================== Abstract methods ==================== #
@@ -276,7 +283,6 @@ class OdinFunction(OdinObject):
             to this function.
         '''
         inputs = []
-
         for i in self._input_function:
             # this is InputLayer
             if i is None or T.is_placeholder(i):
@@ -293,6 +299,10 @@ class OdinFunction(OdinObject):
                     inputs.append(i(training=training))
                 elif T.is_variable(self._input_function):
                     inputs.append(i)
+        # cache the last calculated inputs (if you want to disconnect
+        # gradient from this input downward, don't re-build the input
+        # graph)
+        self._last_inputs = inputs
         return inputs
 
     def get_params(self, globals, trainable=None, regularizable=None):

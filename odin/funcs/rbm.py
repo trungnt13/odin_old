@@ -238,9 +238,12 @@ class RBM(OdinFunction):
         if optimizer is None:
             return cost, None
 
-        params = self.get_params(globals=True, trainable=True)
+        params = self.get_params(globals=globals, trainable=True)
         # We must not compute the gradient through the gibbs sampling
-        gparams = T.gradients(cost, params, consider_constant=[chain_end])
+        if globals:
+            gparams = T.gradients(cost, params, consider_constant=[chain_end])
+        else:
+            gparams = T.gradients(cost, params, consider_constant=[chain_end, X])
         for i, j in optimizer(gparams, params).iteritems():
             updates[i] = j
 

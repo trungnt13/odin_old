@@ -12,10 +12,13 @@ print(ds)
 
 def test_rbm():
     persistent_chain = T.variable(numpy.zeros((20, 500)))
-    rbm = odin.funcs.RBM((None, 28, 28), 500, persistent=persistent_chain)
+    input_ = odin.funcs.Dense((None, 28, 28), num_units=784)
+    input_ = (None, 28, 28)
+    rbm = odin.funcs.RBM(input_, 500, persistent=persistent_chain)
     print(rbm.get_params(True))
+    print(rbm.get_params(False))
     sgd = lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01)
-    cost, updates = rbm.get_optimization(optimizer=sgd)
+    cost, updates = rbm.get_optimization(optimizer=sgd, globals=True)
     print('Building functions...')
     train_rbm = T.function(
         inputs=rbm.input_var,
@@ -54,4 +57,4 @@ def test_rbm():
         raw_input('<Enter>')
         plt.close('all')
 
-# test_rbm()
+test_rbm()
