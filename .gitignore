@@ -1,6 +1,9 @@
 # MAC
 .DS_Store
 
+# HDF5 datafiles
+*.h5
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

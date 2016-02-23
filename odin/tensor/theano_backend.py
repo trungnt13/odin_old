@@ -55,6 +55,7 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
 def is_variable(v):
     return isinstance(v, theano.compile.SharedVariable)
 
+_PLACEHOLDER_ID = 0
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     '''Instantiate an input data placeholder variable.
     '''
@@ -63,6 +64,14 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if shape is not None:
         ndim = len(shape)
     broadcast = (False,) * ndim
+
+    # ====== Modify add name prefix ====== #
+    global _PLACEHOLDER_ID
+    name_prefix = '[ID:%.2d]' % _PLACEHOLDER_ID
+    _PLACEHOLDER_ID += 1
+    if name is None:
+        name = ''
+    name = name_prefix + name
     return T.TensorType(dtype, broadcast)(name)
 
 def is_placeholder(v):

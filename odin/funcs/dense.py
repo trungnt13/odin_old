@@ -16,7 +16,12 @@ class Dense(OdinFunction):
         super(Dense, self).__init__(
             incoming, unsupervised=unsupervised, **kwargs)
 
-        shape = (np.prod(self.input_shape[0][1:]), num_units)
+        num_inputs = np.prod(self.input_shape[0][1:])
+        for i in self.input_shape:
+            if num_inputs != np.prod(i[1:]):
+                self.raise_arguments('All incoming inputs must have the same '
+                                     'features dimensions')
+        shape = (num_inputs, num_units)
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
         if b is None:
@@ -30,22 +35,25 @@ class Dense(OdinFunction):
 
     @property
     def output_shape(self):
-        return (self.input_shape[0][0], self.num_units)
+        return [(i[0], self.num_units) for i in self.input_shape]
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
         return self._deterministic_optimization_procedure(
             objective, optimizer, globals, training)
 
-    def _call(self, training, inputs, **kwargs):
-        activation = T.castX(0.)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_inputs(training)
+        outputs = []
+
         for x in inputs:
             if T.ndim(x) > 2:
                 # if the input has more than two dimensions, flatten it into a
                 # batch of feature vectors.
                 x = T.flatten(x, 2)
 
-            activation = activation + T.dot(x, self.W)
+            activation = T.dot(x, self.W)
             if self.b is not None:
                 activation = activation + T.reshape(self.b, (1, -1))
-        return self.nonlinearity(activation)
+            outputs.append(self.nonlinearity(activation))
+        return outputs

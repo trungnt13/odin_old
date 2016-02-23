@@ -92,7 +92,7 @@ def np_ordered_set(seq):
        if marker in seen: continue
        seen[marker] = 1
        result.append(marker)
-   return result
+   return np.asarray(result)
 
 def np_shrink_labels(labels, maxdist=1):
     '''

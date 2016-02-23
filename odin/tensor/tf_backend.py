@@ -91,10 +91,19 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
 def is_variable(v):
     return isinstance(v, tf.python.Variable)
 
+_PLACEHOLDER_ID = 0
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if not shape:
         if ndim:
             shape = [None for _ in range(ndim)]
+
+    # ====== Modify add name prefix ====== #
+    global _PLACEHOLDER_ID
+    name_prefix = '[ID:%2d]' % _PLACEHOLDER_ID
+    _PLACEHOLDER_ID += 1
+    if name is None:
+        name = ''
+    name = name_prefix + name
     return tf.placeholder(dtype, shape=shape, name=name)
 
 def is_placeholder(v):

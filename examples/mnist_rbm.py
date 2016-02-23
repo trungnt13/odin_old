@@ -14,7 +14,7 @@ def test_rbm():
     persistent_chain = T.variable(numpy.zeros((20, 500)))
     input_ = odin.funcs.Dense((None, 28, 28), num_units=784)
     input_ = (None, 28, 28)
-    rbm = odin.funcs.RBM(input_, 500, persistent=persistent_chain)
+    rbm = odin.funcs.RBM(input_, 500, persistent=None)
     print(rbm.get_params(True))
     print(rbm.get_params(False))
     print('Input variables:', rbm.input_var)
@@ -38,24 +38,20 @@ def test_rbm():
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])
     odin.visual.print_bar(cost, bincount=20)
 
-    ([vis_mfc, vis_samples], updates) = rbm(gibbs_steps=100)
+    (vis_mfc, updates) = rbm(gibbs_steps=1)
     print('Building functions...')
     sample_rbm = T.function(
         inputs=rbm.input_var,
-        outputs=[vis_mfc, vis_samples],
+        outputs=vis_mfc,
         updates=updates)
 
     test_x = ds['X_test'].value
     for i in xrange(3):
-        t = numpy.random.randint(test_x.shape[0] - 20)
+        t = numpy.random.randint(test_x.shape[0] - 16)
 
-        x_mean, x_sample = sample_rbm(test_x[t:t + 20])
-        x_mean = x_mean.reshape(-1, 28, 28)
-        x_sample = x_sample.reshape(-1, 28, 28)
-
-        odin.visual.plot_images(test_x[:20])
+        x_mean = sample_rbm(test_x[t:t + 16])
+        odin.visual.plot_images(test_x[t:t + 16])
         odin.visual.plot_images(x_mean)
-        odin.visual.plot_images(x_sample)
         plt.show(block=False)
         raw_input('<Enter>')
         plt.close('all')

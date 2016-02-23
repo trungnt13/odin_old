@@ -36,7 +36,7 @@ class FunctionsTest(unittest.TestCase):
         y = np.random.rand(16, 5)
 
         p = d3.get_params_value(True)[0]
-        pred1 = np.round(f_pred(x), 6)
+        pred1 = np.round(f_pred(x)[0], 6)
         pred2 = np.round(np.dot(x, p), 6)
         self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
 
@@ -81,6 +81,18 @@ class FunctionsTest(unittest.TestCase):
         pred2 = np.round(np.dot(x1, p1) + np.dot(x2, p2), 6)
 
         self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
+
+    def test_get_roots_and_children(self):
+        d1a = funcs.Dense((None, 28, 28), num_units=256, name='d1a')
+        d1b = funcs.Dense(d1a, num_units=128, name='d1b')
+        d1c = funcs.Dense(d1b, num_units=128, name='d1c')
+        d1d = funcs.Summation([(None, 128), d1c], name='Summation')
+
+        self.assertEqual(d1d.incoming, [None, d1c])
+        self.assertEqual(d1d.input_shape, [(None, 128), (None, 128)])
+        self.assertEqual([T.ndim(i) for i in d1d.input_var], [2, 3])
+        self.assertEqual(d1d.get_roots(), [d1d, d1a])
+        self.assertEqual(d1d.get_children(), [d1c, d1b, d1a])
 
 # ===========================================================================
 # Main

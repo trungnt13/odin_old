@@ -72,11 +72,13 @@ class OdinFunction(OdinObject):
     '''
     Properties
     ----------
-    input_shape : list(shape_tuple, lasagne_layers, keras_model, odin_funciton,
-                       shared_variable)
-        always a list of input to the function
+    input_shape : list
+        always a list of shape tuples
+    output_shape : list
+        always a list of shape tuples
     input_function : list
-        a list of theano, tensorflow expression or placeholder
+        can be one of these: shape_tuple, lasagne_layers, keras_model,
+        odin_funciton, shared_variable
     input_var : list
         list of placeholders for input of this functions
     output_var : list
@@ -95,17 +97,30 @@ class OdinFunction(OdinObject):
     strict_batch : bool
         whether it is necessary to enforce similar batch size for training for
         this function
-    tags : a string, None or list of string
+    name : a string, None or list of string
         An optional identifiers to attach to this layer.
 
     '''
 
-    def __init__(self, incoming, unsupervised, strict_batch=False, tags=None):
+    def __init__(self, incoming, unsupervised, strict_batch=False, name=None):
         super(OdinFunction, self).__init__()
         self._unsupervised = unsupervised
         self._strict_batch = strict_batch
 
-        # ====== parse incoming ====== #
+        self.set_incoming(incoming)
+        # ====== other properties ====== #
+        if name is None:
+            name = []
+        elif not isinstance(name, (tuple, list)):
+            name = [name]
+        self._name = name
+
+        self.params = OrderedDict()
+        self.params_tags = OrderedDict()
+
+    # ==================== Layer utilities ==================== #
+    def set_incoming(self, incoming):
+        # ====== parse incoming layers ====== #
         if not isinstance(incoming, (tuple, list)) or \
            isinstance(incoming[-1], (int, long, float)):
            incoming = [incoming]
@@ -118,26 +133,69 @@ class OdinFunction(OdinObject):
                     tuple([j if j is None else int(j) for j in i]))
             elif hasattr(i, 'output_shape'):
                 input_function.append(i)
-                input_shape.append(i.output_shape)
+                outshape = i.output_shape
+                # OdinFunction always return list
+                if isinstance(outshape[0], (tuple, list)):
+                    input_shape += outshape
+                else: # other framework only return 1 output shape
+                    input_shape.append(outshape)
             else:
                 self.raise_arguments(
                     'Unsupport incomming type %s' % i.__class__)
         self._incoming = input_function
         self._input_shape = input_shape
 
-        # ====== other properties ====== #
-        if not isinstance(tags, (tuple, list)):
-            self.tags = [tags]
-
-        self.params = OrderedDict()
-        self.params_tags = OrderedDict()
-
         # store ALL placeholder necessary for inputs of this Function
         self._input_var = None
         #{index : placeholder}, store placeholder created by this Function
         self._local_input_var = {}
-
         self._output_var = None
+
+    def get_roots(self):
+        ''' Performing Depth First Search to return the OdinFunction
+        which is the root (all functions that contains placeholder input
+        variables) of this Funciton
+
+        Return
+        ------
+        OdinFunction : list of OdinFunction which contains placeholder for
+            this Function
+
+        Note
+        ----
+        This function preseves order of inputs for multiple inputs function
+
+        '''
+        roots = []
+        for i in self._incoming:
+            if i is None:
+                roots.append(self)
+            elif isinstance(i, OdinFunction):
+                roots += i.get_roots()
+        if len(roots) == 0:
+            return [self]
+        return T.np_ordered_set(roots).tolist()
+
+    def get_children(self):
+        ''' Performing Depth First Search to return all the OdinFunction
+        which act as inputs to this function
+
+        Return
+        ------
+        list : list of OdinFunction which contains placeholder for
+            this Function
+
+        Note
+        ----
+        This function preseves order of inputs for multiple inputs function
+
+        '''
+        children = []
+        for i in self._incoming:
+            if isinstance(i, OdinFunction):
+                children.append(i)
+                children += i.get_children()
+        return T.np_ordered_set(children).tolist()
 
     # ==================== Helper private functions ==================== #
     def _validation_optimization_params(self, objective, optimizer):
@@ -146,21 +204,16 @@ class OdinFunction(OdinObject):
         if optimizer is not None and not hasattr(optimizer, '__call__'):
             raise ValueError('optimizer must be a function!')
 
-    def _is_support_unsupervised(self):
-        input_shape = self._input_shape
-        output_shape = self.output_shape
-        if not isinstance(self.output_shape[-1], (tuple, list)):
-            output_shape = [output_shape]
-        return input_shape == output_shape or \
-        (len(input_shape) == len(output_shape) and
-         np.prod(input_shape[1:]) == np.prod(output_shape[1:]))
-
     def _deterministic_optimization_procedure(self, objective, optimizer,
                                               globals, training):
         self._validation_optimization_params(objective, optimizer)
         y_pred = self(training=training)
-        output_var = self.output_var
-        obj = objective(y_pred, *output_var)
+        y_true = self.output_var
+        obj = T.castX(0.)
+        # in case of multiple output, we take the mean of loss for each output
+        for yp, yt in zip(y_pred, y_true):
+            obj = obj + objective(yp, yt)
+        obj = obj / len(y_pred)
 
         if optimizer is None:
             opt = None
@@ -180,7 +233,7 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     @abstractmethod
-    def _call(self, training, inputs, **kwargs):
+    def __call__(self, training=False, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -208,15 +261,11 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     # ==================== Built-in ==================== #
-    def __call__(self, training=False, inputs=None, **kwargs):
-        if inputs is None:
-            X = self.get_inputs(training)
-        elif not isinstance(inputs, (tuple, list)):
-            X = [inputs]
-        else:
-            X = inputs
-        self._last_inputs = X # cached last input
-        return self._call(training, X, **kwargs)
+    @property
+    def name(self):
+        if len(self._name) == 0:
+            return self.__class__.__name__
+        return ','.join(self._name)
 
     @property
     def strict_batch(self):
@@ -249,7 +298,7 @@ class OdinFunction(OdinObject):
             for idx, (i, j) in enumerate(zip(self._incoming, self._input_shape)):
                 if i is None:
                     x = T.placeholder(shape=j,
-                        name='in[%d]:' % idx + self.__class__.__name__)
+                        name='in:%s:' % (str(j)) + self.name)
                     self._input_var.append(x)
                     self._local_input_var[idx] = x
                 elif T.is_placeholder(i):
@@ -270,25 +319,19 @@ class OdinFunction(OdinObject):
                             self._input_var.append(tmp)
                     elif api == 'odin':
                         self._input_var += i.input_var
+            self._input_var = T.np_ordered_set(self._input_var).tolist()
         return self._input_var
 
     @property
     def output_var(self):
         if self._output_var is None:
+            self._output_var = []
             if self.unsupervised:
-                if not self._is_support_unsupervised():
-                    self.raise_arguments(
-                        'Unsupervised function must has output_shape identical \
-                        to input_shape')
-                self._output_var = None
+                pass
             else:
-                outshape = self.output_shape
-                if not isinstance(outshape[0], (tuple, list)):
-                    outshape = [outshape]
-                self._output_var = [
-                    T.placeholder(ndim=len(i),
-                        name='out[%d]:' % idx + self.__class__.__name__)
-                    for idx, i in enumerate(outshape)]
+                for outshape in self.output_shape:
+                    self._output_var.append(T.placeholder(shape=outshape,
+                            name='out:%s:' % (str(outshape)) + self.name))
         return self._output_var
 
     def get_inputs(self, training=True):
@@ -327,7 +370,11 @@ class OdinFunction(OdinObject):
                 elif api == 'keras':
                     inputs.append(i.get_output(train=training))
                 elif api == 'odin':
-                    inputs.append(i(training=training))
+                    o = i(training=training)
+                    if isinstance(o, (tuple, list)):
+                        inputs += o
+                    else:
+                        inputs.append(o)
                 elif T.is_variable(self._incoming):
                     inputs.append(i)
         # cache the last calculated inputs (if you want to disconnect
@@ -368,7 +415,7 @@ class OdinFunction(OdinObject):
         self.get_params(globals, trainable, regularizable)]
 
     def create_params(self, spec, shape, name, regularizable, trainable):
-        if T.is_variable(spec):
+        if T.is_variable(spec) or T.is_placeholder(spec):
             # We cannot check the shape here, Theano expressions (even shared
             # variables) do not have a fixed compile-time shape. We can check the
             # dimensionality though.

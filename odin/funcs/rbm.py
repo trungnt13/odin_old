@@ -39,7 +39,7 @@ class RBM(OdinFunction):
     gibbs_steps : int
         optional gibbs step used when sampling (this variable will override the
         default parameter)
-    sample_hidden : bool (default: False)
+    output_hidden : bool (default: False)
         if True, when sampling for prediction, return the hidden samples and
         mean instead
 
@@ -116,20 +116,21 @@ class RBM(OdinFunction):
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        shape = self.input_shape[0]
-        return (shape[0], np.prod(shape[1:]))
+        # shape = self.input_shape[0]
+        # return (shape[0], np.prod(shape[1:]))
+        return self.input_shape[0]
 
-    def _call(self, training, inputs, **kwargs):
+    def __call__(self, training=False, **kwargs):
         if 'gibbs_steps' in kwargs:
             k = kwargs['gibbs_steps']
         else:
             k = self.gibbs_steps
 
         sample_hidden = False
-        if 'sample_hidden' in kwargs:
-            sample_hidden = kwargs['sample_hidden']
+        if 'output_hidden' in kwargs:
+            sample_hidden = kwargs['output_hidden']
 
-        X = inputs[0]
+        X = self.get_inputs(training)[0]
         if T.ndim(X) > 2:
             X = T.flatten(X, 2)
         self._last_inputs = [X] # must update last inputs because we reshape X
@@ -198,9 +199,9 @@ class RBM(OdinFunction):
                 n_steps=k
             )
             if sample_hidden:
-                ret_val = [hid_mfs[-1], hid_samples[-1]]
+                ret_val = hid_mfs[-1]
             else:
-                ret_val = [vis_mfs[-1], vis_samples[-1]]
+                ret_val = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
         return ret_val, updates
 
     def get_optimization(self, objective=None, optimizer=None,
@@ -217,7 +218,7 @@ class RBM(OdinFunction):
         """
         if objective is not None:
             self.log("Ignored objective:%s because RBM uses contrastive divergence"
-                     "as default" % str(objective), 30)
+                     " as default" % str(objective), 30)
         if training:
             [
                 pre_sigmoid_nvs,
