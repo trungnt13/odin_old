@@ -1,12 +1,32 @@
 from __future__ import print_function, absolute_import, division
 
 import numpy as np
+from scipy.misc import imresize
 from six.moves import zip, range
 
 # ===========================================================================
 # Helpers
 # From DeepLearningTutorials: http://deeplearning.net
 # ===========================================================================
+def _resize_images(x, shape):
+    '''Reshape images
+    x: 3D-gray or 4D-color (color channel is the second dimension)
+    Return a list of reshaped images'''
+    reszie_func = lambda x, shape: imresize(x, shape, interp='bilinear')
+    if x.ndim == 4:
+        def reszie_func(x, shape):
+            # x: 3D
+            # The color channel is the first dimension
+            tmp = []
+            for i in x:
+                tmp.append(imresize(i, shape).reshape((-1,) + shape))
+            return np.vstack(tmp).T
+
+    imgs = []
+    for i in x:
+        imgs.append(reszie_func(i, shape))
+    return imgs
+
 def _scale_to_unit_interval(ndar, eps=1e-8):
     """ Scales all values in the ndarray ndar to be between 0 and 1 """
     ndar = ndar.copy()
@@ -14,51 +34,12 @@ def _scale_to_unit_interval(ndar, eps=1e-8):
     ndar *= 1.0 / (ndar.max() + eps)
     return ndar
 
-def tile_raster_images(X, img_shape, tile_shape, tile_spacing=(0, 0),
-                       scale_rows_to_unit_interval=True,
-                       output_pixel_vals=True):
-    """
-    Transform an array with one flattened image per row, into an array in
-    which images are reshaped and layed out like tiles on a floor.
+def _tile_raster_images(X, img_shape, tile_shape, tile_spacing=(0, 0)):
 
-    This function is useful for visualizing datasets whose rows are images,
-    and also columns of matrices for transforming those rows
-    (such as the first layer of a neural net).
-
-    Parameters
-    ----------
-    X : a 2-D ndarray or a tuple of 4 channels, elements of which can
-    be 2-D ndarrays or None
-        a 2-D array in which every row is a flattened image.
-
-    img_shape : tuple; (height, width)
-        the original shape of each image
-
-    tile_shape: tuple; (rows, cols)
-        the number of images to tile (rows, cols)
-
-    output_pixel_vals : bool
-        if output should be pixel values (i.e. int8 values) or floats
-
-    scale_rows_to_unit_interval: bool
-        if the values need to be scaled before being plotted to [0,1] or not
-
-
-    Returns
-    -------
-    a 2-d array with same dtype as X, array suitable for viewing as an image.
-    (See:`Image.fromarray`.)
-
-
-    Example
-    -------
-
-    """
-
-    assert len(img_shape) == 2
-    assert len(tile_shape) == 2
-    assert len(tile_spacing) == 2
-
+    if np.max(X) <= 1.:
+        channel_defaults = [0., 0., 0., 1.]
+    else:
+        channel_defaults = [0, 0, 0, 255]
     # The expression below can be re-written in a more C style as
     # follows :
     #
@@ -67,89 +48,129 @@ def tile_raster_images(X, img_shape, tile_shape, tile_spacing=(0, 0),
     #                tile_spacing[0]
     # out_shape[1] = (img_shape[1]+tile_spacing[1])*tile_shape[1] -
     #                tile_spacing[1]
-    out_shape = [
-        (ishp + tsp) * tshp - tsp
-        for ishp, tshp, tsp in zip(img_shape, tile_shape, tile_spacing)
-    ]
+    X = _resize_images(X, tile_shape)
+    n = len(X)
+    ncols = int(np.ceil(np.sqrt(n)))
+    nrows = int(ncols)
 
-    if isinstance(X, tuple):
-        assert len(X) == 4
-        # Create an output numpy ndarray to store the image
-        if output_pixel_vals:
-            out_array = np.zeros((out_shape[0], out_shape[1], 4),
-                                 dtype='uint8')
-        else:
-            out_array = np.zeros((out_shape[0], out_shape[1], 4),
-                                 dtype=X.dtype)
-
-        #colors default to 0, alpha defaults to 1 (opaque)
-        if output_pixel_vals:
-            channel_defaults = [0, 0, 0, 255]
-        else:
-            channel_defaults = [0., 0., 0., 1.]
-
-        for i in range(4):
-            if X[i] is None:
-                # if channel is None, fill it with zeros of the correct
-                # dtype
-                dt = out_array.dtype
-                if output_pixel_vals:
-                    dt = 'uint8'
-                out_array[:, :, i] = np.zeros(
-                    out_shape,
-                    dtype=dt
-                ) + channel_defaults[i]
-            else:
-                # use a recurrent call to compute the channel and store it
-                # in the output
-                out_array[:, :, i] = tile_raster_images(
-                    X[i], img_shape, tile_shape, tile_spacing,
-                    scale_rows_to_unit_interval, output_pixel_vals)
-        return out_array
-
-    else:
-        # if we are dealing with only one channel
-        H, W = img_shape
-        Hs, Ws = tile_spacing
-
-        # generate a matrix to store the output
-        dt = X.dtype
-        if output_pixel_vals:
-            dt = 'uint8'
-        out_array = np.zeros(out_shape, dtype=dt)
-
-        for tile_row in range(tile_shape[0]):
-            for tile_col in range(tile_shape[1]):
-                if tile_row * tile_shape[1] + tile_col < X.shape[0]:
-                    this_x = X[tile_row * tile_shape[1] + tile_col]
-                    if scale_rows_to_unit_interval:
-                        # if we should scale values to be between 0 and 1
-                        # do this by calling the `scale_to_unit_interval`
-                        # function
-                        this_img = _scale_to_unit_interval(
-                            this_x.reshape(img_shape))
-                    else:
-                        this_img = this_x.reshape(img_shape)
-                    # add the slice to the corresponding position in the
-                    # output array
-                    c = 1
-                    if output_pixel_vals:
-                        c = 255
-                    out_array[
-                        tile_row * (H + Hs): tile_row * (H + Hs) + H,
-                        tile_col * (W + Ws): tile_col * (W + Ws) + W
-                    ] = this_img * c
-        return out_array
+    print(ncols, nrows)
 
 # ===========================================================================
 # Plotting
 # ===========================================================================
-def plot_images(x, fig=None, titles=None, path=None):
+def resize_images(x, shape):
+    reszie_func = lambda x, shape: imresize(x, shape, interp='bilinear')
+    if x.ndim == 4:
+        def reszie_func(x, shape):
+            # x: 3D
+            # The color channel is the first dimension
+            tmp = []
+            for i in x:
+                tmp.append(imresize(i, shape).reshape((-1,) + shape))
+            return np.swapaxes(np.vstack(tmp).T, 0, 1)
+
+    imgs = []
+    for i in x:
+        imgs.append(reszie_func(i, shape))
+    return imgs
+
+def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.):
+    ''' This function create tile of images
+
+    Parameters
+    ----------
+    X : 3D-gray or 4D-color images
+        for color images, the color channel must be the second dimension
+    tile_shape : tuple
+        resized shape of images
+    tile_spacing : tuple
+        space betwen rows and columns of images
+    spacing_value : int, float
+        value used for spacing
+
+    '''
+    if X.ndim == 3:
+        img_shape = X.shape[1:]
+    elif X.ndim == 4:
+        img_shape = X.shape[2:]
+    else:
+        raise ValueError('Unsupport %d dimension images' % X.ndim)
+    if tile_shape is None:
+        tile_shape = img_shape
+    if tile_spacing is None:
+        tile_spacing = (2, 2)
+
+    if img_shape != tile_shape:
+        X = resize_images(X, tile_shape)
+    else:
+        X = [np.swapaxes(x.T, 0, 1) for x in X]
+
+    n = len(X)
+    n = int(np.ceil(np.sqrt(n)))
+
+    # create spacing
+    rows_spacing = np.zeros_like(X[0])[:tile_spacing[0], :] + spacing_value
+    nothing = np.vstack((np.zeros_like(X[0]), rows_spacing))
+    cols_spacing = np.zeros_like(nothing)[:, :tile_spacing[1]] + spacing_value
+
+    # ====== Append columns ====== #
+    rows = []
+    for i in range(n): # each rows
+        r = []
+        for j in range(n): # all columns
+            idx = i * n + j
+            if idx < len(X):
+                r.append(np.vstack((X[i * 4 + j], rows_spacing)))
+            else:
+                r.append(nothing)
+            if j != n - 1:   # cols spacing
+                r.append(cols_spacing)
+        rows.append(np.hstack(r))
+    # ====== Append rows ====== #
+    img = np.vstack(rows)[:-tile_spacing[0]]
+    return img
+
+def plot_images(x, tile_shape=None, tile_spacing=None,
+    fig=None, path=None, show=False):
+    '''
+    x : 2D-gray or 3D-color images
+        for color image the color channel is second dimension
+    '''
     from matplotlib import pyplot as plt
     if x.ndim == 3 or x.ndim == 2:
         cmap = plt.cm.Greys_r
     elif x.ndim == 4:
         cmap = None
+    else:
+        raise ValueError('NO support for %d dimensions image!' % x.ndim)
+
+    x = tile_raster_images(x, tile_shape, tile_spacing)
+    if fig is None:
+        fig = plt.figure()
+    subplot = fig.add_subplot(1, 1, 1)
+    subplot.imshow(x, cmap=cmap)
+    subplot.axis('off')
+
+    if path:
+        plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
+    if show:
+        plt.show(block=False)
+        raw_input('<Enter> to close the figure ...')
+    else:
+        return fig
+
+def plot_images_old(x, fig=None, titles=None, path=None, show=False):
+    '''
+    x : 2D-gray or 3D-color images
+        for color image the color channel is second dimension
+    '''
+    from matplotlib import pyplot as plt
+    if x.ndim == 3 or x.ndim == 2:
+        cmap = plt.cm.Greys_r
+    elif x.ndim == 4:
+        cmap = None
+        shape = x.shape[2:] + (x.shape[1],)
+        x = np.vstack([i.T.reshape((-1,) + shape) for i in x])
     else:
         raise ValueError('NO support for %d dimensions image!' % x.ndim)
 
@@ -180,7 +201,12 @@ def plot_images(x, fig=None, titles=None, path=None):
                 subplot.axis('off')
     if path:
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
-    return fig
+
+    if show:
+        plt.show(block=False)
+        raw_input('<Enter> to close the figure ...')
+    else:
+        return fig
 
 def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
     from matplotlib import pyplot as plt

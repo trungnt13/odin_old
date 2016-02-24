@@ -815,7 +815,7 @@ class dataset(OdinObject):
         try:
             ds = dataset(datapath, mode='r')
         except:
-            if os.path.exist(datapath):
+            if os.path.exists(datapath):
                 os.remove(datapath)
             datapath = get_file('mnist.h5', path)
             ds = dataset(datapath, mode='r')
