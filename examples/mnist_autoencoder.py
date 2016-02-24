@@ -87,14 +87,14 @@ def test_aED(): #AutoEncoderDecoder
             odin.logger.progress(i, niter, title=str(cost[-1]))
         print()
         odin.visual.print_bar([i for i in cost if i == i], bincount=20)
-        # W = T.get_value(aED.get_params(False)[0]).T.reshape(-1, 28, 28)
-        # if choices is None:
-        #     choices = np.random.choice(
-        #         np.arange(W.shape[0]), size=16, replace=False)
-        # W = W[choices]
-        # odin.visual.plot_images(W)
-        # plt.show(block=False)
-        # raw_input('<enter>')
+        W = T.get_value(aED.get_params(True)[0]).T.reshape(-1, 28, 28)
+        if choices is None:
+            choices = np.random.choice(
+                np.arange(W.shape[0]), size=16, replace=False)
+        W = W[choices]
+        odin.visual.plot_images(W)
+        plt.show(block=False)
+        raw_input('<enter>')
 
     # ====== Output reconstruction ====== #
     f_pred = T.function(
