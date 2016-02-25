@@ -127,10 +127,16 @@ class BackendTest(unittest.TestCase):
     def test_regularize(self):
         np.random.seed(T.get_magic_seed())
         x = T.variable(np.random.rand(10, 10))
-        self.assertAlmostEqual(T.eval(T.l1_regularize(x)), 50.150932312)
-        self.assertAlmostEqual(T.eval(T.l2_regularize(x)), 33.7269096375)
-        self.assertAlmostEqual(T.eval(T.kl_gaussian(x, 0., 1.)), 2.19452810287)
-        self.assertAlmostEqual(T.eval(T.correntropy_regularize(x)), -5.86702489853)
+        mean = T.variable(np.random.rand(32, 16))
+        logsigma = T.variable(np.random.rand(32, 16))
+        self.assertAlmostEqual(round(T.eval(T.l1_regularize(x)), 5),
+            round(50.150932312, 5))
+        self.assertAlmostEqual(round(T.eval(T.l2_regularize(x)), 5),
+            round(33.7269096375, 5))
+        self.assertAlmostEqual(round(T.eval(T.kl_gaussian(mean, logsigma)), 5),
+            round(0.8003901243209839, 5))
+        self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), 5),
+            round(-5.86702489853, 5))
 
 # ===========================================================================
 # Main

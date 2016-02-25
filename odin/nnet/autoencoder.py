@@ -4,7 +4,8 @@ import numpy as np
 from six.moves import zip
 
 from .. import tensor as T
-from .. base import OdinFunction
+from ..base import OdinFunction
+from .. import config
 
 class AutoEncoderDecoder(OdinFunction):
 
@@ -25,31 +26,32 @@ class AutoEncoderDecoder(OdinFunction):
         super(AutoEncoderDecoder, self).__init__(
             incoming=decoder, unsupervised=True, strict_batch=False, **kwargs)
 
-        self._encoder = encoder
-        self._decoder = decoder
+        self.encoder = encoder
+        self.decoder = decoder
 
         # this mode return output similar to input
-        self._reconstruction_mode = True
+        self._reconstruction_mode = False
 
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return self._decoder.output_shape
+        return self.decoder.output_shape
 
     def __call__(self, training=False, **kwargs):
-        if 'output_hidden' in kwargs:
-            self._reconstruction_mode = not kwargs['output_hidden']
+        if 'reconstructed' in kwargs:
+            self._reconstruction_mode = kwargs['reconstructed']
+        # in this funcitons, training mean using reconstruction mode
         return self.get_inputs(training)
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
-        x_reconstructed = self(training=training)
+        x_reconstructed = self(training=training, reconstructed=True)
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
         x_original = []
-        for i in self._encoder.get_roots():
+        for i in self.encoder.get_roots():
             x_original += i._last_inputs
 
         # ====== Objectives is mean of all in-out pair ====== #
@@ -80,18 +82,18 @@ class AutoEncoderDecoder(OdinFunction):
 
     def get_inputs(self, training=True):
         if self._reconstruction_mode:
-            return self._decoder(training)
-        else:
-            self._reconstruction_mode = True
-            return self._encoder(training)
+            self._reconstruction_mode = False
+            return self.decoder(training)
+        else: # back to normal reconstruction mode after return 1 hidden
+            return self.encoder(training)
 
     @property
     def input_var(self):
-        return self._encoder.input_var
+        return self.encoder.input_var
 
     def get_params(self, globals, trainable=None, regularizable=None):
         ''' Weights must be tied '''
-        return self._encoder.get_params(globals, trainable, regularizable)
+        return self.encoder.get_params(globals, trainable, regularizable)
 
 class AutoEncoder(OdinFunction):
 
@@ -177,22 +179,27 @@ class AutoEncoder(OdinFunction):
         return self.input_shape
 
     def __call__(self, training=False, **kwargs):
-        if 'inputs' in kwargs:
-            X = kwargs['inputs']
-            if not isinstance(X, (tuple, list)):
-                X = [X]
-        else:
-            X = self.get_inputs(training)
-        X = [x if T.ndim(x) <= 2 else T.flatten(x, 2) for x in X]
-
+        # ====== if output_hidden activations ====== #
+        reconstructed = False
+        if 'reconstructed' in kwargs:
+            reconstructed = kwargs['reconstructed']
+        if reconstructed and training:
+            self.log('Training mode always return hidden activations')
+        # ====== inputs ====== #
+        X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
+            for x in self.get_inputs(training)]
         outputs = []
         for x, shape in zip(X, self.output_shape):
             hidden_state = self.nonlinearity(T.dot(x, self.W) + self.hbias)
+            # output reconstructed data
             reconstructed = self.nonlinearity(
                 T.dot(hidden_state, self.W_prime) + self.b_prime)
             if not training:
-                reconstructed = T.reshape(reconstructed,
-                                        (-1,) + tuple(shape[1:]))
+                if reconstructed:
+                    reconstructed = T.reshape(
+                        reconstructed, (-1,) + tuple(shape[1:]))
+                else: # only output hidden activations
+                    reconstructed = hidden_state
             outputs.append(reconstructed)
         return outputs
 
@@ -203,7 +210,8 @@ class AutoEncoder(OdinFunction):
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
             for x in self.get_inputs(training)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
-        x_reconstructed = self(training=training, inputs=x_corrupted)
+        self._intermediate_inputs = x_corrupted # dirty hack modify inputs
+        x_reconstructed = self(training=training)
 
         obj = T.castX(0.)
         for xr, xc in zip(x_reconstructed, x_corrupted):
@@ -236,97 +244,8 @@ class AutoEncoder(OdinFunction):
         return self._rng.binomial(
             shape=input.shape, p=1 - corruption_level) * input
 
-class VariationalAutoEncoder(OdinFunction):
-
-    def __init__(self, incoming, num_units,
-                 W=T.np_glorot_uniform,
-                 b=T.np_constant,
-                 nonlinearity=T.sigmoid,
-                 denoising=0.5, seed=None, **kwargs):
-        super(VariationalAutoEncoder, self).__init__(
-            incoming, unsupervised=True, strict_batch=False, **kwargs)
-
-        self.n_h = 800
-        self.n_z = 20
-        self.n_t = 1
-
-        self.gaussian = False
-
-        self.params = Parameters()
-        n_x = self.data['n_x']
-        n_h = self.n_h
-        n_z = self.n_z
-        n_t = self.n_t
-        scale = hp.init_scale
-
-        if hp.load_model and os.path.isfile(self.filename):
-            self.params.load(self.filename)
-        else:
-            with self.params:
-                W1 = shared_normal((n_x, n_h), scale=scale)
-                W11 = shared_normal((n_h, n_h), scale=scale)
-                W111 = shared_normal((n_h, n_h), scale=scale)
-                W2 = shared_normal((n_h, n_z), scale=scale)
-                W3 = shared_normal((n_h, n_z), scale=scale)
-                W4 = shared_normal((n_h, n_h), scale=scale)
-                W44 = shared_normal((n_h, n_h), scale=scale)
-                W444 = shared_normal((n_z, n_h), scale=scale)
-                W5 = shared_normal((n_h, n_x), scale=scale)
-                b1 = shared_zeros((n_h,))
-                b11 = shared_zeros((n_h,))
-                b111 = shared_zeros((n_h,))
-                b2 = shared_zeros((n_z,))
-                b3 = shared_zeros((n_z,))
-                b4 = shared_zeros((n_h,))
-                b44 = shared_zeros((n_h,))
-                b444 = shared_zeros((n_h,))
-                b5 = shared_zeros((n_x,))
-
-        def encoder(x, p):
-            h_encoder = T.tanh(T.dot(x, p.W1) + p.b1)
-            h_encoder2 = T.tanh(T.dot(h_encoder, p.W11) + p.b11)
-            h_encoder3 = T.tanh(T.dot(h_encoder2, p.W111) + p.b111)
-
-            mu_encoder = T.dot(h_encoder3, p.W2) + p.b2
-            log_sigma_encoder = 0.5 * (T.dot(h_encoder3, p.W3) + p.b3)
-            log_qpz = -0.5 * T.sum(1 + 2 * log_sigma_encoder - mu_encoder**2 - T.exp(2 * log_sigma_encoder))
-
-            eps = srnd.normal(mu_encoder.shape, dtype=theano.config.floatX)
-            z = mu_encoder + eps * T.exp(log_sigma_encoder)
-            return z, log_qpz
-
-        def decoder(z, p, x=None):
-            h_decoder3 = T.tanh(T.dot(z, p.W444) + p.b444)
-            h_decoder2 = T.tanh(T.dot(h_decoder3, p.W44) + p.b44)
-            h_decoder = T.tanh(T.dot(h_decoder2, p.W4) + p.b4)
-
-            if self.gaussian:
-                pxz = T.tanh(T.dot(h_decoder, p.W5) + p.b5)
-            else:
-                pxz = T.nnet.sigmoid(T.dot(h_decoder, p.W5) + p.b5)
-
-            if not x is None:
-                if self.gaussian:
-                    log_sigma_decoder = 0
-                    log_pxz = 0.5 * np.log(2 * np.pi) + log_sigma_decoder + 0.5 * T.sum(T.sqr(x - pxz))
-                else:
-                    log_pxz = T.nnet.binary_crossentropy(pxz, x).sum()
-                return pxz, log_pxz
-            else:
-                return pxz
-
-        x = binomial(self.X)
-        z, log_qpz = encoder(x, self.params)
-        pxz, log_pxz = decoder(z, self.params, x)
-        cost = log_pxz + log_qpz
-
-        s_pxz = decoder(self.Z, self.params)
-        a_pxz = T.zeros((self.n_t, s_pxz.shape[0], s_pxz.shape[1]))
-        a_pxz = T.set_subtensor(a_pxz[0,:,:], s_pxz)
-
-        self.compile(log_pxz, log_qpz, cost, a_pxz)
-
 class VAE(object):
+
     '''Variational Auto-encoder Class for image data.
     Using linear/convolutional transformations with ReLU activations, this
     class peforms an encoding and then decoding step to form a full generative
@@ -373,6 +292,7 @@ class VAE(object):
     opt : chainer.Optimizer
         Chiner optimizer used to do backpropagation. Set to Adam.
     '''
+
     def __init__(self, img_width=64, img_height=64, color_channels=3,
                  encode_layers=[1000, 600, 300],
                  decode_layers=[300, 800, 1000],
@@ -427,7 +347,7 @@ class VAE(object):
         d.pop('opt')
         # d.pop('xp')
         meta = json.dumps(d)
-        with open(filepath+'.json', 'wb') as f:
+        with open(filepath + '.json', 'wb') as f:
             f.write(meta)
 
     def transform(self, data, test=False):
@@ -536,7 +456,7 @@ class VAE(object):
         def read(fname):
             im = Image.open(fname)
             im = np.float32(im)
-            return im/255.
+            return im / 255.
         x_all = np.array([read(fname) for fname in tqdm.tqdm(filepaths)])
         x_all = x_all.astype('float32')
         if self.mode == 'convolution':
@@ -557,7 +477,6 @@ class VAE(object):
         img_path='./VAE_training_images/',
         img_out_width=10
     ):
-
         '''Fit the VAE model to the image data.
         Parameters
         ----------
@@ -614,7 +533,7 @@ class VAE(object):
                     x_batch.to_gpu()
 
                 out, kl_loss, rec_loss = self.model.forward(x_batch)
-                total_loss = rec_loss + kl_loss*self.kl_ratio
+                total_loss = rec_loss + kl_loss * self.kl_ratio
 
                 self.opt.zero_grads()
                 total_loss.backward()
@@ -650,14 +569,15 @@ class VAE(object):
                         epoch=epoch,
                         batch=n_batches,
                         save=True
-                        )
+                    )
 
             msg = "rec_loss = {0} , kl_loss = {1}"
-            print(msg.format(last_loss_rec/n_batches, last_loss_kl/n_batches))
-            t_diff = time.time()-t1
+            print(msg.format(last_loss_rec / n_batches, last_loss_kl / n_batches))
+            t_diff = time.time() - t1
             print("time: %f\n\n" % t_diff)
 
-class VariationalDense(OdinFunction):
+class VariationalEncoderDecoder(OdinFunction):
+
     """ Hidden layer for Variational Autoencoding Bayes method [1].
     This layer projects the input twice to calculate the mean and variance
     of a Gaussian distribution.
@@ -675,68 +595,151 @@ class VariationalDense(OdinFunction):
         In most cases this regularizers should be kept fixed at one.
 
     """
-    def __init__(self, incoming, output_dim, batch_size, input_dim=None,
+
+    def __init__(self, encoder, decoder,
                  W=T.np_glorot_uniform, b=T.np_constant,
+                 nonlinearity=T.tanh,
                  regularizer_scale=1.,
                  prior_mean=0., prior_logsigma=1.,
                  seed=None,
                  **kwargs):
+        super(VariationalEncoderDecoder, self).__init__(
+            incoming=encoder, unsupervised=True, strict_batch=False, **kwargs)
         self.prior_mean = prior_mean
         self.prior_logsigma = prior_logsigma
         self.regularizer_scale = regularizer_scale
-
-        self.batch_size = batch_size
-        self.output_dim = output_dim
-        self.initial_weights = weights
-        self.input_dim = input_dim
-
         self._rng = T.rng(seed=seed)
-        super(AutoEncoder, self).__init__(
-            incoming, unsupervised=True, strict_batch=False, **kwargs)
+        self.nonlinearity = nonlinearity
+        # ====== Set encoder decoder ====== #
+        self.encoder = encoder
+        self.decoder = decoder
+        # ====== Validate input_shapes (output_shape from encoder) ====== #
+        shapes = self.input_shape
+        i = shapes[0][1:]
+        for j in shapes:
+            if i != j[1:]:
+                self.raise_arguments(
+                    'All the feautre dimensions of encoder output_shape '
+                    'must be similar, %s != %s' % (str(i), str(j)))
+        self.input_dim = int(np.prod(i))
+        # ====== Validate output_shapes (input_shape from decoder) ====== #
+        if self.encoder in self.decoder.get_children():
+            self.raise_arguments('Encoder and Decoder must NOT connected')
+        shapes = []
+        for i in self.decoder.get_roots():
+            shapes += i.input_shape
+        i = shapes[0][1:]
+        for j in shapes:
+            if i != j[1:]:
+                self.raise_arguments(
+                    'All the feautre dimensions of decoder input_shape '
+                    'must be similar, %s != %s' % (str(i), str(j)))
+        self.num_units = int(np.prod(i))
+        # use this for intecept the inputs of decoder and return reconstruction
+        self._decoder_roots = self.decoder.get_roots()
+        for i in self.decoder.get_roots():
+            if self not in i.incoming:
+                i.set_incoming(self)
+        # ====== create params ====== #
+        self.W_mean = self.create_params(
+            W, (self.input_dim, self.num_units), 'W_mean',
+            regularizable=True, trainable=True)
+        self.b_mean = self.create_params(
+            b, (self.num_units,), 'b_mean',
+            regularizable=False, trainable=True)
+        self.W_logsigma = self.create_params(
+            W, (self.input_dim, self.num_units), 'W_logsigma',
+            regularizable=True, trainable=True)
+        self.b_logsigma = self.create_params(
+            b, (self.num_units,), 'b_logsigma',
+            regularizable=False, trainable=True)
+        # this list store last statistic (mean, logsigma) used to calculate
+        # the output of this functions, so we can caluclate KL_Gaussian in
+        # the optimization methods
+        self._last_mean_sigma = []
 
-    def build(self):
-        input_dim = self.input_shape[-1]
-
-        self.W_mean = self.init((input_dim, self.output_dim))
-        self.b_mean = K.zeros((self.output_dim,))
-        self.W_logsigma = self.init((input_dim, self.output_dim))
-        self.b_logsigma = K.zeros((self.output_dim,))
-
-        self.trainable_weights = [self.W_mean, self.b_mean, self.W_logsigma,
-                       self.b_logsigma]
-
-        self.regularizers = []
-        reg = self.get_variational_regularization(self.get_input())
-        self.regularizers.append(reg)
-
-    def get_variational_regularization(self, X):
-        mean = self.activation(K.dot(X, self.W_mean) + self.b_mean)
-        logsigma = self.activation(K.dot(X, self.W_logsigma) + self.b_logsigma)
-        return GaussianKL(mean, logsigma,
-                          regularizer_scale=self.regularizer_scale,
-                          prior_mean=self.prior_mean,
-                          prior_logsigma=self.prior_logsigma)
-
+    # ==================== Helper methods ==================== #
     def get_mean_logsigma(self, X):
-        mean = self.activation(K.dot(X, self.W_mean) + self.b_mean)
-        logsigma = self.activation(K.dot(X, self.W_logsigma) + self.b_logsigma)
+        mean = self.nonlinearity(T.dot(X, self.W_mean) + self.b_mean)
+        logsigma = self.nonlinearity(T.dot(X, self.W_logsigma) + self.b_logsigma)
         return mean, logsigma
 
-    def _get_output(self, X, train=False):
-        mean, logsigma = self.get_mean_logsigma(X)
-        if train:
-            if K._BACKEND == 'theano':
-                eps = K.random_normal((X.shape[0], self.output_dim))
-            else:
-                eps = K.random_normal((self.batch_size, self.output_dim))
-            return mean + K.exp(logsigma) * eps
-        else:
-            return mean
-
-    def get_output(self, train=False):
-        X = self.get_input()
-        return self._get_output(X, train)
-
+    # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return (self.input_shape[0], self.output_dim)
+        return self.decoder.output_shape
+
+    def __call__(self, training=False, **kwargs):
+        '''
+        Returns
+        -------
+        prediction, mean, logsigm : if training=True
+        prediction(mean) : if training = False
+        '''
+        reconstructed = False
+        if 'reconstructed' in kwargs:
+            reconstructed = kwargs['reconstructed']
+        if reconstructed and training:
+            self.log('Training mode always return hidden activations')
+        # ====== check inputs (only 2D) ====== #
+        X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
+             for x in self.get_inputs(training)]
+        # ====== Process each input ====== #
+        outputs = []
+        self._last_mean_sigma = []
+        for x, shape in zip(X, self.output_shape):
+            mean, logsigma = self.get_mean_logsigma(x)
+            if training: # training mode (always return hidden)
+                if config.backend() == 'theano':
+                    eps = self._rng.normal((x.shape[0], self.num_units),
+                        mean=0., std=1.)
+                else:
+                    eps = self._rng.normal((T.shape(x)[0], self.num_units),
+                        mean=0., std=1.)
+                outputs.append(mean + T.exp(logsigma) * eps)
+            else: # prediction mode only return mean
+                outputs.append(mean)
+            self._last_mean_sigma.append((mean, logsigma))
+        # ====== check if return reconstructed inputs ====== #
+        if not training and reconstructed:
+            # intercept the old decoder roots to get reconstruction from
+            # current outputs of this functions
+            for i in self._decoder_roots:
+                i._intermediate_inputs = outputs
+            outputs = self.decoder(False)
+        return outputs
+
+    def get_optimization(self, objective=None, optimizer=None,
+                         globals=True, training=True):
+        outputs = self.decoder(training)
+        inputs = []
+        for i, j in zip(self.encoder.input_var, self.output_shape):
+            # we can only know ndim not the shape of placeholder
+            if T.ndim(i) != len(j):
+                i = T.reshape(i, (-1,) + j[1:])
+            inputs.append(i)
+
+        # ====== calculate objectives ====== #
+        obj = T.castX(0.)
+        for x_orig, x_reco, stats in zip(inputs, outputs, self._last_mean_sigma):
+            mean = stats[0]
+            logsigma = stats[1]
+            o = objective(x_reco, x_orig)
+            if T.ndim(o) > 0:
+                o = T.mean(o)
+            o = o + T.kl_gaussian(mean, logsigma,
+                                  regularizer_scale=self.regularizer_scale,
+                                  prior_mean=self.prior_mean,
+                                  prior_logsigma=self.prior_logsigma)
+            obj = obj + o
+        obj = obj / len(inputs) # mean of all objectives
+        # ====== Create the optimizer ====== #
+        if optimizer is None:
+            return obj, None
+        params = self.get_params(globals=globals, trainable=True)
+        if globals:
+            grad = T.gradients(obj, params)
+        else:
+            grad = T.gradients(obj, params, consider_constant=inputs)
+        opt = optimizer(grad, params)
+        return obj, opt

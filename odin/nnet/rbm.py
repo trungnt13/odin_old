@@ -133,9 +133,11 @@ class RBM(OdinFunction):
         else:
             k = self.gibbs_steps
 
-        sample_hidden = False
-        if 'output_hidden' in kwargs:
-            sample_hidden = kwargs['output_hidden']
+        reconstructed = False
+        if 'reconstructed' in kwargs:
+            reconstructed = kwargs['reconstructed']
+        if reconstructed and training:
+            self.log('Training mode always return hidden activations')
 
         X = self.get_inputs(training)[0]
         if T.ndim(X) > 2:
@@ -197,10 +199,10 @@ class RBM(OdinFunction):
                 outputs_info=[None, None, None, None, None, persistent_vis_chain],
                 n_steps=k
             )
-            if sample_hidden:
-                ret_val = hid_mfs[-1]
-            else:
+            if reconstructed:
                 ret_val = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
+            else:
+                ret_val = hid_mfs[-1]
         return ret_val
 
     def get_optimization(self, objective=None, optimizer=None,

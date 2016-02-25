@@ -917,7 +917,7 @@ def l2_regularize(x):
 def l1_regularize(x):
     return sum(tf.abs(x))
 
-def kl_gaussian(x, mean_, logsigma,
+def kl_gaussian(mean_, logsigma,
                 prior_mean=0., prior_logsigma=0.,
                 regularizer_scale=1.):
     ''' KL-divergence between two gaussians.

@@ -118,6 +118,10 @@ class OdinFunction(OdinObject):
         self.params = OrderedDict()
         self.params_tags = OrderedDict()
 
+        # this is dirty hack that allow other functions to modify the inputs
+        # of this function right before getting the outputs
+        self._intermediate_inputs = None
+
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
         # ====== parse incoming layers ====== #
@@ -209,12 +213,18 @@ class OdinFunction(OdinObject):
         self._validation_optimization_params(objective, optimizer)
         y_pred = self(training=training)
         y_true = self.output_var
+        # ====== caluclate objectives for each in-out pair ====== #
         obj = T.castX(0.)
         # in case of multiple output, we take the mean of loss for each output
         for yp, yt in zip(y_pred, y_true):
-            obj = obj + objective(yp, yt)
+            o = objective(yp, yt)
+            # if multiple-dimension cannot calculate gradients
+            # hence, we take mean of the objective
+            if T.ndim(o) > 0:
+                o = T.mean(o)
+            obj = obj + o
         obj = obj / len(y_pred)
-
+        # ====== get optimizer ====== #
         if optimizer is None:
             opt = None
         else:
@@ -355,6 +365,13 @@ class OdinFunction(OdinObject):
         inputs already created
 
         '''
+        # ====== Dirty hack, modify intermediate inputs of function ====== #
+        if self._intermediate_inputs is not None:
+            inputs = self._intermediate_inputs
+            self._intermediate_inputs = None
+            self._last_inputs = inputs
+            return inputs
+        # ====== getting the inputs from nested functions ====== #
         inputs = []
         self.input_var # make sure initialized all placeholder
         for idx, i in enumerate(self._incoming):
@@ -366,7 +383,8 @@ class OdinFunction(OdinObject):
                 api = API.get_object_api(i)
                 if api == 'lasagne':
                     import lasagne
-                    inputs.append(lasagne.layers.get_output(i, deterministic=(not training)))
+                    inputs.append(
+                        lasagne.layers.get_output(i, deterministic=not training))
                 elif api == 'keras':
                     inputs.append(i.get_output(train=training))
                 elif api == 'odin':

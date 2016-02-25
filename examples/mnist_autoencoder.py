@@ -42,7 +42,7 @@ def test_dA(): # AutoEncoder
 
     f_pred = T.function(
         inputs=dA.input_var,
-        outputs=dA())
+        outputs=dA(reconstructed=True))
     for i in xrange(3):
         t = np.random.randint(ds['X_test'].shape[0] - 16)
         X = ds['X_test'][t:t + 16]
@@ -99,7 +99,7 @@ def test_aED(): #AutoEncoderDecoder
     # ====== Output reconstruction ====== #
     f_pred = T.function(
         inputs=aED.input_var,
-        outputs=aED())
+        outputs=aED(reconstructed=True))
 
     for i in xrange(3):
         t = np.random.randint(ds['X_test'].shape[0] - 16)
@@ -114,9 +114,9 @@ def test_aED(): #AutoEncoderDecoder
     # ====== OUtput hidden activation ====== #
     f_pred = T.function(
         inputs=aED.input_var,
-        outputs=aED(output_hidden=True))
+        outputs=aED())
     X = ds['X_test'][t:t + 16]
     print(f_pred(X)[0].shape)
 
 # test_dA()
-# test_aED()
+test_aED()
