@@ -11,7 +11,7 @@ ds = odin.dataset.load_mnist()
 print(ds)
 
 def test_dA(): # AutoEncoder
-    dA = odin.funcs.AutoEncoder((None, 28, 28), num_units=512, denoising=0.3)
+    dA = odin.nnet.AutoEncoder((None, 28, 28), num_units=512, denoising=0.3)
     sgd = lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01)
     cost, updates = dA.get_optimization(
         objective=odin.objectives.categorical_crossentropy,
@@ -57,17 +57,17 @@ def test_aED(): #AutoEncoderDecoder
     Wa = T.variable(T.np_glorot_uniform(shape=(784, 256)), name='W')
     Wb = T.variable(T.np_glorot_uniform(shape=(256, 128)), name='W')
 
-    d1a = odin.funcs.Dense((None, 28, 28), num_units=256, W=Wa, name='d1a',
+    d1a = odin.nnet.Dense((None, 28, 28), num_units=256, W=Wa, name='d1a',
         nonlinearity=T.sigmoid)
-    d1b = odin.funcs.Dense(d1a, num_units=128, W=Wb, name='d1b',
-        nonlinearity=T.sigmoid)
-
-    d2a = odin.funcs.Dense(d1b, num_units=256, W=Wb.T, name='d2a',
-        nonlinearity=T.sigmoid)
-    d2b = odin.funcs.Dense(d2a, num_units=784, W=Wa.T, name='d2b',
+    d1b = odin.nnet.Dense(d1a, num_units=128, W=Wb, name='d1b',
         nonlinearity=T.sigmoid)
 
-    aED = odin.funcs.AutoEncoderDecoder(d1b, d2b)
+    d2a = odin.nnet.Dense(d1b, num_units=256, W=Wb.T, name='d2a',
+        nonlinearity=T.sigmoid)
+    d2b = odin.nnet.Dense(d2a, num_units=784, W=Wa.T, name='d2b',
+        nonlinearity=T.sigmoid)
+
+    aED = odin.nnet.AutoEncoderDecoder(d1b, d2b)
     sgd = lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01)
     cost, updates = aED.get_optimization(
         objective=odin.objectives.categorical_crossentropy,

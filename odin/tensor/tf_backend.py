@@ -630,7 +630,7 @@ def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
     else:
         return None, None
 
-def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
+def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None,
          go_backwards=False):
     """
     Helper function to unroll for loops. Can be used to unroll theano.scan.
@@ -651,7 +651,8 @@ def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
 
     outputs_info : list of TensorVariables
         List of tensors specifying the initial values for each recurrent
-        value.
+        value. Specify output_info to None for non-arguments to
+        the step_function
 
     non_sequences: list of TensorVariables
         List of theano.shared variables that are used in the step function.
@@ -670,17 +671,28 @@ def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
 
     """
     if not isinstance(sequences, (list, tuple)):
-        sequences = [sequences]
+        sequences = [] if sequences is None else [sequences]
 
     # When backwards reverse the recursion direction
     counter = range(n_steps)
     if go_backwards:
         counter = counter[::-1]
 
+    # ====== check if outputs_info is None ====== #
     output = []
-    prev_vals = outputs_info
+    if outputs_info is not None:
+        prev_vals = outputs_info
+    else:
+        prev_vals = []
+    output_idx = [i for i in range(len(prev_vals)) if prev_vals[i] is not None]
+    # ====== check if non_sequences is None ====== #
+    if non_sequences is None:
+        non_sequences = []
+    # ====== Main loop ====== #
     for i in counter:
-        step_input = [s[i] for s in sequences] + prev_vals + non_sequences
+        step_input = [s[i] for s in sequences] + \
+                     [prev_vals[idx] for idx in output_idx] + \
+                     non_sequences
         out_ = step_fn(*step_input)
         # The returned values from step can be either a TensorVariable,
         # a list, or a tuple.  Below, we force it to always be a list.
@@ -893,11 +905,50 @@ def dropout(x, level, seed=None):
     return tf.nn.dropout(x * 1., retain_prob, seed=seed)
 
 
+# ==================== Regularizations ==================== #
 def l2_normalize(x, axis):
     if axis < 0:
         axis = axis % len(x.get_shape())
     return tf.nn.l2_normalize(x, dim=axis)
 
+def l2_regularize(x):
+    return sum(tf.square(x))
+
+def l1_regularize(x):
+    return sum(tf.abs(x))
+
+def kl_gaussian(x, mean_, logsigma,
+                prior_mean=0., prior_logsigma=0.,
+                regularizer_scale=1.):
+    ''' KL-divergence between two gaussians.
+    Useful for Variational AutoEncoders. Use this as an activation regularizer
+    Parameters:
+    -----------
+    mean, logsigma: parameters of the input distributions
+    prior_mean, prior_logsigma: paramaters of the desired distribution (note the
+        log on logsigma)
+    regularizer_scale: Rescales the regularization cost. Keep this 1 for most cases.
+
+    Note
+    ----
+    origin implementation from seya:
+    https://github.com/EderSantana/seya/blob/master/seya/regularizers.py
+    Copyright (c) EderSantana
+    '''
+    kl = (prior_logsigma - logsigma +
+          0.5 * (-1 + tf.exp(2 * logsigma) + pow((mean_ - prior_mean), 2)) /
+          tf.exp(2 * prior_logsigma))
+    return mean(kl) * regularizer_scale
+
+def correntropy_regularize(x, sigma=1.):
+    '''
+    Note
+    ----
+    origin implementation from seya:
+    https://github.com/EderSantana/seya/blob/master/seya/regularizers.py
+    Copyright (c) EderSantana
+    '''
+    return -sum(mean(tf.exp(tf.pow(x, 2) / sigma), axis=0)) / tf.sqrt(2 * np.pi * sigma)
 
 # ===========================================================================
 # CONVOLUTIONS

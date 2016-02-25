@@ -3,7 +3,7 @@
 # ======================================================================
 from __future__ import print_function, division
 
-from .. import funcs
+from .. import nnet
 from .. import tensor as T
 from .. import logger
 from .. import objectives
@@ -55,7 +55,52 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(G, [1.0, 29.951998, 37.439999])
 
     def test_loop(self):
-        pass
+        def numpy_loop():
+            o1 = []
+            o2 = []
+
+            seq1 = np.arange(10)
+            seq2 = np.arange(10, 15)
+            nonseq1 = 2.
+            nonseq2 = 3.
+            output1 = np.zeros((2, 2)) + 1
+            output2 = np.zeros((2, 2)) + 2
+
+            for i in xrange(5):
+                s1 = seq1[i]
+                s2 = seq2[i]
+                output1 = output1 * s1 + nonseq1
+                o1.append(np.copy(output1).reshape(1, 2, 2))
+                output2 = output2 * s2 + nonseq2
+                o2.append(np.copy(output2).reshape(1, 2, 2))
+            return np.vstack(o1), np.vstack(o2)
+
+        # ====== odin tensor version ====== #
+        seq1 = T.variable(np.arange(10))
+        seq2 = T.variable(np.arange(10, 15))
+        nonseq1 = T.variable(2.)
+        nonseq2 = T.variable(3.)
+        output1 = T.zeros((2, 2)) + 1
+        output2 = T.zeros((2, 2)) + 2
+
+        def step_fn(s1, s2, o1, o2, ns1, ns2):
+            return o1 * s1 + ns1, o2 * s2 + ns2
+
+        r = T.loop(step_fn,
+            sequences=[seq1, seq2],
+            outputs_info=[output1, output2],
+            non_sequences=[nonseq1, nonseq2],
+            n_steps=5,
+            go_backwards=False)
+
+        f = T.function(
+            inputs=[],
+            outputs=r)
+        r = f()
+
+        r_np = numpy_loop()
+        self.assertAlmostEqual(np.sum(np.abs(r[0] - r_np[0])), 0.)
+        self.assertAlmostEqual(np.sum(np.abs(r[1] - r_np[1])), 0.)
 
     def test_scan(self):
         def step(s1, s2, s3, o1, o2, n1, n2):
@@ -73,13 +118,19 @@ class BackendTest(unittest.TestCase):
             outputs_info=[T.zeros((2, 2)), T.ones((2, 2))],
             non_sequences=[nonseq1, nonseq2],
             n_steps=5)
-        print(o1, o2)
         f2 = T.function(
             inputs=[],
             outputs=[o1, o2],
             updates=updates)
         a, b = f2()
-        print(a.shape)
+
+    def test_regularize(self):
+        np.random.seed(T.get_magic_seed())
+        x = T.variable(np.random.rand(10, 10))
+        self.assertAlmostEqual(T.eval(T.l1_regularize(x)), 50.150932312)
+        self.assertAlmostEqual(T.eval(T.l2_regularize(x)), 33.7269096375)
+        self.assertAlmostEqual(T.eval(T.kl_gaussian(x, 0., 1.)), 2.19452810287)
+        self.assertAlmostEqual(T.eval(T.correntropy_regularize(x)), -5.86702489853)
 
 # ===========================================================================
 # Main

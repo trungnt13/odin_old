@@ -3,7 +3,7 @@
 # ======================================================================
 from __future__ import print_function, division
 
-from .. import funcs
+from .. import nnet
 from .. import tensor as T
 from .. import logger
 from .. import objectives
@@ -29,7 +29,7 @@ class FunctionsTest(unittest.TestCase):
         logger.set_enable(True)
 
     def test_dense_func(self):
-        d3 = funcs.Dense((None, 10), num_units=5, nonlinearity=T.linear)
+        d3 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)
         f_pred = T.function(d3.input_var, d3())
 
         x = np.random.rand(16, 10)
@@ -64,9 +64,9 @@ class FunctionsTest(unittest.TestCase):
         self.assertGreater(cost[:-1], cost[1:])
 
     def test_summation_merge(self):
-        d1 = funcs.Dense((None, 10), num_units=5, nonlinearity=T.linear)
-        d2 = funcs.Dense((None, 20), num_units=5, nonlinearity=T.linear)
-        d3 = funcs.Summation((d1, d2))
+        d1 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)
+        d2 = nnet.Dense((None, 20), num_units=5, nonlinearity=T.linear)
+        d3 = nnet.Summation((d1, d2))
 
         params = d3.get_params_value(True)
         p1 = params[0]
@@ -83,10 +83,10 @@ class FunctionsTest(unittest.TestCase):
         self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
 
     def test_get_roots_and_children(self):
-        d1a = funcs.Dense((None, 28, 28), num_units=256, name='d1a')
-        d1b = funcs.Dense(d1a, num_units=128, name='d1b')
-        d1c = funcs.Dense(d1b, num_units=128, name='d1c')
-        d1d = funcs.Summation([(None, 128), d1c], name='Summation')
+        d1a = nnet.Dense((None, 28, 28), num_units=256, name='d1a')
+        d1b = nnet.Dense(d1a, num_units=128, name='d1b')
+        d1c = nnet.Dense(d1b, num_units=128, name='d1c')
+        d1d = nnet.Summation([(None, 128), d1c], name='Summation')
 
         self.assertEqual(d1d.incoming, [None, d1c])
         self.assertEqual(d1d.input_shape, [(None, 128), (None, 128)])

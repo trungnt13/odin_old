@@ -31,6 +31,11 @@ class RBM(OdinFunction):
         Initial value, expression or initializer for the biases. If set to
         ``None``, the layer will have no biases.
 
+    persistent : None, int (batch_size), variable, ndarray
+        persistent is the initial state of sampling chain which has shape
+        (batch_size, input_dim). If persisten is not None, the batch_size must
+        be fixed and strict_batch is turnned on.
+
     seed : int
         seed for RandomState used for sampling
 
@@ -81,7 +86,7 @@ class RBM(OdinFunction):
         if persistent_params is None:
             strict_batch = False
         else:
-            strict_batch = True
+            strict_batch = persistent
         super(RBM, self).__init__(
             incoming, unsupervised=True, strict_batch=strict_batch, **kwargs)
 
@@ -121,6 +126,8 @@ class RBM(OdinFunction):
         return self.input_shape[0]
 
     def __call__(self, training=False, **kwargs):
+        ''' The sampling process was optimized using loop (unroll_scan) on
+        theano which gives significantly speed up '''
         if 'gibbs_steps' in kwargs:
             k = kwargs['gibbs_steps']
         else:
@@ -152,19 +159,14 @@ class RBM(OdinFunction):
             # Read Theano tutorial on scan for more information :
             # http://deeplearning.net/software/theano/library/scan.html
             # the scan will return the entire Gibbs chain
-            (
-                [
-                    pre_sigmoid_nvs,
-                    nv_means,
-                    nv_samples,
-                    pre_sigmoid_nhs,
-                    nh_means,
-                    nh_samples
-                ],
-                # which contains updates rules for random states of theano_rng
-                # to contain the parameter updates
-                updates
-            ) = T.scan(
+            [
+                pre_sigmoid_nvs,
+                nv_means,
+                nv_samples,
+                pre_sigmoid_nhs,
+                nh_means,
+                nh_samples
+            ] = T.loop(
                 step_fn=self.gibbs_hvh,
                 # the None are place holders, saying that
                 # chain_start is the initial state corresponding to the
@@ -183,17 +185,14 @@ class RBM(OdinFunction):
         # ====== sampling ====== #
         else:
             persistent_vis_chain = X
-            (
-                [
-                    presig_hids,
-                    hid_mfs,
-                    hid_samples,
-                    presig_vis,
-                    vis_mfs,
-                    vis_samples
-                ],
-                updates
-            ) = T.scan(
+            [
+                presig_hids,
+                hid_mfs,
+                hid_samples,
+                presig_vis,
+                vis_mfs,
+                vis_samples
+            ] = T.loop(
                 step_fn=self.gibbs_vhv,
                 outputs_info=[None, None, None, None, None, persistent_vis_chain],
                 n_steps=k
@@ -202,7 +201,7 @@ class RBM(OdinFunction):
                 ret_val = hid_mfs[-1]
             else:
                 ret_val = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
-        return ret_val, updates
+        return ret_val
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
@@ -227,17 +226,20 @@ class RBM(OdinFunction):
                 pre_sigmoid_nhs,
                 nh_means,
                 nh_samples
-            ], updates = self(training)
+            ] = self(training)
             # determine gradients on RBM parameters
             # note that we only need the sample at the end of the chain
             chain_end = nv_samples[-1]
         else:
-            vis_mfs, chain_end, updates = self(training)
+            self.raise_arguments('Optimization only can be used while training')
         X = self._last_inputs[0] # get cached inputs
 
+        # for the persistent Contrastive-divergent, the chain does not take
+        # into account training samples but the free energy does take into
+        # account the training samples
         cost = T.mean(self._free_energy(X)) - T.mean(self._free_energy(chain_end))
         if optimizer is None:
-            return cost, updates
+            return cost, None
 
         params = self.get_params(globals=globals, trainable=True)
         # We must not compute the gradient through the gibbs sampling
@@ -245,8 +247,7 @@ class RBM(OdinFunction):
             gparams = T.gradients(cost, params, consider_constant=[chain_end])
         else:
             gparams = T.gradients(cost, params, consider_constant=[chain_end, X])
-        for i, j in optimizer(gparams, params).iteritems():
-            updates[i] = j
+        updates = optimizer(gparams, params)
 
         # ====== create monitoring cost ====== #
         if training:

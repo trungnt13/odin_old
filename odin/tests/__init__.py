@@ -3,7 +3,7 @@ import unittest
 def run(name=None):
     if name is None:
         tests = ['test_backend', 'test_dataset', 'test_utils', 'test_models',
-                 'test_training', 'test_obj_opt', 'test_funcs']
+                 'test_training', 'test_obj_opt', 'test_nnet']
     else:
         tests = []
         if not isinstance(name, (list, tuple)):
@@ -13,7 +13,7 @@ def run(name=None):
             if 'backend' in i or 'tensor' in i:
                 tests.append('test_backend')
             elif 'funcs' in i:
-                tests.append('test_funcs')
+                tests.append('test_nnet')
             elif 'data' in i:
                 tests.append('test_dataset')
             elif 'model' in i:

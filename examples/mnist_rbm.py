@@ -12,9 +12,9 @@ print(ds)
 
 def test_rbm():
     persistent_chain = T.variable(numpy.zeros((20, 500)))
-    input_ = odin.funcs.Dense((None, 28, 28), num_units=784)
+    input_ = odin.nnet.Dense((None, 28, 28), num_units=784)
     input_ = (None, 28, 28)
-    rbm = odin.funcs.RBM(input_, 500, persistent=None)
+    rbm = odin.nnet.RBM(input_, 500, persistent=persistent_chain)
     print(rbm.get_params(True))
     print(rbm.get_params(False))
     print('Input variables:', rbm.input_var)
@@ -38,7 +38,7 @@ def test_rbm():
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])
     odin.visual.print_bar(cost, bincount=20)
 
-    (vis_mfc, updates) = rbm(gibbs_steps=1)
+    vis_mfc = rbm(gibbs_steps=1)
     print('Building functions...')
     sample_rbm = T.function(
         inputs=rbm.input_var,
