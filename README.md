@@ -5,7 +5,7 @@ Odin: Organized Digital Intelligent Networks
 [![image](https://travis-ci.org/Lasagne/Lasagne.svg)](https://travis-ci.org/Lasagne/Lasagne)
 [![image](https://img.shields.io/coveralls/Lasagne/Lasagne.svg)](https://coveralls.io/r/Lasagne/Lasagne)
 
-Odin contains a number of ultilities to accelerate the development of neural network using existing libraries, includes: keras and Lasagne. The library is written in Python supported constructing computational graph on top of either [Theano](https://github.com/Theano/Theano) or [TensorFlow](https://github.com/tensorflow/tensorflow). 
+Odin contains a number of ultilities to accelerate the development of neural network using existing libraries, includes: [keras](https://github.com/fchollet/keras) and [Lasagne](https://github.com/Lasagne/Lasagne). The library is written in Python supported constructing computational graph on top of either [Theano](https://github.com/Theano/Theano) or [TensorFlow](https://github.com/tensorflow/tensorflow). 
 
 Our goal is creating minimalism and flexible design to speed up the overall pipeline. By simplifying the understand of Artificial Neural Networks as a "nested composition of funcitons", our library concentrate on advancing 4 components:
 
