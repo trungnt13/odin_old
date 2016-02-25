@@ -1,6 +1,6 @@
 # ===========================================================================
 # This module is adpated from: https://github.com/fchollet/keras
-# Revision: @20728c9
+# Revision: @bec2701
 # Original work Copyright (c) 2014-2015 keras contributors
 # Some idea are also borrowed from Lasagne library
 # Original work Copyright (c) 2014-2015 Lasagne contributors
@@ -174,10 +174,13 @@ def transpose(x):
 
 
 def gather(reference, indices):
-    '''reference: a tensor.
-    indices: an int tensor of indices.
+    '''
+    # Arguments
+        reference: a tensor.
+        indices: an int tensor of indices.
 
-    Return: a tensor of same type as reference.
+    # Returns
+        a tensor of same type as `reference`.
     '''
     return tf.gather(reference, indices)
 
@@ -336,12 +339,14 @@ def concatenate(tensors, axis=-1):
 def reshape(x, shape):
     return tf.reshape(x, shape)
 
-def permute_dimensions(x, pattern):
-    '''Transpose dimensions.
-
-    pattern should be a tuple or list of
-    dimension indices, e.g. [0, 2, 1].
+def dimshuffle(x, pattern):
     '''
+    # Arguments
+        pattern: should be a tuple or list of
+            dimension indices, e.g. [0, 2, 1].
+    '''
+    if 'x' in pattern:
+        raise NotImplementedError
     return tf.transpose(x, perm=pattern)
 
 def resize_images(X, height_factor, width_factor, dim_ordering):
@@ -354,9 +359,9 @@ def resize_images(X, height_factor, width_factor, dim_ordering):
     if dim_ordering == 'th':
         new_height = shape(X)[2].value * height_factor
         new_width = shape(X)[3].value * width_factor
-        X = permute_dimensions(X, [0, 2, 3, 1])
+        X = dimshuffle(X, [0, 2, 3, 1])
         X = tf.image.resize_nearest_neighbor(X, (new_height, new_width))
-        return permute_dimensions(X, [0, 3, 1, 2])
+        return dimshuffle(X, [0, 3, 1, 2])
     elif dim_ordering == 'tf':
         new_height = shape(X)[1].value * height_factor
         new_width = shape(X)[2].value * width_factor
@@ -697,46 +702,45 @@ def loop(step_fn, sequences, outputs_info, non_sequences, n_steps,
     return output_scan
 
 def rnn(step_function, inputs, initial_states,
-        go_backwards=False, mask=None):
+        go_backwards=False, mask=None, constants=None):
     '''Iterates over the time dimension of a tensor.
-
-    Parameters
-    ----------
-    inputs: tensor of temporal data of shape (samples, time, ...)
-        (at least 3D).
-    step_function:
-        Parameters:
-            input: tensor with shape (samples, ...) (no time dimension),
-                representing input for the batch of samples at a certain
-                time step.
-            states: list of tensors.
-        Returns:
-            output: tensor with shape (samples, ...) (no time dimension),
-            new_states: list of tensors, same length and shapes
-                as 'states'.
-    initial_states: tensor with shape (samples, ...) (no time dimension),
-        containing the initial values for the states used in
-        the step function.
-    go_backwards: boolean. If True, do the iteration over
-        the time dimension in reverse order.
-    mask: binary tensor with shape (samples, time, 1),
-        with a zero for every element that is masked.
-
-    Returns
-    -------
-    A tuple (last_output, outputs, new_states).
-        last_output: the latest output of the rnn, of shape (samples, ...)
-        outputs: tensor with shape (samples, time, ...) where each
-            entry outputs[s, t] is the output of the step function
-            at time t for sample s.
-        new_states: list of tensors, latest states returned by
-            the step function, of shape (samples, ...).
+    # Arguments
+        inputs: tensor of temporal data of shape (samples, time, ...)
+            (at least 3D).
+        step_function:
+            Parameters:
+                input: tensor with shape (samples, ...) (no time dimension),
+                    representing input for the batch of samples at a certain
+                    time step.
+                states: list of tensors.
+            Returns:
+                output: tensor with shape (samples, ...) (no time dimension),
+                new_states: list of tensors, same length and shapes
+                    as 'states'.
+        initial_states: tensor with shape (samples, ...) (no time dimension),
+            containing the initial values for the states used in
+            the step function.
+        go_backwards: boolean. If True, do the iteration over
+            the time dimension in reverse order.
+        mask: binary tensor with shape (samples, time, 1),
+            with a zero for every element that is masked.
+        constants: a list of constant values passed at each step.
+    # Returns
+        A tuple (last_output, outputs, new_states).
+            last_output: the latest output of the rnn, of shape (samples, ...)
+            outputs: tensor with shape (samples, time, ...) where each
+                entry outputs[s, t] is the output of the step function
+                at time t for sample s.
+            new_states: list of tensors, latest states returned by
+                the step function, of shape (samples, ...).
     '''
     ndim = len(inputs.get_shape())
     assert ndim >= 3, "Input should be at least 3D."
     axes = [1, 0] + list(range(2, ndim))
     inputs = tf.transpose(inputs, (axes))
     input_list = tf.unpack(inputs)
+    if constants is None:
+        constants = []
 
     states = initial_states
     successive_states = []
@@ -753,7 +757,7 @@ def rnn(step_function, inputs, initial_states,
         mask_list = tf.unpack(mask)
 
         for input, mask_t in zip(input_list, mask_list):
-            output, new_states = step_function(input, states)
+            output, new_states = step_function(input, states + constants)
 
             # tf.select needs its condition tensor to be the same shape as its two
             # result tensors, but in our case the condition (mask) tensor is
@@ -781,7 +785,7 @@ def rnn(step_function, inputs, initial_states,
             successive_states.append(states)
     else:
         for input in input_list:
-            output, states = step_function(input, states)
+            output, states = step_function(input, states + constants)
             successive_outputs.append(output)
             successive_states.append(states)
 
@@ -795,7 +799,12 @@ def rnn(step_function, inputs, initial_states,
 
 
 def switch(condition, then_expression, else_expression):
-    '''condition: scalar tensor.
+    '''Switch between two operations depending on a scalar value.
+
+    # Arguments
+        condition: scalar tensor.
+        then_expression: TensorFlow operation.
+        else_expression: TensorFlow operation.
     '''
     return tf.python.control_flow_ops.cond(condition,
                                            lambda: then_expression,
@@ -807,7 +816,6 @@ def switch(condition, then_expression, else_expression):
 # ===========================================================================
 def relu(x, alpha=0., max_value=None):
     '''ReLU.
-
     # Arguments
         alpha: slope of negative section.
         max_value: saturation threshold.
@@ -817,7 +825,9 @@ def relu(x, alpha=0., max_value=None):
     if max_value is not None:
         x = tf.clip_by_value(x, tf.cast(0., dtype=_FLOATX),
                              tf.cast(max_value, dtype=_FLOATX))
-    x -= tf.constant(alpha, dtype=_FLOATX) * negative_part
+    if isinstance(alpha, (tuple, list, np.ndarray)) or np.isscalar(alpha):
+        alpha = tf.constant(alpha, dtype=_FLOATX)
+    x -= alpha * negative_part
     return x
 
 def linear(x):
@@ -889,9 +899,9 @@ def l2_normalize(x, axis):
     return tf.nn.l2_normalize(x, dim=axis)
 
 
+# ===========================================================================
 # CONVOLUTIONS
-
-
+# ===========================================================================
 def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
     '''Runs on cuDNN if available.
@@ -935,6 +945,9 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
         x = tf.cast(x, 'float64')
     return x
 
+def conv3d(x, kernel, strides=(1, 1, 1), border_mode='valid', dim_ordering='th',
+           image_shape=None, filter_shape=None):
+    raise NotImplementedError
 
 def pool2d(x, pool_size, strides=(1, 1),
            border_mode='valid', dim_ordering='th', pool_mode='max'):
@@ -982,6 +995,10 @@ def pool2d(x, pool_size, strides=(1, 1),
     if _FLOATX == 'float64':
         x = tf.cast(x, 'float64')
     return x
+
+def pool3d(x, pool_size, strides=(1, 1, 1),
+           border_mode='valid', dim_ordering='th', pool_mode='max'):
+    raise NotImplementedError
 
 # ===========================================================================
 # RANDOMNESS

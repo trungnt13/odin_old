@@ -119,4 +119,4 @@ def test_aED(): #AutoEncoderDecoder
     print(f_pred(X)[0].shape)
 
 # test_dA()
-test_aED()
+# test_aED()

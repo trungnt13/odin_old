@@ -1,3 +1,9 @@
+# ===========================================================================
+# This module is created based on the code from Lasagne library
+# Original work Copyright (c) 2014-2015 Lasagne contributors
+# Modified work Copyright 2016-2017 TrungNT
+# ===========================================================================
+
 from __future__ import print_function, division, absolute_import
 
 import os
@@ -865,3 +871,42 @@ def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
                 ids.append(i[1])
     # remove duplicate py
     return ids
+
+def as_tuple(x, N, t=None):
+    """
+    Coerce a value to a tuple of given length (and possibly given type).
+
+    Parameters
+    ----------
+    x : value or iterable
+    N : integer
+        length of the desired tuple
+    t : type, optional
+        required type for all elements
+
+    Returns
+    -------
+    tuple
+        ``tuple(x)`` if `x` is iterable, ``(x,) * N`` otherwise.
+
+    Raises
+    ------
+    TypeError
+        if `type` is given and `x` or any of its elements do not match it
+    ValueError
+        if `x` is iterable, but does not have exactly `N` elements
+    """
+    try:
+        X = tuple(x)
+    except TypeError:
+        X = (x,) * N
+
+    if (t is not None) and not all(isinstance(v, t) for v in X):
+        raise TypeError("expected a single value or an iterable "
+                        "of {0}, got {1} instead".format(t.__name__, x))
+
+    if len(X) != N:
+        raise ValueError("expected a single value or an iterable "
+                         "with length {0}, got {1} instead".format(N, x))
+
+    return X

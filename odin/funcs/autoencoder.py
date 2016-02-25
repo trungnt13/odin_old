@@ -16,6 +16,8 @@ class AutoEncoderDecoder(OdinFunction):
 
         # only modify root if 2 different graphs
         if encoder not in decoder.get_children():
+            self.log('Found disconnected graph of encoder-decoder, set incoming'
+                     ' of decoder to encoder!')
             for i in decoder.get_roots():
                 if encoder not in i.incoming:
                     i.set_incoming(encoder)
@@ -63,6 +65,7 @@ class AutoEncoderDecoder(OdinFunction):
             if T.ndim(o) > 0:
                 o = T.mean(T.sum(o, axis=-1))
             obj = obj + o
+        obj = obj / len(x_reconstructed)
 
         # ====== Create the optimizer ====== #
         if optimizer is None:
@@ -139,8 +142,10 @@ class AutoEncoder(OdinFunction):
     """
 
     def __init__(self, incoming, num_units,
-        W=T.np_glorot_uniform, b=T.np_constant,
-        denoising=0.5, seed=None, **kwargs):
+                 W=T.np_glorot_uniform,
+                 b=T.np_constant,
+                 nonlinearity=T.sigmoid,
+                 denoising=0.5, seed=None, **kwargs):
         super(AutoEncoder, self).__init__(
             incoming, unsupervised=True, strict_batch=False, **kwargs)
 
@@ -164,6 +169,7 @@ class AutoEncoder(OdinFunction):
         self.b_prime = self.vbias
         # tied weights, therefore W_prime is W transpose
         self.W_prime = self.W.T
+        self.nonlinearity = nonlinearity
 
     # ==================== Abstract methods ==================== #
     @property
@@ -181,8 +187,8 @@ class AutoEncoder(OdinFunction):
 
         outputs = []
         for x, shape in zip(X, self.output_shape):
-            hidden_state = T.sigmoid(T.dot(x, self.W) + self.hbias)
-            reconstructed = T.sigmoid(
+            hidden_state = self.nonlinearity(T.dot(x, self.W) + self.hbias)
+            reconstructed = self.nonlinearity(
                 T.dot(hidden_state, self.W_prime) + self.b_prime)
             if not training:
                 reconstructed = T.reshape(reconstructed,
