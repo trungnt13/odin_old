@@ -44,6 +44,7 @@ class OdinObject(object):
 
     def set_logging(self, enable):
         self._logging = enable
+        return self
 
     def log(self, msg, level=20):
         '''
@@ -111,7 +112,8 @@ class OdinFunction(OdinObject):
 
     '''
 
-    def __init__(self, incoming, unsupervised, strict_batch=False, name=None):
+    def __init__(self, incoming, unsupervised,
+                 strict_batch=False, name=None, **kwargs):
         super(OdinFunction, self).__init__()
         self._unsupervised = unsupervised
         self._strict_batch = strict_batch
@@ -163,6 +165,11 @@ class OdinFunction(OdinObject):
         #{index : placeholder}, store placeholder created by this Function
         self._local_input_var = {}
         self._output_var = None
+        return self
+
+    def set_intermediate_inputs(self, inputs):
+        self._intermediate_inputs = inputs
+        return self
 
     def get_roots(self):
         ''' Performing Depth First Search to return the OdinFunction
@@ -257,7 +264,7 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False):
         raise NotImplementedError
 
     @abstractmethod
@@ -492,3 +499,15 @@ class OdinFunction(OdinObject):
         self.params_tags[name + '_regularizable'] = regularizable
         self.params_tags[name + '_trainable'] = trainable
         return spec
+
+class OdinUnsupervisedFunction(OdinFunction):
+
+    def __init__(self, incoming, strict_batch=False, name=None, **kwargs):
+        super(OdinUnsupervisedFunction, self).__init__(
+            incoming, unsupervised=True, strict_batch=strict_batch,
+            name=name, **kwargs)
+        self._reconstruction_mode = False
+
+    def set_reconstruction_mode(self, reconstruct):
+        self._reconstruction_mode = reconstruct
+        return self

@@ -1,48 +1,58 @@
+# VB calibration to improve the interface between phone recognizer and i-vector extractor
 from __future__ import print_function, division, absolute_import
 
 import numpy as np
 from six.moves import zip
 
 from .. import tensor as T
-from ..base import OdinFunction
+from ..base import OdinUnsupervisedFunction, OdinFunction
 from .. import config
 
-class AutoEncoderDecoder(OdinFunction):
+class AutoEncoderDecoder(OdinUnsupervisedFunction):
 
-    def __init__(self, encoder, decoder, **kwargs):
+    def __init__(self, encoder, decoder,
+                 reconstruction=False, **kwargs):
         if not isinstance(encoder, OdinFunction) or \
            not isinstance(decoder, OdinFunction):
            self.raise_arguments('AutoEncoderDecoder only support OdinFunction'
                                 'as incoming inputs')
 
-        # only modify root if 2 different graphs
-        if encoder not in decoder.get_children():
-            self.log('Found disconnected graph of encoder-decoder, set incoming'
-                     ' of decoder to encoder!')
-            for i in decoder.get_roots():
-                if encoder not in i.incoming:
-                    i.set_incoming(encoder)
+        # this mode is enable if encoder and decoder already connected
+        self._connected_encoder_decoder = False
+        if encoder in decoder.get_children():
+            self.log('Found connected graph of encoder-decoder!', 30)
+            self._connected_encoder_decoder = True
 
         super(AutoEncoderDecoder, self).__init__(
-            incoming=decoder, unsupervised=True, strict_batch=False, **kwargs)
+            incoming=encoder, strict_batch=False, **kwargs)
 
         self.encoder = encoder
         self.decoder = decoder
 
-        # this mode return output similar to input
-        self._reconstruction_mode = False
-
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return self.decoder.output_shape
+        if self._reconstruction_mode:
+            return self.decoder.output_shape
+        else:
+            return self.encoder.output_shape
 
-    def __call__(self, training=False, **kwargs):
-        if 'reconstructed' in kwargs:
-            self._reconstruction_mode = kwargs['reconstructed']
-        # in this funcitons, training mean using reconstruction mode
-        inputs = self.get_inputs(training)
-        outputs = inputs
+    def __call__(self, training=False):
+        # ====== Only get hidden states ====== #
+        if not self._reconstruction_mode:
+            inputs = self.get_inputs(training)
+            outputs = inputs
+        # ====== Get reconstructed inputs from disconnected graph ====== #
+        elif not self._connected_encoder_decoder:
+            inputs = self.get_inputs(training)
+            # intercept the inputs of decoder
+            for i in self.decoder.get_roots():
+                i._intermediate_inputs = inputs
+            outputs = self.decoder(training)
+        # ====== Get reconstructed inputs from connected graph ====== #
+        else:
+            outputs = self.decoder(training)
+            inputs = []
         self._log_footprint(training, inputs, outputs)
         return outputs
 
@@ -50,16 +60,17 @@ class AutoEncoderDecoder(OdinFunction):
                          globals=True, training=True):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
-        x_reconstructed = self(training=training, reconstructed=True)
+        x_reconstructed = self.set_reconstruction_mode(True)(training=training)
+        self.set_reconstruction_mode(False) # reset the reconstruction mode
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
         x_original = []
         for i in self.encoder.get_roots():
             x_original += i._last_inputs
-
         # ====== Objectives is mean of all in-out pair ====== #
         obj = T.castX(0.)
         for i, j in zip(x_reconstructed, x_original):
+            # reshape if reconstructed and original in different shape
             if T.ndim(i) != T.ndim(j):
                 j = T.reshape(j, T.shape(i))
 
@@ -83,22 +94,19 @@ class AutoEncoderDecoder(OdinFunction):
         opt = optimizer(grad, params)
         return obj, opt
 
-    def get_inputs(self, training=True):
-        if self._reconstruction_mode:
-            self._reconstruction_mode = False
-            return self.decoder(training)
-        else: # back to normal reconstruction mode after return 1 hidden
-            return self.encoder(training)
-
-    @property
-    def input_var(self):
-        return self.encoder.input_var
-
     def get_params(self, globals, trainable=None, regularizable=None):
         ''' Weights must be tied '''
-        return self.encoder.get_params(globals, trainable, regularizable)
+        encoder_params = self.encoder.get_params(
+            globals, trainable, regularizable)
+        decoder_params = self.decoder.get_params(
+            globals, trainable, regularizable)
+        params = encoder_params + decoder_params
+        # we only consider the variable, not the TensorType (e.g. W.T)
+        # Have overlap between encoder and decoder params if globals is turned
+        # on, hence we use ordered set
+        return T.np_ordered_set([i for i in params if T.is_variable(i)]).tolist()
 
-class AutoEncoder(OdinFunction):
+class AutoEncoder(OdinUnsupervisedFunction):
 
     """Denoising Auto-Encoder class (dA)
 
@@ -152,7 +160,7 @@ class AutoEncoder(OdinFunction):
                  nonlinearity=T.sigmoid,
                  denoising=0.5, seed=None, **kwargs):
         super(AutoEncoder, self).__init__(
-            incoming, unsupervised=True, strict_batch=False, **kwargs)
+            incoming, strict_batch=False, **kwargs)
 
         self.num_units = num_units
         self.denoising = denoising
@@ -179,15 +187,11 @@ class AutoEncoder(OdinFunction):
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return self.input_shape
+        if self._reconstruction_mode:
+            return self.input_shape
+        return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False, **kwargs):
-        # ====== if output_hidden activations ====== #
-        reconstructed = False
-        if 'reconstructed' in kwargs:
-            reconstructed = kwargs['reconstructed']
-        if reconstructed and training:
-            self.log('Training mode always return hidden activations')
+    def __call__(self, training=False):
         # ====== inputs ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
             for x in self.get_inputs(training)]
@@ -195,14 +199,16 @@ class AutoEncoder(OdinFunction):
         for x, shape in zip(X, self.output_shape):
             hidden_state = self.nonlinearity(T.dot(x, self.W) + self.hbias)
             # output reconstructed data
-            reconstructed = self.nonlinearity(
-                T.dot(hidden_state, self.W_prime) + self.b_prime)
-            if not training:
-                if reconstructed:
+            if self._reconstruction_mode:
+                reconstructed = self.nonlinearity(
+                    T.dot(hidden_state, self.W_prime) + self.b_prime)
+                # reshape if shape mismatch
+                if T.ndim(reconstructed) != len(shape):
                     reconstructed = T.reshape(
                         reconstructed, (-1,) + tuple(shape[1:]))
-                else: # only output hidden activations
-                    reconstructed = hidden_state
+            # only output hidden activations
+            else:
+                reconstructed = hidden_state
             outputs.append(reconstructed)
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, X, outputs)
@@ -216,7 +222,8 @@ class AutoEncoder(OdinFunction):
             for x in self.get_inputs(training)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
         self._intermediate_inputs = x_corrupted # dirty hack modify inputs
-        x_reconstructed = self(training=training)
+        x_reconstructed = self.set_reconstruction_mode(True)(training)
+        self.set_reconstruction_mode(False) # reset the mode
 
         obj = T.castX(0.)
         for xr, xc in zip(x_reconstructed, x_corrupted):
@@ -581,7 +588,7 @@ class VAE(object):
             t_diff = time.time() - t1
             print("time: %f\n\n" % t_diff)
 
-class VariationalEncoderDecoder(OdinFunction):
+class VariationalEncoderDecoder(OdinUnsupervisedFunction):
 
     """ Hidden layer for Variational Autoencoding Bayes method [1].
     This layer projects the input twice to calculate the mean and variance
@@ -609,7 +616,7 @@ class VariationalEncoderDecoder(OdinFunction):
                  seed=None,
                  **kwargs):
         super(VariationalEncoderDecoder, self).__init__(
-            incoming=encoder, unsupervised=True, strict_batch=False, **kwargs)
+            incoming=encoder, strict_batch=False, **kwargs)
         self.prior_mean = prior_mean
         self.prior_logsigma = prior_logsigma
         self.regularizer_scale = regularizer_scale
@@ -625,7 +632,7 @@ class VariationalEncoderDecoder(OdinFunction):
             if i != j[1:]:
                 self.raise_arguments(
                     'All the feautre dimensions of encoder output_shape '
-                    'must be similar, %s != %s' % (str(i), str(j)))
+                    'must be similar, but %s != %s' % (str(i), str(j)))
         self.input_dim = int(np.prod(i))
         # ====== Validate output_shapes (input_shape from decoder) ====== #
         if self.encoder in self.decoder.get_children():
@@ -638,7 +645,7 @@ class VariationalEncoderDecoder(OdinFunction):
             if i != j[1:]:
                 self.raise_arguments(
                     'All the feautre dimensions of decoder input_shape '
-                    'must be similar, %s != %s' % (str(i), str(j)))
+                    'must be similar, but %s != %s' % (str(i), str(j)))
         self.num_units = int(np.prod(i))
         # use this for intecept the inputs of decoder and return reconstruction
         self._decoder_roots = self.decoder.get_roots()
@@ -672,19 +679,19 @@ class VariationalEncoderDecoder(OdinFunction):
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        return self.decoder.output_shape
+        outshape = []
+        for i in self.input_shape:
+            outshape.append((i[0], self.num_units))
+        return outshape
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False):
         '''
         Returns
         -------
         prediction, mean, logsigm : if training=True
         prediction(mean) : if training = False
         '''
-        reconstructed = False
-        if 'reconstructed' in kwargs:
-            reconstructed = kwargs['reconstructed']
-        if reconstructed and training:
+        if self._reconstruction_mode and training:
             self.log('Training mode always return hidden activations')
         # ====== check inputs (only 2D) ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
@@ -692,7 +699,7 @@ class VariationalEncoderDecoder(OdinFunction):
         # ====== Process each input ====== #
         outputs = []
         self._last_mean_sigma = []
-        for x, shape in zip(X, self.output_shape):
+        for x in X:
             mean, logsigma = self.get_mean_logsigma(x)
             if training: # training mode (always return hidden)
                 if config.backend() == 'theano':
@@ -705,22 +712,23 @@ class VariationalEncoderDecoder(OdinFunction):
             else: # prediction mode only return mean
                 outputs.append(mean)
             self._last_mean_sigma.append((mean, logsigma))
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, X, outputs)
         # ====== check if return reconstructed inputs ====== #
-        if not training and reconstructed:
+        if self._reconstruction_mode:
             # intercept the old decoder roots to get reconstruction from
             # current outputs of this functions
             for i in self._decoder_roots:
                 i._intermediate_inputs = outputs
-            outputs = self.decoder(False)
-        # ====== log the footprint for debugging ====== #
-        self._log_footprint(training, X, outputs)
+            outputs = self.decoder(training)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
         outputs = self.decoder(training)
         inputs = []
-        for i, j in zip(self.encoder.input_var, self.output_shape):
+        # make encoder input to be equal shape to decoder output
+        for i, j in zip(self.encoder.input_var, self.decoder.output_shape):
             # we can only know ndim not the shape of placeholder
             if T.ndim(i) != len(j):
                 i = T.reshape(i, (-1,) + j[1:])
@@ -750,3 +758,17 @@ class VariationalEncoderDecoder(OdinFunction):
             grad = T.gradients(obj, params, consider_constant=inputs)
         opt = optimizer(grad, params)
         return obj, opt
+
+    def get_params(self, globals, trainable=None, regularizable=None):
+        ''' Weights must be tied '''
+        encoder_params = self.encoder.get_params(
+            globals, trainable, regularizable)
+        params = super(VariationalEncoderDecoder, self).get_params(
+            globals, trainable, regularizable)
+        # decoder_params = self.decoder.get_params(
+            # globals, trainable, regularizable)
+        params = encoder_params + params
+        # we only consider the variable, not the TensorType (e.g. W.T)
+        # Have overlap between encoder and decoder params if globals is turned
+        # on, hence we use ordered set
+        return T.np_ordered_set([i for i in params if T.is_variable(i)]).tolist()

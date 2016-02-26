@@ -15,7 +15,7 @@ class Summation(OdinFunction):
     def output_shape(self):
         return self.input_shape[0]
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False):
         inputs = self.get_inputs(training)
         outputs = [sum(x for x in inputs)]
         # ====== log the footprint for debugging ====== #

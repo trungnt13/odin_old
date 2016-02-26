@@ -42,7 +42,7 @@ def test_dA(): # AutoEncoder
 
     f_pred = T.function(
         inputs=dA.input_var,
-        outputs=dA(reconstructed=True))
+        outputs=dA.set_reconstruction_mode(True)())
     for i in xrange(3):
         t = np.random.randint(ds['X_test'].shape[0] - 16)
         X = ds['X_test'][t:t + 16]
@@ -62,6 +62,7 @@ def test_aED(): #AutoEncoderDecoder
     d1b = odin.nnet.Dense(d1a, num_units=128, W=Wb, name='d1b',
         nonlinearity=T.sigmoid)
 
+    # or d1b, (None, 128) as incoming
     d2a = odin.nnet.Dense(d1b, num_units=256, W=Wb.T, name='d2a',
         nonlinearity=T.sigmoid)
     d2b = odin.nnet.Dense(d2a, num_units=784, W=Wa.T, name='d2b',
@@ -99,7 +100,7 @@ def test_aED(): #AutoEncoderDecoder
     # ====== Output reconstruction ====== #
     f_pred = T.function(
         inputs=aED.input_var,
-        outputs=aED(reconstructed=True))
+        outputs=aED.set_reconstruction_mode(True)())
 
     for i in xrange(3):
         t = np.random.randint(ds['X_test'].shape[0] - 16)
@@ -118,5 +119,5 @@ def test_aED(): #AutoEncoderDecoder
     X = ds['X_test'][t:t + 16]
     print(f_pred(X)[0].shape)
 
-# test_dA()
-test_aED()
+test_dA()
+# test_aED()

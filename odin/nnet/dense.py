@@ -42,7 +42,7 @@ class Dense(OdinFunction):
         return self._deterministic_optimization_procedure(
             objective, optimizer, globals, training)
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False):
         inputs = self.get_inputs(training)
         outputs = []
         # ====== processing each inputs ====== #

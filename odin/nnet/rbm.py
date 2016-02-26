@@ -3,9 +3,11 @@ from __future__ import print_function, division, absolute_import
 import numpy as np
 
 from .. import tensor as T
-from .. base import OdinFunction
+from .. base import OdinUnsupervisedFunction
 
-class RBM(OdinFunction):
+from six.moves import zip, range
+
+class RBM(OdinUnsupervisedFunction):
 
     """Restricted Boltzmann Machine (RBM)
     RBM constructor. Defines the parameters of the model along with
@@ -81,15 +83,12 @@ class RBM(OdinFunction):
         else:
             self.raise_arguments('Unsupport type %s for persistent' %
                 persistent.__class__.__name__)
-
         # ====== super ====== #
-        if persistent_params is None:
-            strict_batch = False
-        else:
-            strict_batch = persistent
+        strict_batch = False
+        if persistent_params is not None:
+            strict_batch = True
         super(RBM, self).__init__(
-            incoming, unsupervised=True, strict_batch=strict_batch, **kwargs)
-
+            incoming, strict_batch=strict_batch, **kwargs)
         # ====== create persitent variable ====== #
         if persistent_params is not None:
             self.persistent = self.create_params(
@@ -97,12 +96,17 @@ class RBM(OdinFunction):
                 regularizable=False, trainable=False)
         else:
             self.persistent = None
-
+        # ====== check input_shape ====== #
+        i = np.prod(self.input_shape[0][1:])
+        for j in self.input_shape:
+            if i != np.prod(j[1:]):
+                self.raise_arguments('All incoming inputs must have the same '
+                                     'features dimensions, but %d != %d' %
+                                     (i, np.prod(j[1:])))
+        self.n_visible = int(i)
         # ====== others ====== #
-        self.n_visible = int(np.prod(self.input_shape[1:]))
         self.num_units = num_units
         self._rng = T.rng(seed)
-
         # ====== create variables ====== #
         shape = (np.prod(self.input_shape[0][1:]), num_units)
         self.W = self.create_params(
@@ -117,92 +121,88 @@ class RBM(OdinFunction):
                 regularizable=False, trainable=True)
 
         self.gibbs_steps = gibbs_steps
+        self.sampling_steps = 1
 
     # ==================== Abstract methods ==================== #
+    def set_sampling_steps(self, nsteps):
+        self.sampling_steps = nsteps
+        return self
+
     @property
     def output_shape(self):
-        # shape = self.input_shape[0]
-        # return (shape[0], np.prod(shape[1:]))
-        return self.input_shape[0]
+        if self._reconstruction_mode:
+            return self.input_shape
+        # return hidden activations
+        return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False):
         ''' The sampling process was optimized using loop (unroll_scan) on
         theano which gives significantly speed up '''
-        if 'gibbs_steps' in kwargs:
-            k = kwargs['gibbs_steps']
-        else:
-            k = self.gibbs_steps
+        X = [T.flatten(i, 2) if T.ndim(i) > 2 else i
+             for i in self.get_inputs(training)]
+        self._last_inputs = X # must update last inputs because we reshape X
 
-        reconstructed = False
-        if 'reconstructed' in kwargs:
-            reconstructed = kwargs['reconstructed']
-        if reconstructed and training:
-            self.log('Training mode always return hidden activations')
-
-        X = self.get_inputs(training)[0]
-        if T.ndim(X) > 2:
-            X = T.flatten(X, 2)
-        self._last_inputs = [X] # must update last inputs because we reshape X
-
-        # ====== Training ====== #
-        if training:
-            # decide how to initialize persistent chain:
-            # for CD, we use the newly generate hidden sample
-            # for PCD, we initialize from the old state of the chain
-            if self.persistent is None:
-                # compute positive phase
-                pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(X)
-                chain_start = ph_sample
+        # ====== create chain for each input ====== #
+        outputs = []
+        for x, shape in zip(X, self.output_shape):
+            # training mode ignore reconstruction mode
+            if training:
+                # decide how to initialize persistent chain:
+                # for CD, we use the newly generate hidden sample
+                # for PCD, we initialize from the old state of the chain
+                if self.persistent is None:
+                    # compute positive phase
+                    pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(x)
+                    chain_start = ph_sample
+                else:
+                    chain_start = self.persistent
+                # perform actual negative phase
+                # in order to implement CD-k/PCD-k we need to scan over the
+                # function that implements one gibbs step k times.
+                # Read Theano tutorial on scan for more information :
+                # http://deeplearning.net/software/theano/library/scan.html
+                # the scan will return the entire Gibbs chain
+                [pre_sigmoid_nvs,
+                 nv_means,
+                 nv_samples,
+                 pre_sigmoid_nhs,
+                 nh_means,
+                 nh_samples
+                ] = T.loop(
+                    step_fn=self.gibbs_hvh,
+                    # the None are place holders, saying that
+                    # chain_start is the initial state corresponding to the
+                    # 6th output
+                    outputs_info=[None, None, None, None, None, chain_start],
+                    n_steps=self.gibbs_steps
+                )
+                outputs.append([
+                    pre_sigmoid_nvs,
+                    nv_means,
+                    nv_samples,
+                    pre_sigmoid_nhs,
+                    nh_means,
+                    nh_samples
+                ])
+            # ====== sampling ====== #
             else:
-                chain_start = self.persistent
-            # perform actual negative phase
-            # in order to implement CD-k/PCD-k we need to scan over the
-            # function that implements one gibbs step k times.
-            # Read Theano tutorial on scan for more information :
-            # http://deeplearning.net/software/theano/library/scan.html
-            # the scan will return the entire Gibbs chain
-            [
-                pre_sigmoid_nvs,
-                nv_means,
-                nv_samples,
-                pre_sigmoid_nhs,
-                nh_means,
-                nh_samples
-            ] = T.loop(
-                step_fn=self.gibbs_hvh,
-                # the None are place holders, saying that
-                # chain_start is the initial state corresponding to the
-                # 6th output
-                outputs_info=[None, None, None, None, None, chain_start],
-                n_steps=k
-            )
-            outputs = [
-                pre_sigmoid_nvs,
-                nv_means,
-                nv_samples,
-                pre_sigmoid_nhs,
-                nh_means,
-                nh_samples
-            ]
-        # ====== sampling ====== #
-        else:
-            persistent_vis_chain = X
-            [
-                presig_hids,
-                hid_mfs,
-                hid_samples,
-                presig_vis,
-                vis_mfs,
-                vis_samples
-            ] = T.loop(
-                step_fn=self.gibbs_vhv,
-                outputs_info=[None, None, None, None, None, persistent_vis_chain],
-                n_steps=k
-            )
-            if reconstructed:
-                outputs = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
-            else:
-                outputs = hid_mfs[-1]
+                persistent_vis_chain = x
+                [
+                    presig_hids,
+                    hid_mfs,
+                    hid_samples,
+                    presig_vis,
+                    vis_mfs,
+                    vis_samples
+                ] = T.loop(
+                    step_fn=self.gibbs_vhv,
+                    outputs_info=[None, None, None, None, None, persistent_vis_chain],
+                    n_steps=self.sampling_steps
+                )
+                if self._reconstruction_mode:
+                    outputs.append(T.reshape(vis_mfs[-1], (-1,) + shape[1:]))
+                else:
+                    outputs.append(hid_mfs[-1])
         self._log_footprint(training, X, outputs)
         return outputs
 
@@ -222,28 +222,38 @@ class RBM(OdinFunction):
             self.log("Ignored objective:%s because RBM uses contrastive divergence"
                      " as default" % str(objective), 30)
         if training:
-            [
+            outputs = self(training)
+        else:
+            self.raise_arguments('Optimization only can be used while training')
+        X = self._last_inputs # get cached inputs
+        # ====== calculating cost for each in-out pairs ====== #
+        persistent_updates = T.castX(0.)
+        cost = T.castX(0.)
+        pre_sigmoid = []
+        for x, [
                 pre_sigmoid_nvs,
                 nv_means,
                 nv_samples,
                 pre_sigmoid_nhs,
                 nh_means,
                 nh_samples
-            ] = self(training)
+            ] in zip(X, outputs):
             # determine gradients on RBM parameters
             # note that we only need the sample at the end of the chain
             chain_end = nv_samples[-1]
-        else:
-            self.raise_arguments('Optimization only can be used while training')
-        X = self._last_inputs[0] # get cached inputs
-
-        # for the persistent Contrastive-divergent, the chain does not take
-        # into account training samples but the free energy does take into
-        # account the training samples
-        cost = T.mean(self._free_energy(X)) - T.mean(self._free_energy(chain_end))
+            # for the persistent Contrastive-divergent, the chain does not take
+            # into account training samples but the free energy does take into
+            # account the training samples
+            cost = cost + (T.mean(self._free_energy(x)) -
+                           T.mean(self._free_energy(chain_end)))
+            persistent_updates = persistent_updates + nh_samples[-1]
+            pre_sigmoid.append(pre_sigmoid_nvs[-1])
+        # mean
+        cost = cost / len(X)
+        persistent_updates = persistent_updates / len(X)
+        # ====== Get optimizer ====== #
         if optimizer is None:
             return cost, None
-
         params = self.get_params(globals=globals, trainable=True)
         # We must not compute the gradient through the gibbs sampling
         if globals:
@@ -253,19 +263,20 @@ class RBM(OdinFunction):
         updates = optimizer(gparams, params)
 
         # ====== create monitoring cost ====== #
-        if training:
-            if self.persistent:
-                # Note that this works only if persistent is a shared variable
-                updates[self.persistent] = nh_samples[-1]
-                # pseudo-likelihood is a better proxy for PCD
-                monitoring_cost = self._get_pseudo_likelihood_cost(X, updates)
-            else:
-                # reconstruction cross-entropy is a better proxy for CD
-                monitoring_cost = self._get_reconstruction_cost(
-                    X, updates, pre_sigmoid_nvs[-1])
+        monitoring_cost = T.castX(0.)
+        if self.persistent:
+            # Note that this works only if persistent is a shared variable
+            updates[self.persistent] = persistent_updates
+            # pseudo-likelihood is a better proxy for PCD
+            for x in X:
+                monitoring_cost = monitoring_cost + \
+                self._get_pseudo_likelihood_cost(x, updates)
         else:
-            monitoring_cost = cost
-
+            # reconstruction cross-entropy is a better proxy for CD
+            for x, psigmoid in zip(X, pre_sigmoid):
+                monitoring_cost = monitoring_cost + \
+                self._get_reconstruction_cost(x, updates, psigmoid)
+        monitoring_cost = monitoring_cost / len(X)
         return monitoring_cost, updates
 
     # ==================== Energy methods ==================== #
