@@ -13,11 +13,20 @@ from six.moves import zip, range
 from . import logger
 from . import tensor as T
 from .utils import api as API
+from abc import ABCMeta, abstractmethod, abstractproperty
+
+# ===========================================================================
+# Constants
+# ===========================================================================
+_FOOT_PRINT = '''
+%s is activated with: training=%s \n
+ - input_shape:  %-15s   - inputs:  %s
+ - output_shape: %-15s   - outputs: %s
+'''
 
 # ===========================================================================
 # Based class design
 # ===========================================================================
-from abc import ABCMeta, abstractmethod, abstractproperty
 
 class OdinObject(object):
     __metaclass__ = ABCMeta
@@ -202,6 +211,11 @@ class OdinFunction(OdinObject):
         return T.np_ordered_set(children).tolist()
 
     # ==================== Helper private functions ==================== #
+    def _log_footprint(self, training, inputs, outputs, **kwargs):
+        self.log(_FOOT_PRINT %
+            (self.name, training, self.input_shape,
+            inputs, self.output_shape, outputs), 20)
+
     def _validation_optimization_params(self, objective, optimizer):
         if objective is None or not hasattr(objective, '__call__'):
             raise ValueError('objectives must be a function!')
@@ -229,9 +243,9 @@ class OdinFunction(OdinObject):
             opt = None
         else:
             params = self.get_params(globals=globals, trainable=True)
-            if globals:
+            if globals: # optimize all params
                 grad = T.gradients(obj, params)
-            else:
+            else: # optimize only the params of this funtions
                 grad = T.gradients(obj, params,
                     consider_constant=self._last_inputs)
             opt = optimizer(grad, params)
@@ -403,11 +417,13 @@ class OdinFunction(OdinObject):
 
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
+        # ====== Get all params from nested functions if globals mode on ====== #
         if globals:
             for i in self._incoming:
                 if i is not None:
                     params += i.get_params(globals, trainable, regularizable)
 
+        # ====== Params from this layers ====== #
         cond_trainable = [True, False]
         if trainable is True:
             cond_trainable = [True]

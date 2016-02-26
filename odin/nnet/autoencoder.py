@@ -41,7 +41,10 @@ class AutoEncoderDecoder(OdinFunction):
         if 'reconstructed' in kwargs:
             self._reconstruction_mode = kwargs['reconstructed']
         # in this funcitons, training mean using reconstruction mode
-        return self.get_inputs(training)
+        inputs = self.get_inputs(training)
+        outputs = inputs
+        self._log_footprint(training, inputs, outputs)
+        return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
@@ -201,6 +204,8 @@ class AutoEncoder(OdinFunction):
                 else: # only output hidden activations
                     reconstructed = hidden_state
             outputs.append(reconstructed)
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, X, outputs)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
@@ -707,6 +712,8 @@ class VariationalEncoderDecoder(OdinFunction):
             for i in self._decoder_roots:
                 i._intermediate_inputs = outputs
             outputs = self.decoder(False)
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, X, outputs)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,

@@ -45,15 +45,16 @@ class Dense(OdinFunction):
     def __call__(self, training=False, **kwargs):
         inputs = self.get_inputs(training)
         outputs = []
-
+        # ====== processing each inputs ====== #
         for x in inputs:
             if T.ndim(x) > 2:
                 # if the input has more than two dimensions, flatten it into a
                 # batch of feature vectors.
                 x = T.flatten(x, 2)
-
             activation = T.dot(x, self.W)
             if self.b is not None:
                 activation = activation + T.reshape(self.b, (1, -1))
             outputs.append(self.nonlinearity(activation))
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
         return outputs

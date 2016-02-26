@@ -176,7 +176,7 @@ class RBM(OdinFunction):
                 outputs_info=[None, None, None, None, None, chain_start],
                 n_steps=k
             )
-            ret_val = [
+            outputs = [
                 pre_sigmoid_nvs,
                 nv_means,
                 nv_samples,
@@ -200,10 +200,11 @@ class RBM(OdinFunction):
                 n_steps=k
             )
             if reconstructed:
-                ret_val = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
+                outputs = T.reshape(vis_mfs[-1], (-1,) + self.output_shape[1:])
             else:
-                ret_val = hid_mfs[-1]
-        return ret_val
+                outputs = hid_mfs[-1]
+        self._log_footprint(training, X, outputs)
+        return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):

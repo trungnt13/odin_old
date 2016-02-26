@@ -72,7 +72,7 @@ class FunctionsTest(unittest.TestCase):
         p1 = params[0]
         p2 = params[2]
 
-        f_pred = T.function(d3.input_var, d3())
+        f_pred = T.function(d3.input_var, d3()[0])
 
         x1 = np.random.rand(16, 10)
         x2 = np.random.rand(16, 20)
