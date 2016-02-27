@@ -709,9 +709,8 @@ def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None
     # [output21, output22,...output2n],...]
     output_scan = []
     for i in range(len(output[0])):
-        l = map(lambda x: tf.expand_dims(x[i], 0), output)
-        output_scan.append(tf.concat(0, l))
-
+        l = map(lambda x: x[i], output)
+        output_scan.append(tf.pack(l))
     return output_scan
 
 def rnn(step_function, inputs, initial_states,

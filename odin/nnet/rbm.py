@@ -111,6 +111,7 @@ class RBM(OdinUnsupervisedFunction):
         shape = (np.prod(self.input_shape[0][1:]), num_units)
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
+        self.Wprime = T.transpose(self.W)
         if b is None:
             self.hbias = None
             self.vbias = None
@@ -240,7 +241,7 @@ class RBM(OdinUnsupervisedFunction):
             ] in zip(X, outputs):
             # determine gradients on RBM parameters
             # note that we only need the sample at the end of the chain
-            chain_end = nv_samples[-1]
+            chain_end = nv_samples[self.gibbs_steps - 1]
             # for the persistent Contrastive-divergent, the chain does not take
             # into account training samples but the free energy does take into
             # account the training samples
@@ -249,8 +250,9 @@ class RBM(OdinUnsupervisedFunction):
             # this cost will force the batch_size equal to persistent size
             # cost = cost + (T.mean(self._free_energy(x) -
             #                self._free_energy(chain_end)))
-            persistent_updates = persistent_updates + nh_samples[-1]
-            pre_sigmoid.append(pre_sigmoid_nvs[-1])
+            persistent_updates = (persistent_updates +
+                                  nh_samples[self.gibbs_steps - 1])
+            pre_sigmoid.append(pre_sigmoid_nvs[self.gibbs_steps - 1])
         # mean
         cost = cost / len(X)
         persistent_updates = persistent_updates / len(X)
@@ -304,7 +306,7 @@ class RBM(OdinUnsupervisedFunction):
         h1_mean = T.sigmoid(pre_sigmoid_h1)
 
         # get a sample of the hiddens given their activation
-        h1_sample = self._rng.binomial(h1_mean.shape, p=h1_mean)
+        h1_sample = self._rng.binomial(T.shape(h1_mean), p=h1_mean)
         return [pre_sigmoid_h1, h1_mean, h1_sample]
 
     def sample_v_given_h(self, h0_sample):
@@ -315,10 +317,10 @@ class RBM(OdinUnsupervisedFunction):
         # optimizations, this symbolic variable will be needed to write
         # down a more stable computational graph (see details in the
         # reconstruction cost function)
-        pre_sigmoid_v1 = T.dot(h0_sample, self.W.T) + self.vbias
+        pre_sigmoid_v1 = T.dot(h0_sample, self.Wprime) + self.vbias
         v1_mean = T.sigmoid(pre_sigmoid_v1)
         # get a sample of the visible given their activation
-        v1_sample = self._rng.binomial(v1_mean.shape, p=v1_mean)
+        v1_sample = self._rng.binomial(T.shape(v1_mean), p=v1_mean)
         return [pre_sigmoid_v1, v1_mean, v1_sample]
 
     def gibbs_hvh(self, h0_sample):

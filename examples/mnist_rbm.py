@@ -11,7 +11,8 @@ ds = odin.dataset.load_mnist()
 print(ds)
 
 def test_rbm():
-    persistent_chain = T.variable(numpy.zeros((20, 500)))
+    batch_size = 32
+    persistent_chain = T.variable(numpy.zeros((batch_size, 500)))
     input_ = odin.nnet.Dense((None, 28, 28), num_units=784)
     input_ = (None, 28, 28)
     rbm = odin.nnet.RBM(input_, 500, persistent=persistent_chain)
@@ -29,7 +30,6 @@ def test_rbm():
     )
 
     cost = []
-    batch_size = 64
     niter = ds['X_train'].iter_len() / batch_size
     for i, x in enumerate(ds['X_train'].iter(batch_size, seed=13)):
         if x.shape[0] != batch_size: continue

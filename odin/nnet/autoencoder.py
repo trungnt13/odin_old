@@ -202,7 +202,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         # b_prime corresponds to the bias of the visible
         self.b_prime = self.vbias
         # tied weights, therefore W_prime is W transpose
-        self.W_prime = self.W.T
+        self.W_prime = T.transpose(self.W)
         self.nonlinearity = nonlinearity
 
         self.contractive = contractive
