@@ -229,6 +229,24 @@ class OdinFunction(OdinObject):
         if optimizer is not None and not hasattr(optimizer, '__call__'):
             raise ValueError('optimizer must be a function!')
 
+    def _validate_nD_input(self, n):
+        '''All inputs which > n-dimension will be flatten and must have the
+        same shape
+        Returns
+        -------
+        actual input dimension after flattened
+        '''
+        shape = self.input_shape[0]
+        i = tuple(shape[:(n - 1)]) + (np.prod(shape[(n - 1):]),)
+        for j in self.input_shape:
+            if i != tuple(j[:(n - 1)]) + (np.prod(j[(n - 1):]),):
+                self.raise_arguments('All incoming inputs must be flatten to %d '
+                                     ' dimension and have the same shape, but'
+                                     ' %s does not satisfy the condition.' %
+                                     (n, str(j)))
+        # critical, keep the shape in int32
+        return (i[0],) + tuple(int(i) for i in i[1:])
+
     def _deterministic_optimization_procedure(self, objective, optimizer,
                                               globals, training):
         self._validation_optimization_params(objective, optimizer)

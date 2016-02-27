@@ -16,12 +16,9 @@ class Dense(OdinFunction):
         super(Dense, self).__init__(
             incoming, unsupervised=unsupervised, **kwargs)
 
-        num_inputs = np.prod(self.input_shape[0][1:])
-        for i in self.input_shape:
-            if num_inputs != np.prod(i[1:]):
-                self.raise_arguments('All incoming inputs must have the same '
-                                     'features dimensions')
-        shape = (num_inputs, num_units)
+        num_inputs = self._validate_nD_input(2)
+        shape = (num_inputs[1], num_units)
+
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
         if b is None:

@@ -13,7 +13,7 @@ class Summation(OdinFunction):
 
     @property
     def output_shape(self):
-        return self.input_shape[0]
+        return [self.input_shape[0]]
 
     def __call__(self, training=False):
         inputs = self.get_inputs(training)

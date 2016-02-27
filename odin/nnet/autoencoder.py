@@ -22,6 +22,15 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         if encoder in decoder.get_children():
             self.log('Found connected graph of encoder-decoder!', 30)
             self._connected_encoder_decoder = True
+        else: # check input-output shape of encoder-decoder
+            decoder_out = []
+            for i in decoder.get_roots(): # check input_shape from root
+                decoder_out += i.input_shape
+            for i, j in zip(encoder.output_shape, decoder_out):
+                if i[1:] != j[1:]:
+                    self.raise_arguments(
+                        'Encoder output_shape must match decoder'
+                        ' input_shape, but %s != %s' % (i[1:], j[1:]))
 
         super(AutoEncoderDecoder, self).__init__(
             incoming=encoder, strict_batch=False, **kwargs)
@@ -60,8 +69,9 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
                          globals=True, training=True):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
+        tmp = self._reconstruction_mode
         x_reconstructed = self.set_reconstruction_mode(True)(training=training)
-        self.set_reconstruction_mode(False) # reset the reconstruction mode
+        self.set_reconstruction_mode(tmp) # reset the reconstruction mode
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
         x_original = []
@@ -166,7 +176,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         self.denoising = denoising
         self._rng = T.rng(seed)
 
-        shape = (np.prod(self.input_shape[0][1:]), num_units)
+        shape = (self._validate_nD_input(2)[1], num_units)
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
         if b is None:
@@ -192,6 +202,9 @@ class AutoEncoder(OdinUnsupervisedFunction):
         return [(i[0], self.num_units) for i in self.input_shape]
 
     def __call__(self, training=False):
+        if training and self._reconstruction_mode:
+            self.log('In training mode, the autoencoder does not reshape '
+                'to match input_shape when enabling reconstruction mode.', 30)
         # ====== inputs ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
             for x in self.get_inputs(training)]
@@ -202,8 +215,8 @@ class AutoEncoder(OdinUnsupervisedFunction):
             if self._reconstruction_mode:
                 reconstructed = self.nonlinearity(
                     T.dot(hidden_state, self.W_prime) + self.b_prime)
-                # reshape if shape mismatch
-                if T.ndim(reconstructed) != len(shape):
+                # reshape if shape mismatch (but only when not training)
+                if not training and T.ndim(reconstructed) != len(shape):
                     reconstructed = T.reshape(
                         reconstructed, (-1,) + tuple(shape[1:]))
             # only output hidden activations
@@ -222,8 +235,9 @@ class AutoEncoder(OdinUnsupervisedFunction):
             for x in self.get_inputs(training)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
         self._intermediate_inputs = x_corrupted # dirty hack modify inputs
+        tmp = self._reconstruction_mode
         x_reconstructed = self.set_reconstruction_mode(True)(training)
-        self.set_reconstruction_mode(False) # reset the mode
+        self.set_reconstruction_mode(tmp) # reset the mode
 
         obj = T.castX(0.)
         for xr, xc in zip(x_reconstructed, x_corrupted):
@@ -626,17 +640,12 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         self.encoder = encoder
         self.decoder = decoder
         # ====== Validate input_shapes (output_shape from encoder) ====== #
-        shapes = self.input_shape
-        i = shapes[0][1:]
-        for j in shapes:
-            if i != j[1:]:
-                self.raise_arguments(
-                    'All the feautre dimensions of encoder output_shape '
-                    'must be similar, but %s != %s' % (str(i), str(j)))
-        self.input_dim = int(np.prod(i))
+        self.input_dim = self._validate_nD_input(2)[1]
         # ====== Validate output_shapes (input_shape from decoder) ====== #
         if self.encoder in self.decoder.get_children():
-            self.raise_arguments('Encoder and Decoder must NOT connected')
+            self.raise_arguments('Encoder and Decoder must NOT connected, '
+                                'because we will inject the VariationalDense '
+                                'between encoder-decoder.')
         shapes = []
         for i in self.decoder.get_roots():
             shapes += i.input_shape
@@ -647,11 +656,10 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
                     'All the feautre dimensions of decoder input_shape '
                     'must be similar, but %s != %s' % (str(i), str(j)))
         self.num_units = int(np.prod(i))
-        # use this for intecept the inputs of decoder and return reconstruction
-        self._decoder_roots = self.decoder.get_roots()
+        # if any roots contain this, it means the function connected
         for i in self.decoder.get_roots():
             if self not in i.incoming:
-                i.set_incoming(self)
+                self._decoder_connected = True
         # ====== create params ====== #
         self.W_mean = self.create_params(
             W, (self.input_dim, self.num_units), 'W_mean',
@@ -680,8 +688,12 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
     @property
     def output_shape(self):
         outshape = []
-        for i in self.input_shape:
-            outshape.append((i[0], self.num_units))
+        if self._reconstruction_mode:
+            for i in self.get_roots():
+                outshape += i.input_shape
+        else:
+            for i in self.input_shape:
+                outshape.append((i[0], self.num_units))
         return outshape
 
     def __call__(self, training=False):
@@ -718,14 +730,24 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         if self._reconstruction_mode:
             # intercept the old decoder roots to get reconstruction from
             # current outputs of this functions
-            for i in self._decoder_roots:
+            for i in self.decoder.get_roots():
                 i._intermediate_inputs = outputs
             outputs = self.decoder(training)
+            if not training:
+                tmp = []
+                for i, j in zip(outputs, self.output_shape):
+                    if T.ndim(i) != len(j):
+                        tmp.append(
+                            T.reshape(i, (-1,) + tuple(j[1:]))
+                        )
+                outputs = tmp
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
-        outputs = self.decoder(training)
+        tmp = self._reconstruction_mode
+        outputs = self.set_reconstruction_mode(True)(training)
+        self.set_reconstruction_mode(tmp)
         inputs = []
         # make encoder input to be equal shape to decoder output
         for i, j in zip(self.encoder.input_var, self.decoder.output_shape):
@@ -761,13 +783,14 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
 
     def get_params(self, globals, trainable=None, regularizable=None):
         ''' Weights must be tied '''
-        encoder_params = self.encoder.get_params(
-            globals, trainable, regularizable)
         params = super(VariationalEncoderDecoder, self).get_params(
             globals, trainable, regularizable)
-        # decoder_params = self.decoder.get_params(
-            # globals, trainable, regularizable)
-        params = encoder_params + params
+        decoder_params = []
+        if globals: # only add encoder and decoder params if globals is on.
+            for i in [self.decoder] + self.decoder.get_children():
+                decoder_params += i.get_params(
+                    globals=False, trainable=trainable, regularizable=regularizable)
+        params = params + decoder_params
         # we only consider the variable, not the TensorType (e.g. W.T)
         # Have overlap between encoder and decoder params if globals is turned
         # on, hence we use ordered set

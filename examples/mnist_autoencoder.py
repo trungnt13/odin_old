@@ -63,6 +63,73 @@ def test_aED(): #AutoEncoderDecoder
         nonlinearity=T.sigmoid)
 
     # or d1b, (None, 128) as incoming
+    d2a = odin.nnet.Dense((None, 128), num_units=256, W=Wb.T, name='d2a',
+        nonlinearity=T.sigmoid)
+    d2b = odin.nnet.Dense(d2a, num_units=784, W=Wa.T, name='d2b',
+        nonlinearity=T.sigmoid)
+
+    aED = odin.nnet.AutoEncoderDecoder(d1b, d2b)
+
+    sgd = lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01)
+    cost, updates = aED.get_optimization(
+        objective=odin.objectives.categorical_crossentropy,
+        optimizer=sgd,
+        globals=True)
+    f_train = T.function(
+        inputs=aED.input_var,
+        outputs=cost,
+        updates=updates)
+
+    cost = []
+    niter = ds['X_train'].iter_len() / 64
+    choices = None
+    for _ in xrange(3):
+        for i, x in enumerate(ds['X_train'].iter(64)):
+            cost.append(f_train(x))
+            odin.logger.progress(i, niter, title=str(cost[-1]))
+        print()
+        odin.visual.print_bar([i for i in cost if i == i], bincount=20)
+        W = T.get_value(aED.get_params(True)[0]).T.reshape(-1, 28, 28)
+        if choices is None:
+            choices = np.random.choice(
+                np.arange(W.shape[0]), size=16, replace=False)
+        W = W[choices]
+        odin.visual.plot_images(W)
+        plt.show(block=False)
+        raw_input('<enter>')
+
+    # ====== Output reconstruction ====== #
+    f_pred = T.function(
+        inputs=aED.input_var,
+        outputs=aED.set_reconstruction_mode(True)())
+
+    for i in xrange(3):
+        t = np.random.randint(ds['X_test'].shape[0] - 16)
+        X = ds['X_test'][t:t + 16]
+        X_pred = f_pred(X)[0].reshape(-1, 28, 28)
+        odin.visual.plot_images(X)
+        odin.visual.plot_images(X_pred)
+        plt.show(block=False)
+        raw_input('<enter>')
+        plt.close('all')
+
+    # ====== OUtput hidden activation ====== #
+    f_pred = T.function(
+        inputs=aED.input_var,
+        outputs=aED())
+    X = ds['X_test'][t:t + 16]
+    print(f_pred(X)[0].shape)
+
+def test_vae():
+    Wa = T.variable(T.np_glorot_uniform(shape=(784, 256)), name='W')
+    Wb = T.variable(T.np_glorot_uniform(shape=(256, 128)), name='W')
+
+    d1a = odin.nnet.Dense((None, 28, 28), num_units=256, W=Wa, name='d1a',
+        nonlinearity=T.sigmoid)
+    d1b = odin.nnet.Dense(d1a, num_units=128, W=Wb, name='d1b',
+        nonlinearity=T.sigmoid)
+
+    # or d1b, (None, 128) as incoming
     d2a = odin.nnet.Dense(d1b, num_units=256, W=Wb.T, name='d2a',
         nonlinearity=T.sigmoid)
     d2b = odin.nnet.Dense(d2a, num_units=784, W=Wa.T, name='d2b',
@@ -119,5 +186,5 @@ def test_aED(): #AutoEncoderDecoder
     X = ds['X_test'][t:t + 16]
     print(f_pred(X)[0].shape)
 
-test_dA()
+# test_dA()
 # test_aED()

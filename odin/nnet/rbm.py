@@ -5,7 +5,7 @@ import numpy as np
 from .. import tensor as T
 from .. base import OdinUnsupervisedFunction
 
-from six.moves import zip, range
+from six.moves import zip
 
 class RBM(OdinUnsupervisedFunction):
 
@@ -97,14 +97,7 @@ class RBM(OdinUnsupervisedFunction):
         else:
             self.persistent = None
         # ====== check input_shape ====== #
-        i = np.prod(self.input_shape[0][1:])
-        for j in self.input_shape:
-            if i != np.prod(j[1:]):
-                self.raise_arguments('All incoming inputs must have the same '
-                                     'features dimensions, but %d != %d' %
-                                     (i, np.prod(j[1:])))
-        self.n_visible = int(i)
-        # ====== others ====== #
+        self.n_visible = self._validate_nD_input(2)[1]
         self.num_units = num_units
         self._rng = T.rng(seed)
         # ====== create variables ====== #
@@ -277,6 +270,7 @@ class RBM(OdinUnsupervisedFunction):
                 monitoring_cost = monitoring_cost + \
                 self._get_reconstruction_cost(x, updates, psigmoid)
         monitoring_cost = monitoring_cost / len(X)
+        # should we just return the cost, or the monitoring cost
         return monitoring_cost, updates
 
     # ==================== Energy methods ==================== #
