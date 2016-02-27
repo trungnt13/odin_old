@@ -8,56 +8,6 @@ from six.moves import zip, range
 # Helpers
 # From DeepLearningTutorials: http://deeplearning.net
 # ===========================================================================
-def _resize_images(x, shape):
-    '''Reshape images
-    x: 3D-gray or 4D-color (color channel is the second dimension)
-    Return a list of reshaped images'''
-    reszie_func = lambda x, shape: imresize(x, shape, interp='bilinear')
-    if x.ndim == 4:
-        def reszie_func(x, shape):
-            # x: 3D
-            # The color channel is the first dimension
-            tmp = []
-            for i in x:
-                tmp.append(imresize(i, shape).reshape((-1,) + shape))
-            return np.vstack(tmp).T
-
-    imgs = []
-    for i in x:
-        imgs.append(reszie_func(i, shape))
-    return imgs
-
-def _scale_to_unit_interval(ndar, eps=1e-8):
-    """ Scales all values in the ndarray ndar to be between 0 and 1 """
-    ndar = ndar.copy()
-    ndar -= ndar.min()
-    ndar *= 1.0 / (ndar.max() + eps)
-    return ndar
-
-def _tile_raster_images(X, img_shape, tile_shape, tile_spacing=(0, 0)):
-
-    if np.max(X) <= 1.:
-        channel_defaults = [0., 0., 0., 1.]
-    else:
-        channel_defaults = [0, 0, 0, 255]
-    # The expression below can be re-written in a more C style as
-    # follows :
-    #
-    # out_shape    = [0,0]
-    # out_shape[0] = (img_shape[0]+tile_spacing[0])*tile_shape[0] -
-    #                tile_spacing[0]
-    # out_shape[1] = (img_shape[1]+tile_spacing[1])*tile_shape[1] -
-    #                tile_spacing[1]
-    X = _resize_images(X, tile_shape)
-    n = len(X)
-    ncols = int(np.ceil(np.sqrt(n)))
-    nrows = int(ncols)
-
-    print(ncols, nrows)
-
-# ===========================================================================
-# Plotting
-# ===========================================================================
 def resize_images(x, shape):
     reszie_func = lambda x, shape: imresize(x, shape, interp='bilinear')
     if x.ndim == 4:
@@ -130,6 +80,9 @@ def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.
     img = np.vstack(rows)[:-tile_spacing[0]]
     return img
 
+# ===========================================================================
+# Plotting methods
+# ===========================================================================
 def plot_images(x, tile_shape=None, tile_spacing=None,
     fig=None, path=None, show=False):
     '''
@@ -402,3 +355,9 @@ def plot_hinton(matrix, max_weight=None, ax=None):
     ax.autoscale_view()
     ax.invert_yaxis()
     return ax
+
+def plot_show():
+    from matplotlib import pyplot as plt
+    plt.show(block=False)
+    raw_input('<enter> to close all plots')
+    plt.close('all')

@@ -68,7 +68,7 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
 
     # ====== Modify add name prefix ====== #
     global _PLACEHOLDER_ID
-    name_prefix = '[ID:%.2d]' % _PLACEHOLDER_ID
+    name_prefix = 'ID.%d.' % _PLACEHOLDER_ID
     _PLACEHOLDER_ID += 1
     if name is None:
         name = ''
@@ -561,7 +561,7 @@ def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None
     for i in counter:
         step_input = [s[i] for s in sequences] + \
                      [prev_vals[idx] for idx in output_idx] + \
-                     non_sequences
+            non_sequences
         out_ = step_fn(*step_input)
         # The returned values from step can be either a TensorVariable,
         # a list, or a tuple.  Below, we force it to always be a list.
@@ -760,9 +760,19 @@ def l2_regularize(x):
 def l1_regularize(x):
     return T.sum(T.abs_(x))
 
+def jacobian_regularize(hidden, params):
+    ''' Computes the jacobian of the hidden layer with respect to
+    the input, reshapes are necessary for broadcasting the
+    element-wise product on the right axis
+    '''
+    hidden = hidden * (1 - hidden)
+    L = expand_dims(hidden, 1) * expand_dims(params, 0)
+    # Compute the jacobian and average over the number of samples/minibatch
+    L = T.sum(T.pow(L, 2)) / hidden.shape[0]
+    return T.mean(L)
+
 def kl_gaussian(mean, logsigma,
-                prior_mean=0., prior_logsigma=0.,
-                regularizer_scale=1.):
+                prior_mean=0., prior_logsigma=0.):
     ''' KL-divergence between two gaussians.
     Useful for Variational AutoEncoders. Use this as an activation regularizer
     Parameters:
@@ -770,7 +780,6 @@ def kl_gaussian(mean, logsigma,
     mean, logsigma: parameters of the input distributions
     prior_mean, prior_logsigma: paramaters of the desired distribution (note the
         log on logsigma)
-    regularizer_scale: Rescales the regularization cost. Keep this 1 for most cases.
 
     Note
     ----
@@ -781,7 +790,7 @@ def kl_gaussian(mean, logsigma,
     kl = (prior_logsigma - logsigma +
           0.5 * (-1 + T.exp(2 * logsigma) + (mean - prior_mean) ** 2) /
           T.exp(2 * prior_logsigma))
-    return T.mean(kl) * regularizer_scale
+    return T.mean(kl)
 
 def correntropy_regularize(x, sigma=1.):
     '''

@@ -93,13 +93,14 @@ def is_variable(v):
 
 _PLACEHOLDER_ID = 0
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
+    # name must match: [A-Za-z0-9.][A-Za-z0-9_.\-/]*
     if not shape:
         if ndim:
             shape = [None for _ in range(ndim)]
 
     # ====== Modify add name prefix ====== #
     global _PLACEHOLDER_ID
-    name_prefix = '[ID:%2d]' % _PLACEHOLDER_ID
+    name_prefix = 'ID.%d.' % _PLACEHOLDER_ID
     _PLACEHOLDER_ID += 1
     if name is None:
         name = ''
@@ -692,7 +693,7 @@ def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None
     for i in counter:
         step_input = [s[i] for s in sequences] + \
                      [prev_vals[idx] for idx in output_idx] + \
-                     non_sequences
+            non_sequences
         out_ = step_fn(*step_input)
         # The returned values from step can be either a TensorVariable,
         # a list, or a tuple.  Below, we force it to always be a list.
@@ -916,6 +917,17 @@ def l2_regularize(x):
 
 def l1_regularize(x):
     return sum(tf.abs(x))
+
+def jacobian_regularize(hidden, params):
+    ''' Computes the jacobian of the hidden layer with respect to
+    the input, reshapes are necessary for broadcasting the
+    element-wise product on the right axis
+    '''
+    hidden = hidden * (1 - hidden)
+    L = expand_dims(hidden, 1) * expand_dims(params, 0)
+    # Compute the jacobian and average over the number of samples/minibatch
+    L = sum(mean(tf.pow(L, 2), axis=0)) # avr over all samples in batch
+    return mean(L)
 
 def kl_gaussian(mean_, logsigma,
                 prior_mean=0., prior_logsigma=0.,

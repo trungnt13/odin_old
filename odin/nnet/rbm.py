@@ -261,17 +261,18 @@ class RBM(OdinUnsupervisedFunction):
             # Note that this works only if persistent is a shared variable
             updates[self.persistent] = persistent_updates
             # pseudo-likelihood is a better proxy for PCD
-            for x in X:
-                monitoring_cost = monitoring_cost + \
-                self._get_pseudo_likelihood_cost(x, updates)
+            # for x in X:
+            #     monitoring_cost = monitoring_cost + \
+            #     self._get_pseudo_likelihood_cost(x, updates)
         else:
             # reconstruction cross-entropy is a better proxy for CD
-            for x, psigmoid in zip(X, pre_sigmoid):
-                monitoring_cost = monitoring_cost + \
-                self._get_reconstruction_cost(x, updates, psigmoid)
+            # for x, psigmoid in zip(X, pre_sigmoid):
+            #     monitoring_cost = monitoring_cost + \
+            #     self._get_reconstruction_cost(x, updates, psigmoid)
+            pass
         monitoring_cost = monitoring_cost / len(X)
         # should we just return the cost, or the monitoring cost
-        return monitoring_cost, updates
+        return cost, updates
 
     # ==================== Energy methods ==================== #
     def _free_energy(self, v_sample):

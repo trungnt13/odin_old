@@ -56,7 +56,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
             inputs = self.get_inputs(training)
             # intercept the inputs of decoder
             for i in self.decoder.get_roots():
-                i._intermediate_inputs = inputs
+                i.set_intermediate_inputs(inputs)
             outputs = self.decoder(training)
         # ====== Get reconstructed inputs from connected graph ====== #
         else:
@@ -162,13 +162,24 @@ class AutoEncoder(OdinUnsupervisedFunction):
     seed : int
         seed for RandomState used for sampling
 
+    contractive : boolean (default: false)
+        The contractive autoencoder tries to reconstruct the input with an
+        additional constraint on the latent space. With the objective of
+        obtaining a robust representation of the input space, we
+        regularize the L2 norm(Froebenius) of the jacobian of the hidden
+        representation with respect to the input. Please refer to Rifai et
+        al.,2011 for more details.
+        Note: this mode significantly reduce the trianing speed
+
     """
 
     def __init__(self, incoming, num_units,
                  W=T.np_glorot_uniform,
                  b=T.np_constant,
                  nonlinearity=T.sigmoid,
-                 denoising=0.5, seed=None, **kwargs):
+                 denoising=0.5,
+                 contractive=False, contraction_level=.1,
+                 seed=None, **kwargs):
         super(AutoEncoder, self).__init__(
             incoming, strict_batch=False, **kwargs)
 
@@ -194,6 +205,9 @@ class AutoEncoder(OdinUnsupervisedFunction):
         self.W_prime = self.W.T
         self.nonlinearity = nonlinearity
 
+        self.contractive = contractive
+        self.contraction_level = contraction_level
+
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
@@ -209,6 +223,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
             for x in self.get_inputs(training)]
         outputs = []
+        J = T.castX(0.) # jacobian regularization
         for x, shape in zip(X, self.output_shape):
             hidden_state = self.nonlinearity(T.dot(x, self.W) + self.hbias)
             # output reconstructed data
@@ -222,7 +237,11 @@ class AutoEncoder(OdinUnsupervisedFunction):
             # only output hidden activations
             else:
                 reconstructed = hidden_state
+            # calculate jacobian
+            if self.contractive:
+                J = J + T.jacobian_regularize(hidden_state, self.W)
             outputs.append(reconstructed)
+        self._jacobian_regularization = J / len(X) * self.contraction_level
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, X, outputs)
         return outputs
@@ -234,11 +253,13 @@ class AutoEncoder(OdinUnsupervisedFunction):
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
             for x in self.get_inputs(training)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
-        self._intermediate_inputs = x_corrupted # dirty hack modify inputs
+        self.set_intermediate_inputs(x_corrupted) # dirty hack modify inputs
+
         tmp = self._reconstruction_mode
         x_reconstructed = self.set_reconstruction_mode(True)(training)
         self.set_reconstruction_mode(tmp) # reset the mode
 
+        # ====== Calculate the objectives ====== #
         obj = T.castX(0.)
         for xr, xc in zip(x_reconstructed, x_corrupted):
             # note : we sum over the size of a datapoint; if we are using
@@ -248,6 +269,9 @@ class AutoEncoder(OdinUnsupervisedFunction):
             if T.ndim(o) > 0:
                 o = T.mean(T.sum(o, axis=-1))
             obj = obj + o
+
+        if self.contractive:
+            obj = obj + self._jacobian_regularization
 
         if optimizer is None:
             return obj, None
@@ -261,6 +285,16 @@ class AutoEncoder(OdinUnsupervisedFunction):
         return obj, opt
 
     # ==================== helper function ==================== #
+    def get_jacobian(self, hidden, W):
+        """Computes the jacobian of the hidden layer with respect to
+        the input, reshapes are necessary for broadcasting the
+        element-wise product on the right axis
+
+        """
+        return T.reshape(hidden * (1 - hidden),
+                         (self.n_batchsize, 1, self.n_hidden)) * T.reshape(
+                             W, (1, self.n_visible, self.n_hidden))
+
     def _get_corrupted_input(self, input, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
         same and zero-out randomly selected subset of size ``coruption_level``
@@ -269,338 +303,6 @@ class AutoEncoder(OdinUnsupervisedFunction):
         """
         return self._rng.binomial(
             shape=input.shape, p=1 - corruption_level) * input
-
-class VAE(object):
-
-    '''Variational Auto-encoder Class for image data.
-    Using linear/convolutional transformations with ReLU activations, this
-    class peforms an encoding and then decoding step to form a full generative
-    model for image data. Images can thus be encoded to a latent representation-space
-    or decoded/generated from latent vectors.
-    See  Kingma, Diederik and Welling, Max; "Auto-Encoding Variational Bayes"
-    (2013)
-    Given a set of input images train an artificial neural network, resampling
-    at the latent stage from an approximate posterior multivariate gaussian
-    distribution with unit covariance with mean and variance trained by the
-    encoding step.
-    Attributes
-    ----------
-    encode_layers : List[int]
-        List of layer sizes for hidden linear encoding layers of the model.
-        Only taken into account when mode='linear'.
-    decode_layers : List[int]
-        List of layer sizes for hidden linear decoding layers of the model.
-        Only taken into account when mode='linear'.
-    latent_width : int
-        Dimension of latent encoding space.
-    img_width : int
-        Width of the desired image representation.
-    img_height : int
-        Height of the desired image representation.
-    color_channels : int
-        Number of color channels in the input images.
-    kl_ratio : float
-            Multiplicative factor on and KL Divergence term.
-    flag_gpu : bool
-        Flag to toggle GPU training functionality.
-    mode: str
-        Mode to set the encoder and decoder architectures. Can be either
-        'convolution' or 'linear'.
-    adam_alpha : float
-        Alpha parameter for the adam optimizer.
-    adam_beta1 : float
-        Beta1 parameter for the adam optimizer.
-    rectifier : str
-        Rectifier option for the output of the decoder. Can be either
-        'clipped_relu' or 'sigmoid'.
-    model : chainer.Chain
-        Chain of chainer model links for encoding and decoding.
-    opt : chainer.Optimizer
-        Chiner optimizer used to do backpropagation. Set to Adam.
-    '''
-
-    def __init__(self, img_width=64, img_height=64, color_channels=3,
-                 encode_layers=[1000, 600, 300],
-                 decode_layers=[300, 800, 1000],
-                 latent_width=100, kl_ratio=1.0, flag_gpu=True,
-                 mode='convolution', adam_alpha=0.001, adam_beta1=0.9,
-                 rectifier='clipped_relu'):
-
-        self.img_width = img_width
-        self.img_height = img_height
-        self.color_channels = color_channels
-        self.encode_layers = encode_layers
-        self.decode_layers = decode_layers
-        self.latent_width = latent_width
-        self.kl_ratio = kl_ratio
-        self.flag_gpu = flag_gpu
-        self.mode = mode
-        self.adam_alpha = adam_alpha
-        self.adam_beta1 = adam_beta1
-        self.rectifier = rectifier
-        if self.mode == 'convolution':
-            self._check_dims()
-
-        self.model = EncDec(
-            img_width=self.img_width,
-            img_height=self.img_height,
-            color_channels=self.color_channels,
-            encode_layers=self.encode_layers,
-            decode_layers=self.decode_layers,
-            latent_width=self.latent_width,
-            mode=self.mode,
-            flag_gpu=self.flag_gpu,
-            rectifier=self.rectifier
-        )
-        if self.flag_gpu:
-            self.model = self.model.to_gpu()
-
-        self.opt = O.Adam(alpha=self.adam_alpha, beta1=self.adam_beta1)
-
-    def _check_dims(self):
-        h, w = calc_fc_size(self.img_height, self.img_width)[1:]
-        h, w = calc_im_size(h, w)
-
-        assert (h == self.img_height) and (w == self.img_width),\
-            "To use convolution, please resize images " + \
-            "to nearest target height, width = %d, %d" % (h, w)
-
-    def _save_meta(self, filepath):
-        if not os.path.exists(os.path.dirname(filepath)):
-            os.makedirs(os.path.dirname(filepath))
-        d = self.__dict__.copy()
-        d.pop('model')
-        d.pop('opt')
-        # d.pop('xp')
-        meta = json.dumps(d)
-        with open(filepath + '.json', 'wb') as f:
-            f.write(meta)
-
-    def transform(self, data, test=False):
-        '''Transform image data to latent space.
-        Parameters
-        ----------
-        data : array-like shape (n_images, image_width, image_height,
-                                   n_colors)
-            Input numpy array of images.
-        test [optional] : bool
-            Controls the test boolean for batch normalization.
-        Returns
-        -------
-        latent_vec : array-like shape (n_images, latent_width)
-        '''
-        #make sure that data has the right shape.
-        if not type(data) == Variable:
-            if len(data.shape) < 4:
-                data = data[np.newaxis]
-            if len(data.shape) != 4:
-                raise TypeError("Invalid dimensions for image data. Dim = %s.\
-                     Must be 4d array." % str(data.shape))
-            if data.shape[1] != self.color_channels:
-                if data.shape[-1] == self.color_channels:
-                    data = data.transpose(0, 3, 1, 2)
-                else:
-                    raise TypeError("Invalid dimensions for image data. Dim = %s"
-                                    % str(data.shape))
-            data = Variable(data)
-        else:
-            if len(data.data.shape) < 4:
-                data.data = data.data[np.newaxis]
-            if len(data.data.shape) != 4:
-                raise TypeError("Invalid dimensions for image data. Dim = %s.\
-                     Must be 4d array." % str(data.data.shape))
-            if data.data.shape[1] != self.color_channels:
-                if data.data.shape[-1] == self.color_channels:
-                    data.data = data.data.transpose(0, 3, 1, 2)
-                else:
-                    raise TypeError("Invalid dimensions for image data. Dim = %s"
-                                    % str(data.shape))
-
-        # Actual transformation.
-        if self.flag_gpu:
-            data.to_gpu()
-        z = self.model.encode(data, test=test)[0]
-
-        z.to_cpu()
-
-        return z.data
-
-    def inverse_transform(self, data, test=False):
-        '''Transform latent vectors into images.
-        Parameters
-        ----------
-        data : array-like shape (n_images, latent_width)
-            Input numpy array of images.
-        test [optional] : bool
-            Controls the test boolean for batch normalization.
-        Returns
-        -------
-        images : array-like shape (n_images, image_width, image_height,
-                                   n_colors)
-        '''
-        if not type(data) == Variable:
-            if len(data.shape) < 2:
-                data = data[np.newaxis]
-            if len(data.shape) != 2:
-                raise TypeError("Invalid dimensions for latent data. Dim = %s.\
-                     Must be a 2d array." % str(data.shape))
-            data = Variable(data)
-
-        else:
-            if len(data.data.shape) < 2:
-                data.data = data.data[np.newaxis]
-            if len(data.data.shape) != 2:
-                raise TypeError("Invalid dimensions for latent data. Dim = %s.\
-                     Must be a 2d array." % str(data.data.shape))
-        assert data.data.shape[-1] == self.latent_width,\
-            "Latent shape %d != %d" % (data.data.shape[-1], self.latent_width)
-
-        if self.flag_gpu:
-            data.to_gpu()
-        out = self.model.decode(data, test=test)
-
-        out.to_cpu()
-
-        if self.mode == 'linear':
-            final = out.data
-        else:
-            final = out.data.transpose(0, 2, 3, 1)
-
-        return final
-
-    def load_images(self, filepaths):
-        '''Load in image files from list of paths.
-        Parameters
-        ----------
-        filepaths : List[str]
-            List of file paths of images to be loaded.
-        Returns
-        -------
-        images : array-like shape (n_images, n_colors, image_width, image_height)
-            Images normalized to have pixel data range [0,1].
-        '''
-        def read(fname):
-            im = Image.open(fname)
-            im = np.float32(im)
-            return im / 255.
-        x_all = np.array([read(fname) for fname in tqdm.tqdm(filepaths)])
-        x_all = x_all.astype('float32')
-        if self.mode == 'convolution':
-            x_all = x_all.transpose(0, 3, 1, 2)
-        print("Image Files Loaded!")
-        return x_all
-
-    def fit(
-        self,
-        img_data,
-        save_freq=-1,
-        pic_freq=-1,
-
-        n_epochs=100,
-        batch_size=50,
-        weight_decay=True,
-        model_path='./VAE_training_model/',
-        img_path='./VAE_training_images/',
-        img_out_width=10
-    ):
-        '''Fit the VAE model to the image data.
-        Parameters
-        ----------
-        img_data : array-like shape (n_images, n_colors, image_width, image_height)
-            Images used to fit VAE model.
-        save_freq [optional] : int
-            Sets the number of epochs to wait before saving the model and optimizer states.
-            Also saves image files of randomly generated images using those states in a
-            separate directory. Does not save if negative valued.
-        pic_freq [optional] : int
-            Sets the number of batches to wait before displaying a picture or randomly
-            generated images using the current model state.
-            Does not display if negative valued.
-        n_epochs [optional] : int
-            Gives the number of training epochs to run through for the fitting
-            process.
-        batch_size [optional] : int
-            The size of the batch to use when training. Note: generally larger
-            batch sizes will result in fater epoch iteration, but at the const
-            of lower granulatity when updating the layer weights.
-        weight_decay [optional] : bool
-            Flag that controls adding weight decay hooks to the optimizer.
-        model_path [optional] : str
-            Directory where the model and optimizer state files will be saved.
-        img_path [optional] : str
-            Directory where the end of epoch training image files will be saved.
-        img_out_width : int
-            Controls the number of randomly genreated images per row in the output
-            saved imags.
-        '''
-        width = img_out_width
-        self.opt.setup(self.model)
-
-        if weight_decay:
-            self.opt.add_hook(chainer.optimizer.WeightDecay(0.00001))
-
-        n_data = img_data.shape[0]
-
-        batch_iter = list(range(0, n_data, batch_size))
-        n_batches = len(batch_iter)
-        save_counter = 0
-        for epoch in range(1, n_epochs + 1):
-            print('epoch: %i' % epoch)
-            t1 = time.time()
-            indexes = np.random.permutation(n_data)
-            last_loss_kl = 0.
-            last_loss_rec = 0.
-            count = 0
-            for i in tqdm.tqdm(batch_iter):
-
-                x_batch = Variable(img_data[indexes[i: i + batch_size]])
-
-                if self.flag_gpu:
-                    x_batch.to_gpu()
-
-                out, kl_loss, rec_loss = self.model.forward(x_batch)
-                total_loss = rec_loss + kl_loss * self.kl_ratio
-
-                self.opt.zero_grads()
-                total_loss.backward()
-                self.opt.update()
-
-                last_loss_kl += kl_loss.data
-                last_loss_rec += rec_loss.data
-                plot_pics = Variable(img_data[indexes[:width]])
-                count += 1
-                if pic_freq > 0:
-                    assert type(pic_freq) == int, "pic_freq must be an integer."
-                    if count % pic_freq == 0:
-                        fig = self._plot_img(
-                            plot_pics,
-                            img_path=img_path,
-                            epoch=epoch
-                        )
-                        display(fig)
-
-            if save_freq > 0:
-                save_counter += 1
-                assert type(save_freq) == int, "save_freq must be an integer."
-                if epoch % save_freq == 0:
-                    name = "vae_epoch%s" % str(epoch)
-                    if save_counter == 1:
-                        save_meta = True
-                    else:
-                        save_meta = False
-                    self.save(model_path, name, save_meta=save_meta)
-                    fig = self._plot_img(
-                        plot_pics,
-                        img_path=img_path,
-                        epoch=epoch,
-                        batch=n_batches,
-                        save=True
-                    )
-
-            msg = "rec_loss = {0} , kl_loss = {1}"
-            print(msg.format(last_loss_rec / n_batches, last_loss_kl / n_batches))
-            t_diff = time.time() - t1
-            print("time: %f\n\n" % t_diff)
 
 class VariationalEncoderDecoder(OdinUnsupervisedFunction):
 
@@ -627,10 +329,12 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
                  nonlinearity=T.tanh,
                  regularizer_scale=1.,
                  prior_mean=0., prior_logsigma=1.,
-                 seed=None,
+                 seed=None, batch_size=None,
                  **kwargs):
+        strict_batch = False
+        self.batch_size = batch_size
         super(VariationalEncoderDecoder, self).__init__(
-            incoming=encoder, strict_batch=False, **kwargs)
+            incoming=encoder, strict_batch=strict_batch, **kwargs)
         self.prior_mean = prior_mean
         self.prior_logsigma = prior_logsigma
         self.regularizer_scale = regularizer_scale
@@ -639,13 +343,19 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         # ====== Set encoder decoder ====== #
         self.encoder = encoder
         self.decoder = decoder
-        # ====== Validate input_shapes (output_shape from encoder) ====== #
-        self.input_dim = self._validate_nD_input(2)[1]
-        # ====== Validate output_shapes (input_shape from decoder) ====== #
+        # ====== Validate encoder, decoder ====== #
         if self.encoder in self.decoder.get_children():
             self.raise_arguments('Encoder and Decoder must NOT connected, '
                                 'because we will inject the VariationalDense '
                                 'between encoder-decoder.')
+        # if any roots contain this, it means the function connected
+        for i in self.decoder.get_roots():
+            if self in i.incoming:
+                self.raise_arguments('Decoder and VariationalEncoderDecoder '
+                                    'must not connected.')
+        # ====== Validate input_shapes (output_shape from encoder) ====== #
+        self.input_dim = self._validate_nD_input(2)[1]
+        # ====== Validate output_shapes (input_shape from decoder) ====== #
         shapes = []
         for i in self.decoder.get_roots():
             shapes += i.input_shape
@@ -656,10 +366,6 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
                     'All the feautre dimensions of decoder input_shape '
                     'must be similar, but %s != %s' % (str(i), str(j)))
         self.num_units = int(np.prod(i))
-        # if any roots contain this, it means the function connected
-        for i in self.decoder.get_roots():
-            if self not in i.incoming:
-                self._decoder_connected = True
         # ====== create params ====== #
         self.W_mean = self.create_params(
             W, (self.input_dim, self.num_units), 'W_mean',
@@ -673,7 +379,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         self.b_logsigma = self.create_params(
             b, (self.num_units,), 'b_logsigma',
             regularizable=False, trainable=True)
-        # this list store last statistic (mean, logsigma) used to calculate
+        # this list store last statistics (mean, logsigma) used to calculate
         # the output of this functions, so we can caluclate KL_Gaussian in
         # the optimization methods
         self._last_mean_sigma = []
@@ -687,13 +393,11 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
     # ==================== Abstract methods ==================== #
     @property
     def output_shape(self):
-        outshape = []
         if self._reconstruction_mode:
-            for i in self.get_roots():
-                outshape += i.input_shape
-        else:
-            for i in self.input_shape:
-                outshape.append((i[0], self.num_units))
+            return self.decoder.output_shape
+        outshape = []
+        for i in self.input_shape:
+            outshape.append((i[0], self.num_units))
         return outshape
 
     def __call__(self, training=False):
@@ -708,17 +412,20 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         # ====== check inputs (only 2D) ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
              for x in self.get_inputs(training)]
-        # ====== Process each input ====== #
+        # ====== calculate hidden activation ====== #
         outputs = []
         self._last_mean_sigma = []
         for x in X:
             mean, logsigma = self.get_mean_logsigma(x)
             if training: # training mode (always return hidden)
                 if config.backend() == 'theano':
-                    eps = self._rng.normal((x.shape[0], self.num_units),
+                    eps = self._rng.normal((T.shape(x)[0], self.num_units),
                         mean=0., std=1.)
                 else:
-                    eps = self._rng.normal((T.shape(x)[0], self.num_units),
+                    if self.batch_size is None:
+                        self.raise_arguments('tensorflow backend requires to '
+                                             'know batch size in advanced.')
+                    eps = self._rng.normal((self.batch_size, self.num_units),
                         mean=0., std=1.)
                 outputs.append(mean + T.exp(logsigma) * eps)
             else: # prediction mode only return mean
@@ -731,20 +438,13 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             # intercept the old decoder roots to get reconstruction from
             # current outputs of this functions
             for i in self.decoder.get_roots():
-                i._intermediate_inputs = outputs
+                i.set_intermediate_inputs(outputs)
             outputs = self.decoder(training)
-            if not training:
-                tmp = []
-                for i, j in zip(outputs, self.output_shape):
-                    if T.ndim(i) != len(j):
-                        tmp.append(
-                            T.reshape(i, (-1,) + tuple(j[1:]))
-                        )
-                outputs = tmp
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
                          globals=True, training=True):
+        # ====== Get the outputs ====== #
         tmp = self._reconstruction_mode
         outputs = self.set_reconstruction_mode(True)(training)
         self.set_reconstruction_mode(tmp)
@@ -755,7 +455,6 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             if T.ndim(i) != len(j):
                 i = T.reshape(i, (-1,) + j[1:])
             inputs.append(i)
-
         # ====== calculate objectives ====== #
         obj = T.castX(0.)
         for x_orig, x_reco, stats in zip(inputs, outputs, self._last_mean_sigma):
@@ -764,10 +463,9 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             o = objective(x_reco, x_orig)
             if T.ndim(o) > 0:
                 o = T.mean(o)
-            o = o + T.kl_gaussian(mean, logsigma,
-                                  regularizer_scale=self.regularizer_scale,
-                                  prior_mean=self.prior_mean,
-                                  prior_logsigma=self.prior_logsigma)
+            o = o + self.regularizer_scale * T.kl_gaussian(mean, logsigma,
+                                                self.prior_mean,
+                                                self.prior_logsigma)
             obj = obj + o
         obj = obj / len(inputs) # mean of all objectives
         # ====== Create the optimizer ====== #

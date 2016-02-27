@@ -138,6 +138,13 @@ class BackendTest(unittest.TestCase):
         self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), 5),
             round(-5.86702489853, 5))
 
+        np.random.seed(12082518)
+        x = T.variable(np.random.rand(16, 10))
+        y = T.variable(np.random.rand(32, 10))
+        self.assertAlmostEqual(
+            round(T.eval(T.jacobian_regularize(x, y)), 5),
+            3.89396)
+
 # ===========================================================================
 # Main
 # ===========================================================================

@@ -346,8 +346,9 @@ class OdinFunction(OdinObject):
             self._input_var = []
             for idx, (i, j) in enumerate(zip(self._incoming, self._input_shape)):
                 if i is None:
+                    shape_str = '_'.join([str(k) for k in j])
                     x = T.placeholder(shape=j,
-                        name='in:%s:' % (str(j)) + self.name)
+                        name='in.%s.%s' % (shape_str, self.name))
                     self._input_var.append(x)
                     self._local_input_var[idx] = x
                 elif T.is_placeholder(i):
@@ -379,8 +380,9 @@ class OdinFunction(OdinObject):
                 pass
             else:
                 for outshape in self.output_shape:
+                    shape_str = '_'.join([str(k) for k in outshape])
                     self._output_var.append(T.placeholder(shape=outshape,
-                            name='out:%s:' % (str(outshape)) + self.name))
+                            name='out.%s.%s' % (shape_str, self.name)))
         return self._output_var
 
     def get_inputs(self, training=True):
