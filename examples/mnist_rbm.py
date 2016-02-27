@@ -32,6 +32,7 @@ def test_rbm():
     batch_size = 64
     niter = ds['X_train'].iter_len() / batch_size
     for i, x in enumerate(ds['X_train'].iter(batch_size, seed=13)):
+        if x.shape[0] != batch_size: continue
         # x = x.astype(int) # this one can mess up the whole training process
         cost.append(train_rbm(x))
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])

@@ -897,14 +897,53 @@ def tanh(x):
     return tf.nn.tanh(x)
 
 
-def dropout(x, level, seed=None):
+def dropout(x, level, rescale=True, noise_shape=None,
+    seed=None, rng=None):
+    """Computes dropout.
+
+    With probability `keep_prob`, outputs the input element scaled up by
+    `1 / keep_prob`, otherwise outputs `0`.  The scaling is so that the expected
+    sum is unchanged.
+
+    By default, each element is kept or dropped independently.  If `noise_shape`
+    is specified, it must be
+    [broadcastable](http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html)
+    to the shape of `x`, and only dimensions with `noise_shape[i] == shape(x)[i]`
+    will make independent decisions.  For example, if `shape(x) = [k, l, m, n]`
+    and `noise_shape = [k, 1, 1, n]`, each batch and channel component will be
+    kept independently and each row and column will be kept or not kept together.
+
+    Parameters
+    ----------
+    x: A tensor.
+    level: float(0.-1.)
+        probability dropout values in given tensor
+    rescale: bool
+        whether rescale the outputs by dividing the retain probablity
+    noise_shape: A 1-D `Tensor` of type `int32`, representing the
+      shape for randomly generated keep/drop flags.
+    seed: int
+        A Python integer. Used to create random seeds. See
+    rng: `tensor.rng`
+        random generator from tensor class
+    """
     retain_prob = 1. - level
-    if seed is None:
-        seed = np.random.randint(10e6)
+    if not isinstance(rng, _RandomWrapper):
+        if seed is None:
+            seed = np.random.randint(10e6)
+    else:
+        seed = rng._rng.randint(10e6)
+    if noise_shape is not None:
+        # from tensorflow.python.ops import array_ops
+        # shape_x = array_ops.shape(x)
+        noise_shape = tuple([shape(x)[i].value if j is None or j < 0 else j
+                            for i, j in enumerate(noise_shape)])
     # the dummy 1. works around a TF bug
     # (float32_ref vs. float32 incomptability)
-    return tf.nn.dropout(x * 1., retain_prob, seed=seed)
-
+    x = tf.nn.dropout(x * 1., retain_prob, noise_shape=noise_shape, seed=seed)
+    if not rescale:
+        x = x * retain_prob
+    return x
 
 # ==================== Regularizations ==================== #
 def l2_normalize(x, axis):
@@ -1072,21 +1111,21 @@ class _RandomWrapper(object):
         super(_RandomWrapper, self).__init__()
         self._rng = np.random.RandomState(rng)
 
-    def normal(self, shape, mean, std):
+    def normal(self, shape, mean, std, dtype=_FLOATX):
         return tf.random_normal(shape=shape, mean=mean, stddev=std,
-            dtype=_FLOATX, seed=self._rng.randint(10e6))
+            dtype=dtype, seed=self._rng.randint(10e6))
 
-    def uniform(self, shape, low, high):
+    def uniform(self, shape, low, high, dtype=_FLOATX):
         return tf.random_uniform(shape=shape, minval=low, maxval=high,
-                             dtype=_FLOATX, seed=self._rng.randint(10e6))
+                             dtype=dtype, seed=self._rng.randint(10e6))
 
-    def binomial(self, shape, p):
+    def binomial(self, shape, p, dtype=_FLOATX):
         return tf.cast(
             tf.less(
                 tf.random_uniform(shape=shape, minval=0., maxval=1.,
                              dtype=_FLOATX, seed=self._rng.randint(10e6)),
                 p),
-            _FLOATX)
+            dtype)
 
 def rng(seed=None):
     if seed is None:

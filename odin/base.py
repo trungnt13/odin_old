@@ -104,19 +104,14 @@ class OdinFunction(OdinObject):
         whether or not this is unsupervised model, this affect the output_var
         will be the same as input_var(unsupervised) or based-on output_shape
         (supervised)
-    strict_batch : bool
-        whether it is necessary to enforce similar batch size for training for
-        this function
     name : a string, None or list of string
         An optional identifiers to attach to this layer.
 
     '''
 
-    def __init__(self, incoming, unsupervised,
-                 strict_batch=False, name=None, **kwargs):
+    def __init__(self, incoming, unsupervised, name=None, **kwargs):
         super(OdinFunction, self).__init__()
         self._unsupervised = unsupervised
-        self._strict_batch = strict_batch
 
         self.set_incoming(incoming)
         # ====== other properties ====== #
@@ -315,10 +310,6 @@ class OdinFunction(OdinObject):
         if len(self._name) == 0:
             return self.__class__.__name__
         return ','.join(self._name)
-
-    @property
-    def strict_batch(self):
-        return self._strict_batch
 
     @property
     def input_shape(self):
@@ -522,10 +513,9 @@ class OdinFunction(OdinObject):
 
 class OdinUnsupervisedFunction(OdinFunction):
 
-    def __init__(self, incoming, strict_batch=False, name=None, **kwargs):
+    def __init__(self, incoming, name=None, **kwargs):
         super(OdinUnsupervisedFunction, self).__init__(
-            incoming, unsupervised=True, strict_batch=strict_batch,
-            name=name, **kwargs)
+            incoming, unsupervised=True, name=name, **kwargs)
         self._reconstruction_mode = False
 
     def set_reconstruction_mode(self, reconstruct):

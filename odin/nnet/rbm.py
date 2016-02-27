@@ -33,10 +33,11 @@ class RBM(OdinUnsupervisedFunction):
         Initial value, expression or initializer for the biases. If set to
         ``None``, the layer will have no biases.
 
-    persistent : None, int (batch_size), variable, ndarray
+    persistent : None, int (batch_size), variable, ndarray, True(for auto)
+        it is recommended to be equal to batch_size
         persistent is the initial state of sampling chain which has shape
         (batch_size, input_dim). If persisten is not None, the batch_size must
-        be fixed and strict_batch is turnned on.
+        be fixed by specified the shape of placeholder.
 
     seed : int
         seed for RandomState used for sampling
@@ -71,24 +72,30 @@ class RBM(OdinUnsupervisedFunction):
                  b=T.np_constant,
                  gibbs_steps=15, persistent=None,
                  seed=None, **kwargs):
+        # ====== super ====== #
+        super(RBM, self).__init__(
+            incoming, **kwargs)
         # ====== persitent variable ====== #
         if persistent is None:
             persistent_params = None
-        elif isinstance(persistent, int):
+        elif isinstance(persistent, int) and persistent is not True:
             persistent_params = np.zeros((persistent, num_units))
         elif T.is_variable(persistent):
             persistent_params = persistent
         elif T.is_ndarray(persistent):
             persistent_params = T.variable(persistent)
+        elif persistent is True:
+            shape = []
+            for i in self.get_roots():
+                shape += i.input_shape
+            n = list(set([i[0] for i in shape]))
+            if len(n) > 1 or n[0] is None or n[0] < 0:
+                self.raise_arguments('batch_size must be specified for '
+                    'placeholder in order to use persitent-CD')
+            persistent_params = np.zeros((n[0], num_units))
         else:
             self.raise_arguments('Unsupport type %s for persistent' %
                 persistent.__class__.__name__)
-        # ====== super ====== #
-        strict_batch = False
-        if persistent_params is not None:
-            strict_batch = True
-        super(RBM, self).__init__(
-            incoming, strict_batch=strict_batch, **kwargs)
         # ====== create persitent variable ====== #
         if persistent_params is not None:
             self.persistent = self.create_params(
@@ -239,6 +246,9 @@ class RBM(OdinUnsupervisedFunction):
             # account the training samples
             cost = cost + (T.mean(self._free_energy(x)) -
                            T.mean(self._free_energy(chain_end)))
+            # this cost will force the batch_size equal to persistent size
+            # cost = cost + (T.mean(self._free_energy(x) -
+            #                self._free_energy(chain_end)))
             persistent_updates = persistent_updates + nh_samples[-1]
             pre_sigmoid.append(pre_sigmoid_nvs[-1])
         # mean

@@ -33,7 +33,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
                         ' input_shape, but %s != %s' % (i[1:], j[1:]))
 
         super(AutoEncoderDecoder, self).__init__(
-            incoming=encoder, strict_batch=False, **kwargs)
+            incoming=encoder, **kwargs)
 
         self.encoder = encoder
         self.decoder = decoder
@@ -181,7 +181,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
                  contractive=False, contraction_level=.1,
                  seed=None, **kwargs):
         super(AutoEncoder, self).__init__(
-            incoming, strict_batch=False, **kwargs)
+            incoming, **kwargs)
 
         self.num_units = num_units
         self.denoising = denoising
@@ -331,10 +331,9 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
                  prior_mean=0., prior_logsigma=1.,
                  seed=None, batch_size=None,
                  **kwargs):
-        strict_batch = False
         self.batch_size = batch_size
         super(VariationalEncoderDecoder, self).__init__(
-            incoming=encoder, strict_batch=strict_batch, **kwargs)
+            incoming=encoder, **kwargs)
         self.prior_mean = prior_mean
         self.prior_logsigma = prior_logsigma
         self.regularizer_scale = regularizer_scale

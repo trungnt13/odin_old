@@ -738,15 +738,61 @@ def tanh(x):
     return T.tanh(x)
 
 
-def dropout(x, level, seed=None):
-    if level < 0. or level >= 1:
-        raise Exception('Dropout level must be in interval [0, 1[.')
-    if seed is None:
-        seed = np.random.randint(10e6)
-    rng = RandomStreams(seed=seed)
+def dropout(x, level, rescale=True, noise_shape=None,
+    seed=None, rng=None):
+    """Computes dropout.
+
+    With probability `keep_prob`, outputs the input element scaled up by
+    `1 / keep_prob`, otherwise outputs `0`.  The scaling is so that the expected
+    sum is unchanged.
+
+    By default, each element is kept or dropped independently.  If `noise_shape`
+    is specified, it must be
+    [broadcastable](http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html)
+    to the shape of `x`, and only dimensions with `noise_shape[i] == shape(x)[i]`
+    will make independent decisions.  For example, if `shape(x) = [k, l, m, n]`
+    and `noise_shape = [k, 1, 1, n]`, each batch and channel component will be
+    kept independently and each row and column will be kept or not kept together.
+
+    Parameters
+    ----------
+    x: A tensor.
+    level: float(0.-1.)
+        probability dropout values in given tensor
+    rescale: bool
+        whether rescale the outputs by dividing the retain probablity
+    noise_shape: A 1-D `Tensor` of type `int32`, representing the
+      shape for randomly generated keep/drop flags.
+    seed: int
+        A Python integer. Used to create random seeds. See
+    rng: `tensor.rng`
+        random generator from tensor class
+    """
+    # ====== Validate arguments ====== #
+    if rng is None:
+        if seed is None:
+            seed = np.random.randint(10e6)
+        rng = _RandomWrapper(RandomStreams(seed=seed))
+    elif isinstance(rng, RandomStreams):
+        rng = _RandomWrapper(RandomStreams(seed=seed))
+    # ====== Dropout ====== #
     retain_prob = 1. - level
-    x *= rng.binomial(x.shape, p=retain_prob, dtype=x.dtype)
-    x /= retain_prob
+    if noise_shape is None:
+        x = x * rng.binomial(shape=x.shape, p=retain_prob, dtype=x.dtype)
+    else:
+        # validate remove all None or -1 dimension
+        noise_shape = tuple([x.shape[i] if j is None or j < 0 else j
+                       for i, j in enumerate(noise_shape)])
+        # auto select broadcast shape
+        broadcast = [i for i, j in enumerate(noise_shape) if j == 1]
+        if len(broadcast) > 0:
+            x = x * T.addbroadcast(
+                rng.binomial(shape=noise_shape, p=retain_prob, dtype=x.dtype),
+                *broadcast)
+        else:
+            x = x * rng.binomial(shape=noise_shape, p=retain_prob, dtype=x.dtype)
+    if rescale:
+        x /= retain_prob
     return x
 
 # ==================== Regularizations ==================== #
@@ -1048,14 +1094,14 @@ class _RandomWrapper(object):
         super(_RandomWrapper, self).__init__()
         self._rng = rng
 
-    def normal(self, shape, mean, std):
-        return self._rng.normal(size=shape, avg=mean, std=std, dtype=_FLOATX)
+    def normal(self, shape, mean, std, dtype=_FLOATX):
+        return self._rng.normal(size=shape, avg=mean, std=std, dtype=dtype)
 
-    def uniform(self, shape, low, high):
-        return self._rng.uniform(size=shape, low=low, high=high, dtype=_FLOATX)
+    def uniform(self, shape, low, high, dtype=_FLOATX):
+        return self._rng.uniform(size=shape, low=low, high=high, dtype=dtype)
 
-    def binomial(self, shape, p):
-        return self._rng.binomial(size=shape, n=1, p=p, dtype=_FLOATX)
+    def binomial(self, shape, p, dtype=_FLOATX):
+        return self._rng.binomial(size=shape, n=1, p=p, dtype=dtype)
 
 def rng(seed=None):
     if seed is None:
