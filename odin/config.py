@@ -16,6 +16,7 @@ _EPSILON = 10e-8
 _DEVICE = 'cpu'
 _VERBOSE = False
 _FAST_CNN = False
+_GRAPHIC = False
 
 def _parse_config():
     global _FLOATX
@@ -24,6 +25,7 @@ def _parse_config():
     global _DEVICE
     global _VERBOSE
     global _FAST_CNN
+    global _GRAPHIC
 
     s = _ODIN_FLAGS.split(',')
     for i in s:
@@ -41,12 +43,22 @@ def _parse_config():
             set_enable(True)
         elif 'fastcnn' in i:
             _FAST_CNN = True
+        elif 'graphic' in i:
+            _GRAPHIC = True
         else:
             try:
                 i = float(i)
                 _EPSILON = i
             except:
                 pass
+
+    # set non-graphic backend for matplotlib
+    if not _GRAPHIC:
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+        except:
+            pass
 
 def set_backend(backend):
     global _BACKEND
@@ -87,3 +99,4 @@ if verbose():
     info('[Config] FloatX : %s' % _FLOATX)
     info('[Config] Epsilon: %s' % _EPSILON)
     info('[Config] Fast-cnn: %s' % _FAST_CNN)
+    info('[Config] Graphic: %s' % _GRAPHIC)
