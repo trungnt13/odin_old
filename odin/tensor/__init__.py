@@ -5,16 +5,19 @@ from .. import config
 from .. import logger
 from .numpy_backend import *
 
-
 def _load_theano_config():
     flags = "mode=FAST_RUN,device=%s,floatX=%s" % (config.device(), config.floatX())
-    if config._VERBOSE:
+    if config.verbose():
         flags += ',exception_verbosity=high'
+    # Speedup CuDNNv4
+    if config.fastcnn():
+        flags += ',dnn.conv.algo_fwd=time_once,dnn.conv.algo_bwd_filter=time_once,dnn.conv.algo_bwd_data=time_once'
+        logger.warning('Using fast cnn algorithm, only compatible with CuDNN v4.')
     os.environ['THEANO_FLAGS'] = flags
 
 if config.backend() == 'theano':
-    logger.critical('Using Theano backend.')
     _load_theano_config()
+    logger.critical('Using Theano backend, flags:%s' % os.environ['THEANO_FLAGS'])
     from .theano_backend import *
 elif config.backend() == 'tensorflow':
     logger.critical('Using TensorFlow backend.')
@@ -25,7 +28,7 @@ else:
     try:
         _load_theano_config()
         import theano
-        logger.critical('Auto load theano_backend backend.')
+        logger.critical('Auto load theano_backend backend, flags:%s' % os.environ['THEANO_FLAGS'])
         from .theano_backend import *
         is_load_backend = True
         config.set_backend('theano')

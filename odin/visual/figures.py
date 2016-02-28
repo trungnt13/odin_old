@@ -1,14 +1,16 @@
 from __future__ import print_function, absolute_import, division
 
 import numpy as np
-from scipy.misc import imresize
 from six.moves import zip, range
+from .. import logger
 
 # ===========================================================================
 # Helpers
 # From DeepLearningTutorials: http://deeplearning.net
 # ===========================================================================
 def resize_images(x, shape):
+    from scipy.misc import imresize
+
     reszie_func = lambda x, shape: imresize(x, shape, interp='bilinear')
     if x.ndim == 4:
         def reszie_func(x, shape):
@@ -356,8 +358,25 @@ def plot_hinton(matrix, max_weight=None, ax=None):
     ax.invert_yaxis()
     return ax
 
+# ===========================================================================
+# Helper methods
+# ===========================================================================
 def plot_show():
     from matplotlib import pyplot as plt
     plt.show(block=False)
     raw_input('<enter> to close all plots')
     plt.close('all')
+
+def plot_save(path, figs=None, dpi=300):
+    try:
+        from matplotlib.backends.backend_pdf import PdfPages
+        import matplotlib.pyplot as plt
+        pp = PdfPages(path)
+        if figs is None:
+            figs = [plt.figure(n) for n in plt.get_fignums()]
+        for fig in figs:
+            fig.savefig(pp, format='pdf')
+        pp.close()
+        logger.info('Saved pdf figures to:%s' % str(path))
+    except Exception, e:
+        logger.error('Cannot save figures to pdf, error:%s' % str(e))

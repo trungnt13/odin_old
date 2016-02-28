@@ -15,6 +15,7 @@ _BACKEND = None
 _EPSILON = 10e-8
 _DEVICE = 'cpu'
 _VERBOSE = False
+_FAST_CNN = False
 
 def _parse_config():
     global _FLOATX
@@ -22,6 +23,7 @@ def _parse_config():
     global _EPSILON
     global _DEVICE
     global _VERBOSE
+    global _FAST_CNN
 
     s = _ODIN_FLAGS.split(',')
     for i in s:
@@ -37,6 +39,8 @@ def _parse_config():
         elif 'verbose' in i:
             _VERBOSE = True
             set_enable(True)
+        elif 'fastcnn' in i:
+            _FAST_CNN = True
         else:
             try:
                 i = float(i)
@@ -73,9 +77,13 @@ def device():
 def verbose():
     return _VERBOSE
 
+def fastcnn():
+    return _FAST_CNN
+
 _parse_config()
 if verbose():
     info('[Config] Device : %s' % _DEVICE)
     info('[Config] Backend: %s' % _BACKEND)
     info('[Config] FloatX : %s' % _FLOATX)
     info('[Config] Epsilon: %s' % _EPSILON)
+    info('[Config] Fast-cnn: %s' % _FAST_CNN)
