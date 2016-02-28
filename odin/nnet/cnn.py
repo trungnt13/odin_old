@@ -243,6 +243,8 @@ class Pool2D(OdinFunction):
                          pool_mode=self.mode, border_mode=self.pad,
                          dim_ordering='th')
             )
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
@@ -372,6 +374,8 @@ class Pool3D(OdinFunction):
                          pool_mode=self.mode, border_mode=self.pad,
                          dim_ordering='th')
             )
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
@@ -590,6 +594,8 @@ class BaseConvLayer(OdinFunction):
             else:
                 activation = conved + T.dimshuffle(self.b, ('x', 0) + ('x',) * self.n)
             outputs.append(self.nonlinearity(activation))
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,

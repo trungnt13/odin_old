@@ -94,6 +94,25 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(d1d.get_roots(), [d1d, d1a])
         self.assertEqual(d1d.get_children(), [d1c, d1b, d1a])
 
+    def test_noise(self):
+        np.random.seed(12082518)
+        x = np.ones((16, 5, 8))
+        f = nnet.Dropout([(16, 5, 8), (16, 5, 8)],
+            p=0.5, rescale=True, noise_dims=1, seed=13, consistent=True)
+        f = nnet.Ops(f, ops=lambda x: x + 0.)
+        f = T.function(inputs=f.input_var, outputs=f(True))
+        y = f(x, x)
+        y = y[0] - y[1]
+        self.assertEqual(y.ravel().tolist(), [0.] * len(y.ravel()))
+
+        f = nnet.Noise([(16, 5, 8), (16, 5, 8)],
+            sigma=0.5, noise_dims=(1, 2), uniform=True, seed=13, consistent=True)
+        f = nnet.Ops(f, ops=lambda x: x + 0.)
+        f = T.function(inputs=f.input_var, outputs=f(True))
+        y = f(x, x)
+        y = y[0] - y[1]
+        self.assertEqual(y.ravel().tolist(), [0.] * len(y.ravel()))
+
 # ===========================================================================
 # Main
 # ===========================================================================

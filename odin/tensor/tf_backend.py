@@ -129,6 +129,9 @@ def ndim(x):
 def broadcastable(x):
     return None
 
+def addbroadcast(x, *axes):
+    return x
+
 # ===========================================================================
 # Predefined data
 # ===========================================================================
@@ -927,11 +930,11 @@ def dropout(x, level, rescale=True, noise_shape=None,
         random generator from tensor class
     """
     retain_prob = 1. - level
-    if not isinstance(rng, _RandomWrapper):
-        if seed is None:
-            seed = np.random.randint(10e6)
-    else:
+    if isinstance(rng, _RandomWrapper):
         seed = rng._rng.randint(10e6)
+    elif seed is None:
+        seed = get_random_magic_seed()
+
     if noise_shape is not None:
         # from tensorflow.python.ops import array_ops
         # shape_x = array_ops.shape(x)
@@ -1109,6 +1112,10 @@ class _RandomWrapper(object):
     def __init__(self, rng):
         super(_RandomWrapper, self).__init__()
         self._rng = np.random.RandomState(rng)
+        self._state = np.random.RandomState(rng)
+
+    def randint(self):
+        return self._state.randint(10e6)
 
     def normal(self, shape, mean, std, dtype=_FLOATX):
         return tf.random_normal(shape=shape, mean=mean, stddev=std,

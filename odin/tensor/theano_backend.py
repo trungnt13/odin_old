@@ -15,7 +15,7 @@ from theano.tensor.nnet import conv3d2d
 import numpy as np
 
 from .. import config
-from .numpy_backend import get_random_magic_seed
+from .numpy_backend import get_random_magic_seed, get_random_magic_seed
 
 _FLOATX = config.floatX()
 _EPSILON = config.epsilon()
@@ -99,6 +99,9 @@ def ndim(x):
 
 def broadcastable(x):
     return x.broadcastable
+
+def addbroadcast(x, *axes):
+    return T.addbroadcast(x, *axes)
 
 # ===========================================================================
 # Predefined data
@@ -769,12 +772,13 @@ def dropout(x, level, rescale=True, noise_shape=None,
         random generator from tensor class
     """
     # ====== Validate arguments ====== #
+    if seed is None:
+        seed = get_random_magic_seed()
     if rng is None:
-        if seed is None:
-            seed = np.random.randint(10e6)
-        rng = _RandomWrapper(RandomStreams(seed=seed))
+        rng = _RandomWrapper(RandomStreams(seed=seed),
+                             np.random.RandomState(seed=seed))
     elif isinstance(rng, RandomStreams):
-        rng = _RandomWrapper(RandomStreams(seed=seed))
+        rng = _RandomWrapper(rng, np.random.RandomState(seed=seed))
     # ====== Dropout ====== #
     retain_prob = 1. - level
     if noise_shape is None:
@@ -1090,9 +1094,13 @@ def pool3d(x, pool_size, strides=(1, 1, 1), border_mode='valid',
 # ===========================================================================
 class _RandomWrapper(object):
 
-    def __init__(self, rng):
+    def __init__(self, rng, state):
         super(_RandomWrapper, self).__init__()
         self._rng = rng
+        self._state = state
+
+    def randint(self):
+        return self._state.randint(10e6)
 
     def normal(self, shape, mean, std, dtype=_FLOATX):
         return self._rng.normal(size=shape, avg=mean, std=std, dtype=dtype)
@@ -1106,7 +1114,8 @@ class _RandomWrapper(object):
 def rng(seed=None):
     if seed is None:
         seed = get_random_magic_seed()
-    return _RandomWrapper(RandomStreams(seed=seed))
+    return _RandomWrapper(RandomStreams(seed=seed),
+                          np.random.RandomState(seed=seed))
 
 def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     if seed is None:

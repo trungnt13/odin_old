@@ -12,7 +12,7 @@ def run(name=None):
         for i in name:
             if 'backend' in i or 'tensor' in i:
                 tests.append('test_backend')
-            elif 'funcs' in i:
+            elif 'funcs' in i or 'nnet' in i:
                 tests.append('test_nnet')
             elif 'data' in i:
                 tests.append('test_dataset')
