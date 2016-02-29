@@ -18,3 +18,5 @@ from dataset import dataset
 from trainer import trainer
 
 from . import nnet
+
+__version__ = "0.1.0"

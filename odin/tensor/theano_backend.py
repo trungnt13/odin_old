@@ -1,6 +1,6 @@
 # ===========================================================================
 # This module is adpated from: https://github.com/fchollet/keras
-# Revision: @2c49115
+# Revision: @80927fa
 # Original work Copyright (c) 2014-2015 keras contributors
 # Some idea are also borrowed from Lasagne library
 # Original work Copyright (c) 2014-2015 Lasagne contributors
@@ -10,7 +10,7 @@
 import theano
 from theano import tensor as T
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-from theano.tensor.signal import downsample
+from theano.tensor.signal import pool
 from theano.tensor.nnet import conv3d2d
 import numpy as np
 
@@ -93,6 +93,9 @@ def shape(x):
     Theano backend (Theano tensor type) and TF backend (TF TensorShape).
     '''
     return x.shape
+
+def int_shape(x):
+    return x.shape.eval()
 
 def ndim(x):
     return x.ndim
@@ -188,10 +191,11 @@ def prod(x, axis=None, keepdims=False):
     '''
     return T.prod(x, axis=axis, keepdims=keepdims)
 
-
 def mean(x, axis=None, keepdims=False):
-    return T.mean(x, axis=axis, keepdims=keepdims)
-
+    dtype = None
+    if 'int' in x.dtype:
+        dtype = _FLOATX
+    return T.mean(x, axis=axis, keepdims=keepdims, dtype=dtype)
 
 def std(x, axis=None, keepdims=False):
     return T.std(x, axis=axis, keepdims=keepdims)
@@ -399,6 +403,9 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
     else:
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
     return T.set_subtensor(output[indices], x)
+
+def stack(*x):
+    return T.stack(*x)
 
 # ===========================================================================
 # VALUE MANIPULATION
@@ -912,21 +919,23 @@ def conv2d(x, kernel, strides=(1, 1),
                                     border_mode=border_mode,
                                     subsample=strides)
     else:
-        if border_mode == 'same':
+        if border_mode == 'same' or border_mode == 'full':
             th_border_mode = 'full'
             np_kernel = kernel.eval()
             assert strides[0] <= np_kernel.shape[2], 'strides should be smaller than the convolution window.'
             assert strides[1] <= np_kernel.shape[3], 'strides should be smaller than the convolution window.'
         elif border_mode == 'valid':
             th_border_mode = 'valid'
+        elif isinstance(border_mode, (tuple, list)):
+            th_border_mode = border_mode
         else:
             raise Exception('Border mode not supported: ' + str(border_mode))
 
-        conv_out = T.nnet.conv.conv2d(x, kernel,
-                                      border_mode=th_border_mode,
-                                      subsample=strides,
-                                      image_shape=image_shape,
-                                      filter_shape=filter_shape)
+        conv_out = T.nnet.conv2d(x, kernel,
+                                 border_mode=th_border_mode,
+                                 subsample=strides,
+                                 input_shape=image_shape,
+                                 filter_shape=filter_shape)
         if border_mode == 'same':
             shift_x = (np_kernel.shape[2] - strides[0]) // 2
             shift_y = (np_kernel.shape[3] - strides[1]) // 2
@@ -1034,10 +1043,10 @@ def pool2d(x, pool_size, strides=(1, 1), border_mode='valid',
                                 mode=pool_mode,
                                 pad=padding)
     else: # CPU veresion support by theano
-        pool_out = downsample.max_pool_2d(x, ds=pool_size, st=strides,
-                                          ignore_border=True,
-                                          padding=padding,
-                                          mode=pool_mode)
+        pool_out = pool.pool_2d(x, ds=pool_size, st=strides,
+                                ignore_border=True,
+                                padding=padding,
+                                mode=pool_mode)
 
     if dim_ordering == 'tf':
         pool_out = pool_out.dimshuffle((0, 2, 3, 1))
@@ -1071,19 +1080,19 @@ def pool3d(x, pool_size, strides=(1, 1, 1), border_mode='valid',
     else:
         padding = padding[:2]
         # pooling over conv_dim2, conv_dim1 (last two channels)
-        output = downsample.max_pool_2d(input=x.dimshuffle(0, 1, 4, 3, 2),
-                                        ds=(pool_size[1], pool_size[0]),
-                                        st=(strides[1], strides[0]),
-                                        ignore_border=True,
-                                        padding=padding,
-                                        mode=pool_mode)
+        output = pool.pool_2d(input=x.dimshuffle(0, 1, 4, 3, 2),
+                              ds=(pool_size[1], pool_size[0]),
+                              st=(strides[1], strides[0]),
+                              ignore_border=True,
+                              padding=padding,
+                              mode=pool_mode)
         # pooling over conv_dim3
-        pool_out = downsample.max_pool_2d(input=output.dimshuffle(0, 1, 4, 3, 2),
-                                          ds=(1, pool_size[2]),
-                                          st=(1, strides[2]),
-                                          ignore_border=True,
-                                          padding=padding,
-                                          mode=pool_mode)
+        pool_out = pool.pool_2d(input=output.dimshuffle(0, 1, 4, 3, 2),
+                                ds=(1, pool_size[2]),
+                                st=(1, strides[2]),
+                                ignore_border=True,
+                                padding=padding,
+                                mode=pool_mode)
     # ====== output ====== #
     if dim_ordering == 'tf':
         pool_out = pool_out.dimshuffle((0, 2, 3, 4, 1))

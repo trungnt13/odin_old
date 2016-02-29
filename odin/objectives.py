@@ -153,3 +153,6 @@ def categorical_accuracy(y_pred, y_true, top_k=1):
         top = T.argtop_k(y_pred, top_k)
         y_true = T.expand_dims(y_true, dim=-1)
         return T.any(T.eq(top, y_true), axis=-1)
+
+def mean_categorical_accuracy(y_pred, y_true, top_k=1):
+    return T.mean(categorical_accuracy(y_pred, y_true, top_k))

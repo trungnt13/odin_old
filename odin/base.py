@@ -254,7 +254,11 @@ class OdinFunction(OdinObject):
             o = objective(yp, yt)
             # if multiple-dimension cannot calculate gradients
             # hence, we take mean of the objective
-            if T.ndim(o) > 0:
+            if T.ndim(o) > 0 and optimizer is not None:
+                self.log('The return objective has > 1 dimension which '
+                         'can not be used to calculate the gradients '
+                         'for optimization, hence, we take the mean of '
+                         'their values.', 30)
                 o = T.mean(o)
             obj = obj + o
         obj = obj / len(y_pred)

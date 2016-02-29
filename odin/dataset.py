@@ -7,7 +7,7 @@ from numpy.random import RandomState
 from .base import OdinObject
 from .utils import create_batch, queue
 from .ie import get_file
-from .tensor import get_magic_seed
+from .tensor import get_random_magic_seed
 from . import logger
 
 from six.moves import zip_longest
@@ -323,7 +323,7 @@ class batch(object):
         prng2 = _dummy_shuffle
         if shuffle:
             if seed is None:
-                seed = get_magic_seed()
+                seed = get_random_magic_seed()
             prng1 = RandomState(seed)
             prng2 = RandomState(seed)
 
@@ -341,7 +341,7 @@ class batch(object):
         prng2 = _dummy_shuffle
         if shuffle:
             if seed is None:
-                seed = get_magic_seed()
+                seed = get_random_magic_seed()
             prng1 = RandomState(seed)
             prng2 = RandomState(seed)
 

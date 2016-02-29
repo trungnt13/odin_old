@@ -880,6 +880,9 @@ class Conv3D(BaseConvLayer):
                                      filter_size, stride, pad,
                                      untie_biases, W, b, nonlinearity,
                                      False, n=3, **kwargs)
+        if pad == 'same' and any(s % 2 == 0 for s in filter_size):
+            self.raise_arguments('Conv3D only support even filter_size '
+                                 'if pad="same".')
 
     def convolve(self, input, **kwargs):
         # by default we assume 'cross', consistent with corrmm.

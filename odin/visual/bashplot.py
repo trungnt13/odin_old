@@ -297,7 +297,7 @@ def print_hist(f, height=20.0, bincount=None, binwidth=None, pch="o",
     if return_str:
         return splot
     else:
-        logger.log(splot)
+        logger.critical('[PLOT]\n' + splot)
 
 def print_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     colour="default", title="", xlab=None, showSummary=False,
@@ -483,7 +483,7 @@ def print_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     if return_str:
         return splot
     else:
-        logger.log(splot)
+        logger.critical('[PLOT]\n' + splot)
 
 def print_scatter(xs, ys, size=None, pch='o',
                 colour='red', title=None, return_str=False):
@@ -549,7 +549,7 @@ def print_scatter(xs, ys, size=None, pch='o',
     if return_str:
         return splot
     else:
-        logger.log(splot)
+        logger.critical('[PLOT]\n' + splot)
 
 def print_hinton(arr, max_arr=None, return_str=False):
     ''' Print bar string, fast way to visual magnitude of value in terminal
@@ -603,4 +603,4 @@ def print_hinton(arr, max_arr=None, return_str=False):
     if return_str:
         return rval[:-1]
     else:
-        logger.log(rval)
+        logger.critical('[PLOT]\n' + rval)

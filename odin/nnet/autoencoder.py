@@ -83,16 +83,14 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
             # reshape if reconstructed and original in different shape
             if T.ndim(i) != T.ndim(j):
                 j = T.reshape(j, T.shape(i))
-
             # note : we sum over the size of a datapoint; if we are using
             #        minibatches, L will be a vector, with one entry per
             #        example in minibatch
             o = objective(i, j)
-            if T.ndim(o) > 0:
+            if T.ndim(o) > 0 and optimizer is not None:
                 o = T.mean(T.sum(o, axis=-1))
             obj = obj + o
         obj = obj / len(x_reconstructed)
-
         # ====== Create the optimizer ====== #
         if optimizer is None:
             return obj, None
@@ -266,16 +264,15 @@ class AutoEncoder(OdinUnsupervisedFunction):
             #        minibatches, L will be a vector, with one entry per
             #        example in minibatch
             o = objective(xr, xc)
-            if T.ndim(o) > 0:
+            if T.ndim(o) > 0 and optimizer is not None:
                 o = T.mean(T.sum(o, axis=-1))
             obj = obj + o
-
+        # ====== contractive ====== #
         if self.contractive:
             obj = obj + self._jacobian_regularization
-
+        # ====== optimizer ====== #
         if optimizer is None:
             return obj, None
-
         params = self.get_params(globals=globals, trainable=True)
         if globals:
             grad = T.gradients(obj, params)
@@ -285,16 +282,6 @@ class AutoEncoder(OdinUnsupervisedFunction):
         return obj, opt
 
     # ==================== helper function ==================== #
-    def get_jacobian(self, hidden, W):
-        """Computes the jacobian of the hidden layer with respect to
-        the input, reshapes are necessary for broadcasting the
-        element-wise product on the right axis
-
-        """
-        return T.reshape(hidden * (1 - hidden),
-                         (self.n_batchsize, 1, self.n_hidden)) * T.reshape(
-                             W, (1, self.n_visible, self.n_hidden))
-
     def _get_corrupted_input(self, input, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
         same and zero-out randomly selected subset of size ``coruption_level``
@@ -315,9 +302,6 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
 
     Parameters:
     -----------
-    batch_size: Both Keras backends need the batch_size to be defined before
-        hand for sampling random numbers. Make sure your batch size is kept
-        fixed during training. You can use any batch size for testing.
     regularizer_scale: By default the regularization is already proberly
         scaled if you use binary or categorical crossentropy cost functions.
         In most cases this regularizers should be kept fixed at one.
@@ -329,9 +313,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
                  nonlinearity=T.tanh,
                  regularizer_scale=1.,
                  prior_mean=0., prior_logsigma=1.,
-                 seed=None, batch_size=None,
-                 **kwargs):
-        self.batch_size = batch_size
+                 seed=None, **kwargs):
         super(VariationalEncoderDecoder, self).__init__(
             incoming=encoder, **kwargs)
         self.prior_mean = prior_mean
@@ -414,17 +396,16 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         # ====== calculate hidden activation ====== #
         outputs = []
         self._last_mean_sigma = []
-        for x in X:
+        for x, shape in zip(X, self.input_shape):
             mean, logsigma = self.get_mean_logsigma(x)
             if training: # training mode (always return hidden)
                 if config.backend() == 'theano':
                     eps = self._rng.normal((T.shape(x)[0], self.num_units),
                         mean=0., std=1.)
                 else:
-                    if self.batch_size is None:
-                        self.raise_arguments('tensorflow backend requires to '
-                                             'know batch size in advanced.')
-                    eps = self._rng.normal((self.batch_size, self.num_units),
+                    # if you don't specify first dimension, you will
+                    # mess up here. Anyway, no cleaner way for doing this
+                    eps = self._rng.normal((shape[0], self.num_units),
                         mean=0., std=1.)
                 outputs.append(mean + T.exp(logsigma) * eps)
             else: # prediction mode only return mean

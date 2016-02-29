@@ -85,34 +85,40 @@ def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.
 # ===========================================================================
 # Plotting methods
 # ===========================================================================
-def plot_images(x, tile_shape=None, tile_spacing=None,
-    fig=None, path=None, show=False):
+def plot_images(X, tile_shape=None, tile_spacing=None,
+    fig=None, path=None, title=None):
     '''
-    x : 2D-gray or 3D-color images
+    x : 2D-gray or 3D-color images, or list of (2D, 3D images)
         for color image the color channel is second dimension
     '''
     from matplotlib import pyplot as plt
-    if x.ndim == 3 or x.ndim == 2:
-        cmap = plt.cm.Greys_r
-    elif x.ndim == 4:
-        cmap = None
-    else:
-        raise ValueError('NO support for %d dimensions image!' % x.ndim)
+    if not isinstance(X, (tuple, list)):
+        X = [X]
+    if not isinstance(title, (tuple, list)):
+        title = [title]
 
-    x = tile_raster_images(x, tile_shape, tile_spacing)
-    if fig is None:
-        fig = plt.figure()
-    subplot = fig.add_subplot(1, 1, 1)
-    subplot.imshow(x, cmap=cmap)
-    subplot.axis('off')
+    n = int(np.ceil(np.sqrt(len(X))))
+    for i, (x, t) in enumerate(zip(X, title)):
+        if x.ndim == 3 or x.ndim == 2:
+            cmap = plt.cm.Greys_r
+        elif x.ndim == 4:
+            cmap = None
+        else:
+            raise ValueError('NO support for %d dimensions image!' % x.ndim)
 
+        x = tile_raster_images(x, tile_shape, tile_spacing)
+        if fig is None:
+            fig = plt.figure()
+        subplot = fig.add_subplot(n, n, i + 1)
+        subplot.imshow(x, cmap=cmap)
+        if t is not None:
+            subplot.set_title(str(t), fontsize=12)
+        subplot.axis('off')
+
+    fig.tight_layout()
     if path:
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
-    if show:
-        plt.show(block=False)
-        raw_input('<Enter> to close the figure ...')
-    else:
-        return fig
+    return fig
 
 def plot_images_old(x, fig=None, titles=None, path=None, show=False):
     '''
@@ -141,7 +147,7 @@ def plot_images_old(x, fig=None, titles=None, path=None, show=False):
     if titles is not None:
         if not isinstance(titles, (tuple, list)):
             titles = [titles]
-        if len(titles) != x.shape(0):
+        if len(titles) != x.shape[0]:
             raise ValueError('Titles must have the same length with \
                 the number of images!')
 
@@ -158,7 +164,8 @@ def plot_images_old(x, fig=None, titles=None, path=None, show=False):
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
 
     if show:
-        plt.show(block=False)
+        # plt.tight_layout()
+        plt.show(block=True)
         raw_input('<Enter> to close the figure ...')
     else:
         return fig
@@ -365,6 +372,10 @@ def plot_show():
     from matplotlib import pyplot as plt
     plt.show(block=False)
     raw_input('<enter> to close all plots')
+    plt.close('all')
+
+def plot_close():
+    from matplotlib import pyplot as plt
     plt.close('all')
 
 def plot_save(path, figs=None, dpi=300):

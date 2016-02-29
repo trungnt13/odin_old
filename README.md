@@ -16,7 +16,7 @@ Our goal is creating minimalism and flexible design to speed up the overall pipe
 
 Odin is compatible with: __Python 2.7-3.5__.
 
-Installation
+Installation (pip)
 ------------
 
 Odin uses the following dependencies:
@@ -24,7 +24,8 @@ Odin uses the following dependencies:
 - numpy, scipy
 - theano, tensorflow or both
 - HDF5 and h5py (optional, required if you use model/dataset saving/loading)
-- matplotlib for visualization library
+- matplotlib (optional) for visualization library
+- features packages requires miscellaneous libraries, please check the seperated README.
 
 *When using the Theano backend:*
 
@@ -48,7 +49,17 @@ sudo python setup.py install
 
 You can also install Odin from PyPI:
 ```
-sudo pip install odin
+pip install https://github.com/trungnt13/odin/archive/master.zip
+```
+
+Installation (conda)
+------------
+
+- Download and install miniconda from this [link](http://conda.pydata.org/miniconda.html)
+- Select the right _environment.yml_ file from this [repo](https://github.com/trungnt13/envs)
+- Create your environment using this command:
+```
+conda env create -f=/path/to/environment.yml
 ```
 
 Documentation
