@@ -32,8 +32,8 @@ else:
         from .theano_backend import *
         is_load_backend = True
         config.set_backend('theano')
-    except:
-        pass
+    except Exception, e:
+        logger.critical('Failed to load theano, error:' + str(e))
 
     if not is_load_backend:
         try:
@@ -42,8 +42,8 @@ else:
             logger.critical('Auto load tensorflow_backend backend.')
             is_load_backend = True
             config.set_backend('tensorflow')
-        except:
-            pass
+        except Exception, e:
+            logger.critical('Failed to load tensorflow, error:' + str(e))
     if not is_load_backend:
         raise Exception('Unknown backend: ' + str(config.backend()))
 

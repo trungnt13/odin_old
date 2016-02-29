@@ -47,7 +47,7 @@ To install Odin, `cd` to the Odin folder and run the install command:
 sudo python setup.py install
 ```
 
-You can also install Odin from PyPI:
+You can also install Odin directly from github:
 ```
 pip install https://github.com/trungnt13/odin/archive/master.zip
 ```
