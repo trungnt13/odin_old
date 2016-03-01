@@ -14,7 +14,7 @@ from .features import image
 from .features import text
 
 from model import model
-from dataset import dataset
+from dataset import dataset, batch
 from trainer import trainer
 
 from . import nnet

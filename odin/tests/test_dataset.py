@@ -8,6 +8,7 @@ import numpy as np
 from scipy import stats
 
 from ..dataset import batch, dataset
+from .. import tensor
 
 from itertools import izip
 import h5py
@@ -45,11 +46,25 @@ def generateData():
     f.close()
 
 def cleanUp():
-    try:
+    if os.path.exists('tmp1.h5'):
         os.remove('tmp1.h5')
+    if os.path.exists('tmp2.h5'):
         os.remove('tmp2.h5')
-    except:
-        pass
+
+    if os.path.exists('test1.h5'):
+        os.remove('test1.h5')
+    if os.path.exists('test2.h5'):
+        os.remove('test2.h5')
+
+    if os.path.exists('tmp.ds'):
+        os.remove('tmp.ds')
+
+    if os.path.exists('test1.ds'):
+        os.remove('test1.ds')
+    if os.path.exists('test2.ds'):
+        os.remove('test2.ds')
+    if os.path.exists('test3.ds'):
+        os.remove('test3.ds')
 
 class BatchTest(unittest.TestCase):
 
@@ -332,6 +347,7 @@ class BatchTest(unittest.TestCase):
             os.remove('test.h5')
 
     def test_imbalanced_batch_mode0(self):
+        # ====== Create data ====== #
         f1 = h5py.File('test1.h5', 'w')
         f1['X1'] = np.zeros((100, 1)) + 1
         f2 = h5py.File('test2.h5', 'w')
@@ -340,18 +356,23 @@ class BatchTest(unittest.TestCase):
         f2['Y'] = np.asarray([-1] * 100 + [-2] * 5 + [-3] * 195)[:, None]
         f1.flush()
         f2.flush()
+
+        # ====== batch ====== #
         X12 = batch(['X1', 'X2', 'X3'], [f1, f2, f2])
         Y12 = batch('Y', f2)
         s = (X12[:].ravel() + Y12[:].ravel()).tolist()
         self.assertEqual(s, [0.] * len(s))
 
         for shuffle in (False, True):
-            for x, y in izip(X12.iter(9, start=0, end=1., shuffle=shuffle, mode=0),
-                             Y12.iter(9, start=0, end=1., shuffle=shuffle, mode=0)):
+            seed = tensor.get_random_magic_seed()
+            for x, y in izip(X12.iter(9, start=0, end=1., shuffle=shuffle, mode=0, seed=seed),
+                             Y12.iter(9, start=0, end=1., shuffle=shuffle, mode=0, seed=seed)):
                 a = (x.ravel() + y.ravel()).tolist()
                 self.assertEqual(a, [0.] * len(a))
-            a = np.concatenate(list(X12.iter(9, start=0, end=1., shuffle=shuffle, mode=0)), 0).ravel()
-            b = np.concatenate(list(Y12.iter(9, start=0, end=1., shuffle=shuffle, mode=0)), 0).ravel()
+            a = np.concatenate(
+                list(X12.iter(9, start=0, end=1., shuffle=shuffle, mode=0, seed=seed)), 0).ravel()
+            b = np.concatenate(
+                list(Y12.iter(9, start=0, end=1., shuffle=shuffle, mode=0, seed=seed)), 0).ravel()
             a = (a + b).tolist()
             self.assertEqual(a, [0.] * len(a))
         os.remove('test1.h5')
@@ -382,99 +403,86 @@ class DatasetTest(unittest.TestCase):
         self.assertEqual(tuple(self.ds['a']), ('111', '222'))
 
     def test_upsampling_iteration(self):
-        try:
-            # ====== Create datase ====== #
-            X1 = np.arange(0, 9).reshape(-1, 3)
-            X2 = np.arange(9, 24).reshape(-1, 3)
-            X3 = np.arange(24, 54).reshape(-1, 3)
+        # ====== Create datase ====== #
+        X1 = np.arange(0, 9).reshape(-1, 3)
+        X2 = np.arange(9, 24).reshape(-1, 3)
+        X3 = np.arange(24, 54).reshape(-1, 3)
 
-            Y1 = -np.arange(0, 9).reshape(-1, 3)
-            Y2 = -np.arange(9, 24).reshape(-1, 3)
-            Y3 = -np.arange(24, 54).reshape(-1, 3)
+        Y1 = -np.arange(0, 9).reshape(-1, 3)
+        Y2 = -np.arange(9, 24).reshape(-1, 3)
+        Y3 = -np.arange(24, 54).reshape(-1, 3)
 
-            f = h5py.File('test1.ds', 'w')
-            f['X1'] = X1
-            f['Y1'] = Y1
-            f.close()
-            f = h5py.File('test2.ds', 'w')
-            f['X2'] = X2
-            f['Y2'] = Y2
-            f.close()
-            f = h5py.File('test3.ds', 'w')
-            f['X3'] = X3
-            f['Y3'] = Y3
-            f.close()
-            # ====== Test ====== #
-            ds = dataset(['test1.ds', 'test2.ds', 'test3.ds'], 'r')
-            X = ds[['X1', 'X2', 'X3']]
-            Y = ds[['Y1', 'Y2', 'Y3']]
+        f = h5py.File('test1.ds', 'w')
+        f['X1'] = X1
+        f['Y1'] = Y1
+        f.close()
+        f = h5py.File('test2.ds', 'w')
+        f['X2'] = X2
+        f['Y2'] = Y2
+        f.close()
+        f = h5py.File('test3.ds', 'w')
+        f['X3'] = X3
+        f['Y3'] = Y3
+        f.close()
+        # ====== Test ====== #
+        ds = dataset(['test1.ds', 'test2.ds', 'test3.ds'], 'r')
+        X = ds[['X1', 'X2', 'X3']]
+        Y = ds[['Y1', 'Y2', 'Y3']]
 
-            # check shape
-            self.assertEqual(X.shape, Y.shape)
+        # check shape
+        self.assertEqual(X.shape, Y.shape)
+        # check order
+        tmp = (X[:] + Y[:]).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
+        # check order
+        seed = tensor.get_random_magic_seed()
+        tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=0, seed=seed)), 0) +
+               np.concatenate(list(Y.iter(7, 0., 1., True, mode=0, seed=seed)), 0)).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
+        #
+        tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=1, seed=seed)), 0) +
+               np.concatenate(list(Y.iter(7, 0., 1., True, mode=1, seed=seed)), 0)).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
+        #
+        tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=2, seed=seed)), 0) +
+               np.concatenate(list(Y.iter(7, 0., 1., True, mode=2, seed=seed)), 0)).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            # check order
-            tmp = (X[:] + Y[:]).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
+        tmp = []
+        for i, j in izip(X.iter(7, 0., 1., True, mode=0, seed=seed),
+                         Y.iter(7, 0., 1., True, mode=0, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            # check order
-            tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=0)), 0) +
-                   np.concatenate(list(Y.iter(7, 0., 1., True, mode=0)), 0)).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
+        tmp = []
+        for i, j in izip(X.iter(7, 0., 1., True, mode=1, seed=seed),
+                         Y.iter(7, 0., 1., True, mode=1, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=1)), 0) +
-                   np.concatenate(list(Y.iter(7, 0., 1., True, mode=1)), 0)).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
+        tmp = []
+        for i, j in izip(X.iter(7, 0., 1., True, mode=2, seed=seed),
+                         Y.iter(7, 0., 1., True, mode=2, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=2)), 0) +
-                   np.concatenate(list(Y.iter(7, 0., 1., True, mode=2)), 0)).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
+        tmp = []
+        for i, j in izip(X.iter(7, 0.3, 0.6, True, mode=0, seed=seed),
+                         Y.iter(7, 0.3, 0.6, True, mode=0, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            tmp = []
-            for i, j in izip(X.iter(7, 0., 1., True, mode=0),
-                             Y.iter(7, 0., 1., True, mode=0)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
+        tmp = []
+        for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=1, seed=seed),
+                         Y.iter(7, 0.5, 0.8, True, mode=1, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
-            tmp = []
-            for i, j in izip(X.iter(7, 0., 1., True, mode=1),
-                             Y.iter(7, 0., 1., True, mode=1)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
-
-            tmp = []
-            for i, j in izip(X.iter(7, 0., 1., True, mode=2),
-                             Y.iter(7, 0., 1., True, mode=2)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
-
-            tmp = []
-            for i, j in izip(X.iter(7, 0.3, 0.6, True, mode=0),
-                             Y.iter(7, 0.3, 0.6, True, mode=0)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
-
-            tmp = []
-            for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=1),
-                             Y.iter(7, 0.5, 0.8, True, mode=1)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
-
-            tmp = []
-            for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=2),
-                             Y.iter(7, 0.5, 0.8, True, mode=2)):
-                tmp += (i + j).ravel().tolist()
-            self.assertEqual(tmp, [0.] * len(tmp))
-
-        except Exception, e:
-            import traceback; traceback.print_exc();
-            raise e
-        finally:
-            if os.path.exists('test1.ds'):
-                os.remove('test1.ds')
-            if os.path.exists('test2.ds'):
-                os.remove('test2.ds')
-            if os.path.exists('test3.ds'):
-                os.remove('test3.ds')
+        tmp = []
+        for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=2, seed=seed),
+                         Y.iter(7, 0.5, 0.8, True, mode=2, seed=seed)):
+            tmp += (i + j).ravel().tolist()
+        self.assertEqual(tmp, [0.] * len(tmp))
 
     def test_downsampling_iteration(self):
         # ====== Create datase ====== #
@@ -502,20 +510,21 @@ class DatasetTest(unittest.TestCase):
         Y = ds[['Y1', 'Y2', 'Y3']]
 
         # check order
-        tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=3)), 0) +
-               np.concatenate(list(Y.iter(7, 0., 1., True, mode=3)), 0)).ravel().tolist()
+        seed = tensor.get_random_magic_seed()
+        tmp = (np.concatenate(list(X.iter(7, 0., 1., True, mode=3, seed=seed)), 0) +
+               np.concatenate(list(Y.iter(7, 0., 1., True, mode=3, seed=seed)), 0)).ravel().tolist()
         self.assertEqual(tmp, [0.] * len(tmp))
         self.assertEqual(
             np.concatenate(list(X.iter(7, 0., 1., True, mode=3)), 0).shape,
             (15, 3))
         tmp = []
-        for i, j in izip(X.iter(7, 0., 1., True, mode=3),
-                         Y.iter(7, 0., 1., True, mode=3)):
+        for i, j in izip(X.iter(7, 0., 1., True, mode=3, seed=seed),
+                         Y.iter(7, 0., 1., True, mode=3, seed=seed)):
             tmp += (i + j).ravel().tolist()
         self.assertEqual(tmp, [0.] * len(tmp))
         tmp = []
-        for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=3),
-                         Y.iter(7, 0.5, 0.8, True, mode=3)):
+        for i, j in izip(X.iter(7, 0.5, 0.8, True, mode=3, seed=seed),
+                         Y.iter(7, 0.5, 0.8, True, mode=3, seed=seed)):
             tmp += (i + j).ravel().tolist()
         self.assertEqual(tmp, [0.] * len(tmp))
         if os.path.exists('test1.ds'):
@@ -568,6 +577,43 @@ class DatasetTest(unittest.TestCase):
         iter_time = time.time() - start
         print('\nWrite time:%.2f, Iter time:%.2f' % (write_time, iter_time / 13.))
 
+        if os.path.exists('tmp.ds'):
+            os.remove('tmp.ds')
+
+    def test_all_iter_mode_multiple_dataset(self):
+        ds = dataset('tmp.ds', mode='w')
+        ds['X1'] = np.arange(50)[:, None]
+        ds['X2'] = np.arange(100, 160)[:, None]
+        ds['X3'] = np.arange(160, 200)[:, None]
+        ds['y1'] = np.arange(50)[:, None]
+        ds['y2'] = np.arange(100, 160)[:, None]
+        ds['y3'] = np.arange(160, 200)[:, None]
+
+        X = ds['X1', 'X2', 'X3']
+        y = ds['y1', 'y2', 'y3']
+
+        seed = tensor.get_random_magic_seed()
+        for i, j in zip(X.iter(5, seed=seed, mode=0),
+                        y.iter(5, seed=seed, mode=0)):
+            k = (i - j).ravel().tolist()
+            self.assertEqual(k, [0.] * len(k))
+
+        for i, j in zip(X.iter(5, seed=seed, mode=1),
+                        y.iter(5, seed=seed, mode=1)):
+            k = (i - j).ravel().tolist()
+            self.assertEqual(k, [0.] * len(k))
+
+        for i, j in zip(X.iter(5, seed=seed, mode=2),
+                        y.iter(5, seed=seed, mode=2)):
+            k = (i - j).ravel().tolist()
+            self.assertEqual(k, [0.] * len(k))
+
+        for i, j in zip(X.iter(5, seed=seed, mode=3),
+                        y.iter(5, seed=seed, mode=3)):
+            k = (i - j).ravel().tolist()
+            self.assertEqual(k, [0.] * len(k))
+
+        ds.close()
         if os.path.exists('tmp.ds'):
             os.remove('tmp.ds')
 

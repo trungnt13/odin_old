@@ -46,7 +46,7 @@ class FunctionsTest(unittest.TestCase):
             training=False)
         f_cost = T.function(d3.input_var + d3.output_var, cost)
 
-        cost1 = np.round(f_cost(x, y), 6)
+        cost1 = np.round(np.mean(f_cost(x, y)), 6)
         cost2 = np.round(np.mean((np.dot(x, p) - y)**2), 6)
         self.assertLessEqual(np.sum(np.abs(cost1 - cost2)), 10e-5)
 

@@ -4,13 +4,14 @@ import numpy as np
 from .base import OdinObject
 from .utils import segment_list, queue
 
-__all__ = [
-    'MapReduce'
-]
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 npro = comm.Get_size()
+
+__all__ = [
+    'MapReduce'
+]
 
 # ===========================================================================
 # MPI MapReduce
