@@ -733,7 +733,7 @@ class dataset(OdinObject):
             key = [key]
 
         # set str value directly
-        if isinstance(value, str) or \
+        if isinstance(value, (tuple, list, str)) or \
             (hasattr(value, 'shape') and len(value.shape) == 0):
             hdf = self._get_write_hdf()
             for i in hdf:
