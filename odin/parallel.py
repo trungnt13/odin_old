@@ -118,6 +118,15 @@ class MapReduce(OdinObject):
     def set_root(self, rank):
         self._root_rank = rank
 
+    def get_root(self):
+        return self._root_rank
+
+    def get_rank(self):
+        return self.rank
+
+    def get_npro(self):
+        return self.npro
+
     def set(self, key, value):
         self._global_vars[key] = value
         return self
