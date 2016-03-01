@@ -457,7 +457,14 @@ class frame(object):
 
 class queue(object):
 
-    """ FIFO, fast, NO thread-safe queue """
+    """ FIFO, fast, NO thread-safe queue
+    put : append to end of list
+    append : append to end of list
+    pop : remove data from end of list
+    get : remove data from end of list
+    empty : check if queue is empty
+    clear : remove all data in queue
+    """
 
     def __init__(self):
         super(queue, self).__init__()

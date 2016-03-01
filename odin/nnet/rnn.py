@@ -4,17 +4,13 @@
 # Original work Copyright (c) 2014-2015 Lasagne contributors
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
-import numpy as np
-import theano
-import theano.tensor as T
-from .. import nonlinearities
-from .. import init
-from ..utils import unroll_scan
+from __future__ import print_function, division
 
-from .base import MergeLayer, Layer
-from .input import InputLayer
-from .dense import DenseLayer
-from . import helper
+import numpy as np
+
+from .. import tensor as T
+from ..base import OdinFunction
+from ..utils import as_tuple
 
 __all__ = [
     "CustomRecurrentLayer",
@@ -25,122 +21,7 @@ __all__ = [
 ]
 
 
-class CustomRecurrentLayer(MergeLayer):
-
-    """
-    lasagne.layers.recurrent.CustomRecurrentLayer(incoming, input_to_hidden,
-    hidden_to_hidden, nonlinearity=lasagne.nonlinearities.rectify,
-    hid_init=lasagne.init.Constant(0.), backwards=False,
-    learn_init=False, gradient_steps=-1, grad_clipping=0,
-    unroll_scan=False, precompute_input=True, mask_input=None,
-    only_return_final=False, **kwargs)
-
-    A layer which implements a recurrent connection.
-
-    This layer allows you to specify custom input-to-hidden and
-    hidden-to-hidden connections by instantiating :class:`lasagne.layers.Layer`
-    instances and passing them on initialization.  Note that these connections
-    can consist of multiple layers chained together.  The output shape for the
-    provided input-to-hidden and hidden-to-hidden connections must be the same.
-    If you are looking for a standard, densely-connected recurrent layer,
-    please see :class:`RecurrentLayer`.  The output is computed by
-
-    .. math ::
-        h_t = \sigma(f_i(x_t) + f_h(h_{t-1}))
-
-    Parameters
-    ----------
-    incoming : a :class:`lasagne.layers.Layer` instance or a tuple
-        The layer feeding into this layer, or the expected input shape.
-    input_to_hidden : :class:`lasagne.layers.Layer`
-        :class:`lasagne.layers.Layer` instance which connects input to the
-        hidden state (:math:`f_i`).  This layer may be connected to a chain of
-        layers, which must end in a :class:`lasagne.layers.InputLayer` with the
-        same input shape as `incoming`, except for the first dimension: When
-        ``precompute_input == True`` (the default), it must be
-        ``incoming.output_shape[0]*incoming.output_shape[1]`` or ``None``; when
-        ``precompute_input == False``, it must be ``incoming.output_shape[0]``
-        or ``None``.
-    hidden_to_hidden : :class:`lasagne.layers.Layer`
-        Layer which connects the previous hidden state to the new state
-        (:math:`f_h`).  This layer may be connected to a chain of layers, which
-        must end in a :class:`lasagne.layers.InputLayer` with the same input
-        shape as `hidden_to_hidden`'s output shape.
-    nonlinearity : callable or None
-        Nonlinearity to apply when computing new state (:math:`\sigma`). If
-        None is provided, no nonlinearity will be applied.
-    hid_init : callable, np.ndarray, theano.shared or :class:`Layer`
-        Initializer for initial hidden state (:math:`h_0`).
-    backwards : bool
-        If True, process the sequence backwards and then reverse the
-        output again such that the output from the layer is always
-        from :math:`x_1` to :math:`x_n`.
-    learn_init : bool
-        If True, initial hidden values are learned.
-    gradient_steps : int
-        Number of timesteps to include in the backpropagated gradient.
-        If -1, backpropagate through the entire sequence.
-    grad_clipping : float
-        If nonzero, the gradient messages are clipped to the given value during
-        the backward pass.  See [1]_ (p. 6) for further explanation.
-    unroll_scan : bool
-        If True the recursion is unrolled instead of using scan. For some
-        graphs this gives a significant speed up but it might also consume
-        more memory. When `unroll_scan` is True, backpropagation always
-        includes the full sequence, so `gradient_steps` must be set to -1 and
-        the input sequence length must be known at compile time (i.e., cannot
-        be given as None).
-    precompute_input : bool
-        If True, precompute input_to_hid before iterating through
-        the sequence. This can result in a speedup at the expense of
-        an increase in memory usage.
-    mask_input : :class:`lasagne.layers.Layer`
-        Layer which allows for a sequence mask to be input, for when sequences
-        are of variable length.  Default `None`, which means no mask will be
-        supplied (i.e. all sequences are of the same length).
-    only_return_final : bool
-        If True, only return the final sequential output (e.g. for tasks where
-        a single target value for the entire sequence is desired).  In this
-        case, Theano makes an optimization which saves memory.
-
-    Examples
-    --------
-
-    The following example constructs a simple `CustomRecurrentLayer` which
-    has dense input-to-hidden and hidden-to-hidden connections.
-
-    >>> import lasagne
-    >>> n_batch, n_steps, n_in = (2, 3, 4)
-    >>> n_hid = 5
-    >>> l_in = lasagne.layers.InputLayer((n_batch, n_steps, n_in))
-    >>> l_in_hid = lasagne.layers.DenseLayer(
-    ...     lasagne.layers.InputLayer((None, n_in)), n_hid)
-    >>> l_hid_hid = lasagne.layers.DenseLayer(
-    ...     lasagne.layers.InputLayer((None, n_hid)), n_hid)
-    >>> l_rec = lasagne.layers.CustomRecurrentLayer(l_in, l_in_hid, l_hid_hid)
-
-    The CustomRecurrentLayer can also support "convolutional recurrence", as is
-    demonstrated below.
-
-    >>> n_batch, n_steps, n_channels, width, height = (2, 3, 4, 5, 6)
-    >>> n_out_filters = 7
-    >>> filter_shape = (3, 3)
-    >>> l_in = lasagne.layers.InputLayer(
-    ...     (n_batch, n_steps, n_channels, width, height))
-    >>> l_in_to_hid = lasagne.layers.Conv2DLayer(
-    ...     lasagne.layers.InputLayer((None, n_channels, width, height)),
-    ...     n_out_filters, filter_shape, pad='same')
-    >>> l_hid_to_hid = lasagne.layers.Conv2DLayer(
-    ...     lasagne.layers.InputLayer(l_in_to_hid.output_shape),
-    ...     n_out_filters, filter_shape, pad='same')
-    >>> l_rec = lasagne.layers.CustomRecurrentLayer(
-    ...     l_in, l_in_to_hid, l_hid_to_hid)
-
-    References
-    ----------
-    .. [1] Graves, Alex: "Generating sequences with recurrent neural networks."
-           arXiv preprint arXiv:1308.0850 (2013).
-    """
+class CustomRecurrentLayer(OdinFunction):
 
     def __init__(self, incoming, input_to_hidden, hidden_to_hidden,
                  nonlinearity=nonlinearities.rectify,
@@ -437,78 +318,6 @@ class CustomRecurrentLayer(MergeLayer):
 
 
 class RecurrentLayer(CustomRecurrentLayer):
-
-    """
-    lasagne.layers.recurrent.RecurrentLayer(incoming, num_units,
-    W_in_to_hid=lasagne.init.Uniform(), W_hid_to_hid=lasagne.init.Uniform(),
-    b=lasagne.init.Constant(0.), nonlinearity=lasagne.nonlinearities.rectify,
-    hid_init=lasagne.init.Constant(0.), backwards=False, learn_init=False,
-    gradient_steps=-1, grad_clipping=0, unroll_scan=False,
-    precompute_input=True, mask_input=None, only_return_final=False, **kwargs)
-
-    Dense recurrent neural network (RNN) layer
-
-    A "vanilla" RNN layer, which has dense input-to-hidden and
-    hidden-to-hidden connections.  The output is computed as
-
-    .. math ::
-        h_t = \sigma(x_t W_x + h_{t-1} W_h + b)
-
-    Parameters
-    ----------
-    incoming : a :class:`lasagne.layers.Layer` instance or a tuple
-        The layer feeding into this layer, or the expected input shape.
-    num_units : int
-        Number of hidden units in the layer.
-    W_in_to_hid : Theano shared variable, numpy array or callable
-        Initializer for input-to-hidden weight matrix (:math:`W_x`).
-    W_hid_to_hid : Theano shared variable, numpy array or callable
-        Initializer for hidden-to-hidden weight matrix (:math:`W_h`).
-    b : Theano shared variable, numpy array, callable or None
-        Initializer for bias vector (:math:`b`). If None is provided there will
-        be no bias.
-    nonlinearity : callable or None
-        Nonlinearity to apply when computing new state (:math:`\sigma`). If
-        None is provided, no nonlinearity will be applied.
-    hid_init : callable, np.ndarray, theano.shared or :class:`Layer`
-        Initializer for initial hidden state (:math:`h_0`).
-    backwards : bool
-        If True, process the sequence backwards and then reverse the
-        output again such that the output from the layer is always
-        from :math:`x_1` to :math:`x_n`.
-    learn_init : bool
-        If True, initial hidden values are learned.
-    gradient_steps : int
-        Number of timesteps to include in the backpropagated gradient.
-        If -1, backpropagate through the entire sequence.
-    grad_clipping : float
-        If nonzero, the gradient messages are clipped to the given value during
-        the backward pass.  See [1]_ (p. 6) for further explanation.
-    unroll_scan : bool
-        If True the recursion is unrolled instead of using scan. For some
-        graphs this gives a significant speed up but it might also consume
-        more memory. When `unroll_scan` is True, backpropagation always
-        includes the full sequence, so `gradient_steps` must be set to -1 and
-        the input sequence length must be known at compile time (i.e., cannot
-        be given as None).
-    precompute_input : bool
-        If True, precompute input_to_hid before iterating through
-        the sequence. This can result in a speedup at the expense of
-        an increase in memory usage.
-    mask_input : :class:`lasagne.layers.Layer`
-        Layer which allows for a sequence mask to be input, for when sequences
-        are of variable length.  Default `None`, which means no mask will be
-        supplied (i.e. all sequences are of the same length).
-    only_return_final : bool
-        If True, only return the final sequential output (e.g. for tasks where
-        a single target value for the entire sequence is desired).  In this
-        case, Theano makes an optimization which saves memory.
-
-    References
-    ----------
-    .. [1] Graves, Alex: "Generating sequences with recurrent neural networks."
-           arXiv preprint arXiv:1308.0850 (2013).
-    """
 
     def __init__(self, incoming, num_units,
                  W_in_to_hid=init.Uniform(),
