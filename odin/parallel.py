@@ -7,6 +7,11 @@ from .utils import segment_list, queue
 __all__ = [
     'MapReduce'
 ]
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+npro = comm.Get_size()
+
 # ===========================================================================
 # MPI MapReduce
 # ===========================================================================
@@ -66,11 +71,10 @@ class MapReduce(OdinObject):
 
     def __init__(self):
         super(MapReduce, self).__init__()
+        self.rank = rank
+        self.npro = npro
+        self.comm = comm
         # MPI information
-        from mpi4py import MPI
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
-        self.npro = self.comm.Get_size()
         if self.rank == 0:
             self.log('MPI started with %d processes' % self.npro)
         # variables
