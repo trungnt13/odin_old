@@ -252,7 +252,7 @@ class MapReduce(OdinObject):
             if i % self._cache == 0 and i > 0:
                 all_data = self.comm.gather(data, root=root)
                 if self.rank == root:
-                    self.log('Reduce all data to process %d' % self._root_rank)
+                    self.log('[Reduce] all data gathered to process %d' % self._root_rank)
                     all_data = [k for j in all_data for k in j]
                     if len(all_data) > 0:
                         reduce_func(global_vars, all_data, False)

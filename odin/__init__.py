@@ -19,5 +19,4 @@ from trainer import trainer
 
 from . import nnet
 
-from . import parallel
 __version__ = "0.1.0"
