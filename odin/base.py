@@ -76,6 +76,57 @@ class OdinObject(object):
         raise ValueError('[%s] ' % self.__class__.__name__ + msg)
 
 
+class OdinParams(OdinObject):
+
+    """ Wrapper for storing Parameters of both training and predicting process
+    params can be OdinFunction, variables, expression, placeholder
+    """
+
+    def __init__(self, name, params, trainable, regularizable):
+        super(OdinParams, self).__init__()
+        self._name = name
+        if isinstance(params, OdinFunction) or \
+           T.is_variable(params) or T.is_expression(params):
+            self._params = params
+        else:
+            self.raise_arguments('Parameters must be OdinFunction, variables, '
+                                 'expression, or placeholder.')
+        self._trainable = trainable
+        self._regularizable = regularizable
+
+    def __call__(self):
+        params = self._params
+        if isinstance(params, OdinFunction): # OdinFunction
+            params = params(training=True) # defaults always training=True
+            if isinstance(params, (tuple, list)):
+                params = params[0] # only need the first output
+        return params
+
+    @property
+    def trainable(self):
+        return self._trainable
+
+    @property
+    def regularizable(self):
+        return self._regularizable
+
+    @property
+    def name(self):
+        return self._name
+
+    def as_variables(self, globals, trainable, regularizable):
+        ''' Return list of variables that create this parameters '''
+        if trainable is not None and self._trainable != trainable:
+            return []
+        if regularizable is not None and self._regularizable != regularizable:
+            return []
+        if T.is_expression(self._params):
+            return []
+        if T.is_variable(self._params):
+            return [self._params]
+        elif isinstance(self._params, OdinFunction):
+            return self._params.get_params(globals, trainable, regularizable)
+
 class OdinFunction(OdinObject):
     __metaclass__ = ABCMeta
 
@@ -121,12 +172,18 @@ class OdinFunction(OdinObject):
             name = [name]
         self._name = name
 
+        # you can have 2 different version of parameters, for training and for
+        # making prediction
         self.params = OrderedDict()
-        self.params_tags = OrderedDict()
 
         # this is dirty hack that allow other functions to modify the inputs
         # of this function right before getting the outputs
         self._intermediate_inputs = None
+
+        # must store cache outputs, if you build a graph, duplicated output
+        # significantly reduce the performance
+        self._cache_inputs_train = None
+        self._cache_inputs_pred = None
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
@@ -346,7 +403,7 @@ class OdinFunction(OdinObject):
                         name='in.%s.%s' % (shape_str, self.name))
                     self._input_var.append(x)
                     self._local_input_var[idx] = x
-                elif T.is_placeholder(i):
+                elif T.is_expression(i):
                     self._input_var.append(i)
                     self._local_input_var[idx] = x
                 else: # input from API layers
@@ -412,7 +469,7 @@ class OdinFunction(OdinObject):
         self.input_var # make sure initialized all placeholder
         for idx, i in enumerate(self._incoming):
             # this is InputLayer
-            if i is None or T.is_placeholder(i):
+            if i is None or T.is_expression(i):
                 inputs.append(self._local_input_var[idx])
             # this is expression
             else:
@@ -446,24 +503,9 @@ class OdinFunction(OdinObject):
                     params += i.get_params(globals, trainable, regularizable)
 
         # ====== Params from this layers ====== #
-        cond_trainable = [True, False]
-        if trainable is True:
-            cond_trainable = [True]
-        elif trainable is False:
-            cond_trainable = [False]
-
-        cond_regularizable = [True, False]
-        if regularizable is True:
-            cond_regularizable = [True]
-        elif regularizable is False:
-            cond_regularizable = [False]
-
-        cond = lambda x, y: x in cond_trainable and y in cond_regularizable
-        local_params = [j for i, j in self.params.iteritems()
-                        if cond(self.params_tags[i + '_trainable'],
-                                self.params_tags[i + '_regularizable'])
-                        ]
-
+        local_params = []
+        for i, j in self.params.iteritems():
+            local_params += j.as_variables(globals, trainable, regularizable)
         return params + local_params
 
     def get_params_value(self, globals, trainable=None, regularizable=None):
@@ -471,7 +513,8 @@ class OdinFunction(OdinObject):
         self.get_params(globals, trainable, regularizable)]
 
     def create_params(self, spec, shape, name, regularizable, trainable):
-        if T.is_variable(spec) or T.is_placeholder(spec):
+        params = None
+        if T.is_variable(spec) or T.is_expression(spec):
             # We cannot check the shape here, Theano expressions (even shared
             # variables) do not have a fixed compile-time shape. We can check the
             # dimensionality though.
@@ -479,13 +522,19 @@ class OdinFunction(OdinObject):
             # `name` attribute of the variable, but the user may have already
             # named the variable and we don't want to override this.
             if shape is not None and T.ndim(spec) != len(shape):
-                raise RuntimeError("parameter variable has %d dimensions, "
+                self.raise_arguments("parameter variable has %d dimensions, "
                                    "should be %d" % (spec.ndim, len(shape)))
         elif isinstance(spec, np.ndarray):
             if shape is not None and spec.shape != shape:
                 raise RuntimeError("parameter array has shape %s, should be "
                                    "%s" % (spec.shape, shape))
             spec = T.variable(spec, name=name)
+        elif isinstance(spec, OdinFunction):
+            if len(spec.output_shape) > 1:
+                self.raise_arguments('if OdinFunction is given as parameters, '
+                                     'we only support function return only 1 '
+                                     'output, but given function returns %d '
+                                     'outputs.' % len(spec.output_shape))
         elif hasattr(spec, '__call__'):
             shape = tuple(shape)  # convert to tuple if needed
             if any(d <= 0 for d in shape):
@@ -498,7 +547,7 @@ class OdinFunction(OdinObject):
             if T.is_variable(arr):
                 spec = arr
             else:
-                if T.is_placeholder(arr):
+                if T.is_expression(arr):
                     # we do not support expression as params
                     arr = T.eval(arr)
                 if arr.shape != shape:
@@ -506,14 +555,17 @@ class OdinFunction(OdinObject):
                                        "provided callable did not return a value "
                                        "with the correct shape")
                 spec = T.variable(arr, name=name)
+        elif isinstance(spec, OdinParams):
+            params = spec
         else:
             raise RuntimeError("cannot initialize parameters: 'spec' is not "
                                "a numpy array, a Theano expression, or a "
                                "callable")
-        self.params[name] = spec
-        self.params_tags[name + '_regularizable'] = regularizable
-        self.params_tags[name + '_trainable'] = trainable
-        return spec
+        # ====== create and return params ====== #
+        if params is None:
+            params = OdinParams(name, spec, trainable, regularizable)
+        self.params[name] = params
+        return params
 
 class OdinUnsupervisedFunction(OdinFunction):
 

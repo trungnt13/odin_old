@@ -107,7 +107,7 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     name = name_prefix + name
     return tf.placeholder(dtype, shape=shape, name=name)
 
-def is_placeholder(v):
+def is_expression(v):
     return isinstance(v, tf.python.Tensor)
 
 def eval(x):

@@ -111,7 +111,8 @@ class RBM(OdinUnsupervisedFunction):
         shape = (np.prod(self.input_shape[0][1:]), num_units)
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
-        self.Wprime = T.transpose(self.W)
+        # this one might break if you reset all the functions
+        self.Wprime = T.transpose(self.W())
         if b is None:
             self.hbias = None
             self.vbias = None
@@ -289,8 +290,8 @@ class RBM(OdinUnsupervisedFunction):
     # ==================== Energy methods ==================== #
     def _free_energy(self, v_sample):
         ''' Function to compute the free energy '''
-        wx_b = T.dot(v_sample, self.W) + self.hbias
-        vbias_term = T.dot(v_sample, self.vbias)
+        wx_b = T.dot(v_sample, self.W()) + self.hbias()
+        vbias_term = T.dot(v_sample, self.vbias())
         hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=1)
         return -hidden_term - vbias_term
 
@@ -302,7 +303,7 @@ class RBM(OdinUnsupervisedFunction):
         # optimizations, this symbolic variable will be needed to write
         # down a more stable computational graph (see details in the
         # reconstruction cost function)
-        pre_sigmoid_h1 = T.dot(v0_sample, self.W) + self.hbias
+        pre_sigmoid_h1 = T.dot(v0_sample, self.W()) + self.hbias()
         h1_mean = T.sigmoid(pre_sigmoid_h1)
 
         # get a sample of the hiddens given their activation
@@ -317,7 +318,7 @@ class RBM(OdinUnsupervisedFunction):
         # optimizations, this symbolic variable will be needed to write
         # down a more stable computational graph (see details in the
         # reconstruction cost function)
-        pre_sigmoid_v1 = T.dot(h0_sample, self.Wprime) + self.vbias
+        pre_sigmoid_v1 = T.dot(h0_sample, self.Wprime) + self.vbias()
         v1_mean = T.sigmoid(pre_sigmoid_v1)
         # get a sample of the visible given their activation
         v1_sample = self._rng.binomial(T.shape(v1_mean), p=v1_mean)

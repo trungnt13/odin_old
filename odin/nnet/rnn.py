@@ -20,6 +20,34 @@ __all__ = [
     "GRULayer"
 ]
 
+class Cell(OdinFunction):
+
+    """docstring for Cell"""
+
+    def __init__(self, incoming, **kwargs):
+        super(Cell, self).__init__(incoming, unsupervised=False, **kwargs)
+
+class Gate(OdinFunction):
+
+    """docstring for Cell"""
+
+    def __init__(self, incoming, **kwargs):
+        super(Cell, self).__init__(incoming, unsupervised=False, **kwargs)
+
+class Recurrent(OdinFunction):
+
+    """docstring for Recurrent"""
+
+    def __init__(self, incoming, mask_input=None,
+                 backwards=False,
+                 learn_init=False,
+                 grad_clipping=0,
+                 unroll_scan=False,
+                 precompute_input=True,
+                 only_return_final=False,
+                 **kwargs):
+        super(Recurrent, self).__init__(incoming, unsupervised=False, **kwargs)
+
 
 class CustomRecurrentLayer(OdinFunction):
 

@@ -42,6 +42,8 @@ class ModelTest(unittest.TestCase):
 
     def tearDown(self):
         logger.set_enable(True)
+        if os.path.exists('tmp.ai'):
+            os.remove('tmp.ai')
 
     def test_save_load_lasagne(self):
         import lasagne

@@ -200,7 +200,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         # b_prime corresponds to the bias of the visible
         self.b_prime = self.vbias
         # tied weights, therefore W_prime is W transpose
-        self.W_prime = T.transpose(self.W)
+        self.W_prime = T.transpose(self.W())
         self.nonlinearity = nonlinearity
 
         self.contractive = contractive
@@ -223,11 +223,11 @@ class AutoEncoder(OdinUnsupervisedFunction):
         outputs = []
         J = T.castX(0.) # jacobian regularization
         for x, shape in zip(X, self.output_shape):
-            hidden_state = self.nonlinearity(T.dot(x, self.W) + self.hbias)
+            hidden_state = self.nonlinearity(T.dot(x, self.W()) + self.hbias())
             # output reconstructed data
             if self._reconstruction_mode:
                 reconstructed = self.nonlinearity(
-                    T.dot(hidden_state, self.W_prime) + self.b_prime)
+                    T.dot(hidden_state, self.W_prime) + self.b_prime())
                 # reshape if shape mismatch (but only when not training)
                 if not training and T.ndim(reconstructed) != len(shape):
                     reconstructed = T.reshape(
@@ -237,7 +237,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
                 reconstructed = hidden_state
             # calculate jacobian
             if self.contractive:
-                J = J + T.jacobian_regularize(hidden_state, self.W)
+                J = J + T.jacobian_regularize(hidden_state, self.W())
             outputs.append(reconstructed)
         self._jacobian_regularization = J / len(X) * self.contraction_level
         # ====== log the footprint for debugging ====== #
@@ -367,8 +367,8 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
 
     # ==================== Helper methods ==================== #
     def get_mean_logsigma(self, X):
-        mean = self.nonlinearity(T.dot(X, self.W_mean) + self.b_mean)
-        logsigma = self.nonlinearity(T.dot(X, self.W_logsigma) + self.b_logsigma)
+        mean = self.nonlinearity(T.dot(X, self.W_mean()) + self.b_mean())
+        logsigma = self.nonlinearity(T.dot(X, self.W_logsigma()) + self.b_logsigma())
         return mean, logsigma
 
     # ==================== Abstract methods ==================== #

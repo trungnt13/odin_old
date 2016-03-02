@@ -48,9 +48,9 @@ class Dense(OdinFunction):
                 # if the input has more than two dimensions, flatten it into a
                 # batch of feature vectors.
                 x = T.flatten(x, 2)
-            activation = T.dot(x, self.W)
+            activation = T.dot(x, self.W())
             if self.b is not None:
-                activation = activation + T.reshape(self.b, (1, -1))
+                activation = activation + T.reshape(self.b(), (1, -1))
             outputs.append(self.nonlinearity(activation))
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)

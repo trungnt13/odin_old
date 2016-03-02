@@ -113,6 +113,17 @@ class FunctionsTest(unittest.TestCase):
         y = y[0] - y[1]
         self.assertEqual(y.ravel().tolist(), [0.] * len(y.ravel()))
 
+    def test_function_as_weights(self):
+        dense_in = nnet.Dense((10, 30), num_units=20, name='dense_in')
+        dense = nnet.Dense((None, 28), num_units=10, name='dense1')
+        dense = nnet.Dense(dense, num_units=20,
+            W=dense_in, name='dense2')
+        f = T.function(
+            inputs=dense.input_var + dense_in.input_var,
+            outputs= dense())
+        shape = f(np.random.rand(13, 28),
+              np.random.rand(10, 30))[0].shape
+        self.assertEqual(shape, (13, 20))
 # ===========================================================================
 # Main
 # ===========================================================================

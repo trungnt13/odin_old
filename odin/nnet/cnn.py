@@ -590,9 +590,9 @@ class BaseConvLayer(OdinFunction):
             if self.b is None:
                 activation = conved
             elif self.untie_biases:
-                activation = conved + T.expand_dims(self.b, 0)
+                activation = conved + T.expand_dims(self.b(), 0)
             else:
-                activation = conved + T.dimshuffle(self.b, ('x', 0) + ('x',) * self.n)
+                activation = conved + T.dimshuffle(self.b(), ('x', 0) + ('x',) * self.n)
             outputs.append(self.nonlinearity(activation))
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
@@ -627,11 +627,11 @@ class BaseConvLayer(OdinFunction):
 
     def get_config(self):
         config = super(BaseConvLayer, self).get_config()
-        config['W'] = self.W.shape.eval().tolist()
+        config['W'] = self.W().shape.eval().tolist()
         if self.b is None:
             config['b'] = None
         else:
-            config['b'] = self.b.shape.eval().tolist()
+            config['b'] = self.b().shape.eval().tolist()
         config['n'] = self.n
         config['nonlinearity'] = self.nonlinearity.__name__
         config['num_filters'] = self.num_filters
@@ -760,7 +760,7 @@ class Conv2D(BaseConvLayer):
         conv_mode = 'conv' if self.flip_filters else 'cross'
         border_mode = self.pad
         conved = T.conv2d(input,
-            kernel=self.W,
+            kernel=self.W(),
             strides=self.stride,
             border_mode=border_mode,
             dim_ordering='th')
@@ -889,7 +889,7 @@ class Conv3D(BaseConvLayer):
         conv_mode = 'conv' if self.flip_filters else 'cross'
         border_mode = self.pad
         conved = T.conv3d(input,
-                          kernel=self.W,
+                          kernel=self.W(),
                           strides=self.stride,
                           border_mode=border_mode,
                           dim_ordering='th'

@@ -75,7 +75,7 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     name = name_prefix + name
     return T.TensorType(dtype, broadcast)(name)
 
-def is_placeholder(v):
+def is_expression(v):
     return isinstance(v, theano.tensor.TensorVariable)
 
 def eval(x):

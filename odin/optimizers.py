@@ -54,7 +54,7 @@ def get_or_compute_grads(loss_or_grads, params):
         any element of `params` is not a shared variable (while we could still
         compute its gradient, we can never update it and want to fail early).
     """
-    if any(not (T.is_variable(p) or T.is_placeholder(p)) for p in params):
+    if any(not (T.is_variable(p) or T.is_expression(p)) for p in params):
         raise ValueError("params must contain shared variables only.")
     if isinstance(loss_or_grads, list):
         if not len(loss_or_grads) == len(params):
