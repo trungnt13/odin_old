@@ -75,6 +75,8 @@ class OdinObject(object):
     def raise_arguments(self, msg):
         raise ValueError('[%s] ' % self.__class__.__name__ + msg)
 
+    def raise_runtime(self, msg):
+        raise RuntimeError('[%s] ' % self.__class__.__name__ + msg)
 
 class OdinParams(OdinObject):
 
@@ -149,7 +151,7 @@ class OdinFunction(OdinObject):
     Parameters
     ----------
     incoming : a :class:`OdinFunction`, Lasagne :class:`Layer` instance,
-               keras :class:`Models` instance, or a tuple
+               keras :class:`Models` instance, or shape tuple
         The layer feeding into this layer, or the expected input shape.
     unsupervised : bool
         whether or not this is unsupervised model, this affect the output_var
@@ -187,28 +189,39 @@ class OdinFunction(OdinObject):
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
-        # ====== parse incoming layers ====== #
-        if not isinstance(incoming, (tuple, list)) or \
-           isinstance(incoming[-1], (int, long, float)):
-           incoming = [incoming]
+        # ====== Accept None incoming ====== #
         input_function = []
         input_shape = []
-        for i in incoming:
-            if isinstance(i, (tuple, list)): # shape_tuple
-                input_function.append(None)
-                input_shape.append(
-                    tuple([j if j is None else int(j) for j in i]))
-            elif hasattr(i, 'output_shape'):
-                input_function.append(i)
-                outshape = i.output_shape
-                # OdinFunction always return list
-                if isinstance(outshape[0], (tuple, list)):
-                    input_shape += outshape
-                else: # other framework only return 1 output shape
-                    input_shape.append(outshape)
-            else:
-                self.raise_arguments(
-                    'Unsupport incomming type %s' % i.__class__)
+        # ====== check if incoming contain list of acceptable info ====== #
+        if incoming is not None:
+            if not isinstance(incoming, (tuple, list)) or \
+               isinstance(incoming[-1], (int, long, float)):
+               incoming = [incoming]
+            # ====== Parse incoming ====== #
+            for i in incoming:
+                # shape_tuple
+                if isinstance(i, (tuple, list)):
+                    input_function.append(None)
+                    input_shape.append(
+                        tuple([j if j is None else int(j) for j in i]))
+                # output_shape(keras, odin, lasagne)
+                elif hasattr(i, 'output_shape'):
+                    input_function.append(i)
+                    outshape = i.output_shape
+                    # OdinFunction always return list
+                    if isinstance(outshape[0], (tuple, list)):
+                        input_shape += outshape
+                    else: # other framework only return 1 output shape
+                        input_shape.append(outshape)
+                elif T.is_variable(i):
+                    input_shape.append(T.eval(T.shape(i)))
+                    input_function.append(i)
+                elif T.is_expression(i):
+                    input_shape.append(T.eval(T.shape(i)))
+                    input_function.append(i)
+                else:
+                    self.raise_arguments(
+                        'Unsupport incomming type %s' % i.__class__)
         self._incoming = input_function
         self._input_shape = input_shape
 
@@ -269,6 +282,34 @@ class OdinFunction(OdinObject):
                 children += i.get_children()
         return T.np_ordered_set(children).tolist()
 
+    def get_cache(self, training):
+        '''Return last inputs returned by this funcitons'''
+        if training:
+            return self._cache_inputs_train
+        return self._cache_inputs_pred
+
+    def reset_cache(self, globals):
+        ''' Each time you call this function, its inputs are cached for reused
+        Reset cache will force the function to call the inputs again
+
+        Parameters
+        ----------
+        globals : bool
+            if globals=True, all children of this function also reset their
+            cached inputs
+        '''
+        self._cache_inputs_pred = None
+        self._cache_inputs_train = None
+        if globals:
+            for i in self.get_children():
+                # a cycle graph may create infinite recursive, but who care
+                # we doesn't support cycle graph anyway
+                i.reset_cache(globals=globals)
+            # also the parameters of this function can contain other functions
+            for _, i in self.params.iteritems():
+                if isinstance(i._params, OdinFunction):
+                    i._params.reset_cache(globals=globals)
+
     # ==================== Helper private functions ==================== #
     def _log_footprint(self, training, inputs, outputs, **kwargs):
         self.log(_FOOT_PRINT %
@@ -313,7 +354,7 @@ class OdinFunction(OdinObject):
             # hence, we take mean of the objective
             if T.ndim(o) > 0 and optimizer is not None:
                 self.log('The return objective has > 1 dimension which '
-                         'can not be used to calculate the gradients '
+                         'cannot be used to calculate the gradients '
                          'for optimization, hence, we take the mean of '
                          'their values.', 30)
                 o = T.mean(o)
@@ -328,7 +369,7 @@ class OdinFunction(OdinObject):
                 grad = T.gradients(obj, params)
             else: # optimize only the params of this funtions
                 grad = T.gradients(obj, params,
-                    consider_constant=self._last_inputs)
+                    consider_constant=self.get_cache(training=training))
             opt = optimizer(grad, params)
         return obj, opt
 
@@ -403,24 +444,14 @@ class OdinFunction(OdinObject):
                         name='in.%s.%s' % (shape_str, self.name))
                     self._input_var.append(x)
                     self._local_input_var[idx] = x
-                elif T.is_expression(i):
+                elif T.is_expression(i): # placeholder
                     self._input_var.append(i)
-                    self._local_input_var[idx] = x
+                    self._local_input_var[idx] = i
+                elif T.is_variable(i): # don't need to do anything with variable
+                    pass
                 else: # input from API layers
                     api = API.get_object_api(i)
-                    if api == 'lasagne':
-                        import lasagne
-                        self._input_var += [l.input_var
-                            for l in lasagne.layers.get_all_layers(i)
-                            if hasattr(l, 'input_var')]
-                    elif api == 'keras':
-                        tmp = i.get_input(train=True)
-                        if hasattr(tmp, 'len'):
-                            self._input_var += tmp
-                        else:
-                            self._input_var.append(tmp)
-                    elif api == 'odin':
-                        self._input_var += i.input_var
+                    self._input_var += API.get_input_variables(i, api)
             self._input_var = T.np_ordered_set(self._input_var).tolist()
         return self._input_var
 
@@ -453,45 +484,40 @@ class OdinFunction(OdinObject):
 
         Note
         ----
-        DO NOT call this methods multiple times, it will create duplicated
-        unnecessary computation node on graph, self._last_inputs if you the
-        inputs already created
-
+        This method always cache its inputs for training and predicting, if
+        you want it calculate new inputs use ``reset_cache``
         '''
         # ====== Dirty hack, modify intermediate inputs of function ====== #
         if self._intermediate_inputs is not None:
             inputs = self._intermediate_inputs
             self._intermediate_inputs = None
-            self._last_inputs = inputs
             return inputs
+        # ====== Get cached input ====== #
+        if training and self._cache_inputs_train is not None:
+            return self._cache_inputs_train
+        elif not training and self._cache_inputs_pred is not None:
+            return self._cache_inputs_pred
         # ====== getting the inputs from nested functions ====== #
         inputs = []
         self.input_var # make sure initialized all placeholder
         for idx, i in enumerate(self._incoming):
-            # this is InputLayer
+            # this is expression or InputLayer
             if i is None or T.is_expression(i):
                 inputs.append(self._local_input_var[idx])
-            # this is expression
+            # this is variable
+            elif T.is_variable(i):
+                inputs.append(i)
+            # this is from API
             else:
                 api = API.get_object_api(i)
-                if api == 'lasagne':
-                    import lasagne
-                    inputs.append(
-                        lasagne.layers.get_output(i, deterministic=not training))
-                elif api == 'keras':
-                    inputs.append(i.get_output(train=training))
-                elif api == 'odin':
-                    o = i(training=training)
-                    if isinstance(o, (tuple, list)):
-                        inputs += o
-                    else:
-                        inputs.append(o)
-                elif T.is_variable(self._incoming):
-                    inputs.append(i)
+                inputs += API.get_outputs(i, api, training)
         # cache the last calculated inputs (if you want to disconnect
         # gradient from this input downward, don't re-build the input
         # graph)
-        self._last_inputs = inputs
+        if training:
+            self._cache_inputs_train = inputs
+        else:
+            self._cache_inputs_pred = inputs
         return inputs
 
     def get_params(self, globals, trainable=None, regularizable=None):

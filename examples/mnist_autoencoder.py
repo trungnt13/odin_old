@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 
 import os
-os.environ['ODIN'] = 'float32,theano,verbose,cpu'
+os.environ['ODIN'] = 'float32,theano,verbose,cpu,graphic'
 import odin
 from odin import tensor as T
 import numpy as np

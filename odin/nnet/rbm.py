@@ -157,7 +157,7 @@ class RBM(OdinUnsupervisedFunction):
                     pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(x)
                     chain_start = ph_sample
                 else:
-                    chain_start = self.persistent
+                    chain_start = self.persistent()
                 # perform actual negative phase
                 # in order to implement CD-k/PCD-k we need to scan over the
                 # function that implements one gibbs step k times.
@@ -270,9 +270,9 @@ class RBM(OdinUnsupervisedFunction):
 
         # ====== create monitoring cost ====== #
         monitoring_cost = T.castX(0.)
-        if self.persistent:
+        if self.persistent is not None:
             # Note that this works only if persistent is a shared variable
-            updates[self.persistent] = persistent_updates
+            updates[self.persistent()] = persistent_updates
             # pseudo-likelihood is a better proxy for PCD
             # for x in X:
             #     monitoring_cost = monitoring_cost + \

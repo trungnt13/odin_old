@@ -57,6 +57,7 @@ def is_variable(v):
     return isinstance(v, theano.compile.SharedVariable)
 
 _PLACEHOLDER_ID = 0
+_PLACEHOLDER_SHAPE = {}
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     '''Instantiate an input data placeholder variable.
     '''
@@ -73,7 +74,11 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if name is None:
         name = ''
     name = name_prefix + name
-    return T.TensorType(dtype, broadcast)(name)
+    placeholder = T.TensorType(dtype, broadcast)(name)
+    # store the predefined shape of placeholder
+    _PLACEHOLDER_SHAPE[name] = \
+        [None for _ in range(ndim)] if shape is None else shape
+    return placeholder
 
 def is_expression(v):
     return isinstance(v, theano.tensor.TensorVariable)
@@ -81,6 +86,9 @@ def is_expression(v):
 def eval(x):
     '''Run a graph.
     '''
+    # just a hack to return placeholder shape when eval
+    if x in _PLACEHOLDER_SHAPE:
+        return _PLACEHOLDER_SHAPE[x]
     return x.eval()
 
 # ===========================================================================
@@ -92,7 +100,11 @@ def shape(x):
     Warning: type returned will be different for
     Theano backend (Theano tensor type) and TF backend (TF TensorShape).
     '''
-    return x.shape
+    shape = x.shape
+    if hasattr(x, 'name'):
+        if x.name in _PLACEHOLDER_SHAPE:
+            _PLACEHOLDER_SHAPE[shape] = _PLACEHOLDER_SHAPE[x.name]
+    return shape
 
 def int_shape(x):
     return x.shape.eval()
@@ -505,7 +517,9 @@ def hessian(loss, variables):
 def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
     n_steps=None, truncate_gradient=-1, go_backwards=False):
     return theano.scan(step_fn,
-        sequences, outputs_info, non_sequences,
+        sequences=sequences,
+        outputs_info=outputs_info,
+        non_sequences=non_sequences,
         n_steps=n_steps, truncate_gradient=truncate_gradient,
         go_backwards=go_backwards)
 

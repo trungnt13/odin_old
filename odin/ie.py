@@ -130,7 +130,6 @@ class SSH(object):
         return results
 
     def isdir(self, path):
-        import paramiko
         try:
             return S_ISDIR(self.sftp.stat(path).st_mode)
         except IOError:

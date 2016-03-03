@@ -181,6 +181,21 @@ class api(object):
         return var
 
     @staticmethod
+    def get_input_variables(model, api):
+        '''Input variables is placeholder for input'''
+        if api == 'lasagne':
+            import lasagne
+            X = [l.input_var for l in lasagne.layers.get_all_layers(model)
+                 if hasattr(l, 'input_var')]
+        elif api == 'keras':
+            X = model.get_input(train=True)
+            if type(X) not in (list, tuple):
+                X = [X]
+        elif api == 'odin':
+            X = model.input_var
+        return X
+
+    @staticmethod
     def get_nlayers(model, api):
         if api == 'lasagne':
             import lasagne
@@ -204,6 +219,18 @@ class api(object):
         else:
             raise ValueError('Currently not support API: %s' % api)
         return updates
+
+    @staticmethod
+    def get_outputs(model, api, training):
+        '''Return a list of outputs from model of given api'''
+        if api == 'lasagne':
+            import lasagne
+            return [lasagne.layers.get_output(model, deterministic=not training)]
+        elif api == 'keras':
+            return [model.get_output(train=training)]
+        elif api == 'odin':
+            return model(training=training)
+
 # ===========================================================================
 # DAA
 # ===========================================================================

@@ -74,9 +74,10 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         self.set_reconstruction_mode(tmp) # reset the reconstruction mode
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
+        # get original inputs from roots
         x_original = []
         for i in self.encoder.get_roots():
-            x_original += i._last_inputs
+            x_original += i.get_cache(training=training)
         # ====== Objectives is mean of all in-out pair ====== #
         obj = T.castX(0.)
         for i, j in zip(x_reconstructed, x_original):

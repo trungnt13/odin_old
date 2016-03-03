@@ -6,6 +6,7 @@
 # ===========================================================================
 from __future__ import print_function, division
 
+from six.moves import zip_longest
 import numpy as np
 
 from .. import tensor as T
@@ -13,7 +14,7 @@ from ..base import OdinFunction
 from ..utils import as_tuple
 
 __all__ = [
-    "CustomRecurrentLayer",
+    "Recurrent",
     "RecurrentLayer",
     "Gate",
     "LSTMLayer",
@@ -27,48 +28,27 @@ class Cell(OdinFunction):
     def __init__(self, incoming, **kwargs):
         super(Cell, self).__init__(incoming, unsupervised=False, **kwargs)
 
-class Gate(OdinFunction):
-
-    """docstring for Cell"""
-
-    def __init__(self, incoming, **kwargs):
-        super(Cell, self).__init__(incoming, unsupervised=False, **kwargs)
+def gru():
+    pass
 
 class Recurrent(OdinFunction):
 
-    """docstring for Recurrent"""
-
-    def __init__(self, incoming, mask_input=None,
-                 backwards=False,
-                 learn_init=False,
-                 grad_clipping=0,
-                 unroll_scan=False,
-                 precompute_input=True,
-                 only_return_final=False,
-                 **kwargs):
-        super(Recurrent, self).__init__(incoming, unsupervised=False, **kwargs)
-
-
-class CustomRecurrentLayer(OdinFunction):
-
     def __init__(self, incoming, input_to_hidden, hidden_to_hidden,
-                 nonlinearity=nonlinearities.rectify,
-                 hid_init=init.Constant(0.),
+                 nonlinearity=T.relu,
+                 hid_init=T.np_constant,
                  backwards=False,
                  learn_init=False,
-                 gradient_steps=-1,
                  grad_clipping=0,
                  unroll_scan=False,
                  precompute_input=True,
                  mask_input=None,
-                 only_return_final=False,
+                 core='none',
                  **kwargs):
-
+        super(Recurrent, self).__init__(incoming, unsupervised=False, **kwargs)
         # This layer inherits from a MergeLayer, because it can have three
         # inputs - the layer input, the mask and the initial hidden state.  We
         # will just provide the layer input as incomings, unless a mask input
         # or initial hidden state was provided.
-        incomings = [incoming]
         self.mask_incoming_index = -1
         self.hid_init_incoming_index = -1
         if mask_input is not None:
@@ -78,13 +58,10 @@ class CustomRecurrentLayer(OdinFunction):
             incomings.append(hid_init)
             self.hid_init_incoming_index = len(incomings) - 1
 
-        super(CustomRecurrentLayer, self).__init__(incomings, **kwargs)
-
         self.input_to_hidden = input_to_hidden
         self.hidden_to_hidden = hidden_to_hidden
         self.learn_init = learn_init
         self.backwards = backwards
-        self.gradient_steps = gradient_steps
         self.grad_clipping = grad_clipping
         self.unroll_scan = unroll_scan
         self.precompute_input = precompute_input
@@ -184,10 +161,12 @@ class CustomRecurrentLayer(OdinFunction):
         params += helper.get_all_params(self.hidden_to_hidden, **tags)
         return params
 
-    def get_output_shape_for(self, input_shapes):
+    # ==================== Abstract methods ==================== #
+    @property
+    def output_shape(self):
         # The shape of the input to this layer will be the first element
         # of input_shapes, whether or not a mask input is being used.
-        input_shape = input_shapes[0]
+        input_shape = self.input_shape
         # When only_return_final is true, the second (sequence step) dimension
         # will be flattened
         if self.only_return_final:
