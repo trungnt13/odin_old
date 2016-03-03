@@ -18,6 +18,7 @@ _VERBOSE = False
 _FAST_CNN = False
 _GRAPHIC = False
 
+
 def _parse_config():
     global _FLOATX
     global _BACKEND
@@ -66,6 +67,7 @@ def _parse_config():
         except:
             pass
 
+
 def set_backend(backend):
     global _BACKEND
     if _BACKEND is not None:
@@ -80,20 +82,27 @@ def set_backend(backend):
 # ===========================================================================
 # Parse and get configuration
 # ===========================================================================
+
+
 def floatX():
     return _FLOATX
+
 
 def backend():
     return _BACKEND
 
+
 def epsilon():
     return _EPSILON
+
 
 def device():
     return _DEVICE
 
+
 def verbose():
     return _VERBOSE
+
 
 def fastcnn():
     return _FAST_CNN

@@ -7,6 +7,7 @@ __all__ = [
     'LER'
 ]
 
+
 def LevenshteinDistance(s1, s2):
     ''' Implementation of the wikipedia algorithm, optimized for memory
     Reference: http://rosettacode.org/wiki/Levenshtein_distance#Python
@@ -25,6 +26,7 @@ def LevenshteinDistance(s1, s2):
                                              newDistances[-1])))
         distances = newDistances
     return distances[-1]
+
 
 def LER(y_true, y_pred, return_mean=True):
     ''' This function calculates the Labelling Error Rate (PER) of the decoded

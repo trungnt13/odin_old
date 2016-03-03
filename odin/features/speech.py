@@ -27,6 +27,7 @@ nist15_lang_list = np.asarray([
     # Caribbean, European, Latin American, Brazilian
     'spa-car', 'spa-eur', 'spa-lac', 'por-brz'])
 
+
 def nist15_label(label):
     '''
     Return
@@ -70,6 +71,7 @@ timit_map = {'ao': 'aa', 'ax': 'ah', 'ax-h': 'ah', 'axr': 'er',
     'pcl': 'sil', 'tcl': 'sil', 'kcl': 'sil', 'bcl': 'sil',
     'dcl': 'sil', 'gcl': 'sil', 'h#': 'sil', 'pau': 'sil', 'epi': 'sil'}
 
+
 def timit_phonemes(phn, map39=False, blank=False):
     ''' Included blank '''
     if type(phn) not in (list, tuple, np.ndarray):
@@ -92,6 +94,8 @@ def timit_phonemes(phn, map39=False, blank=False):
     return rphn
 
 # ==================== Speech Signal Processing ==================== #
+
+
 def read(f, pcm = False):
     '''
     Return
@@ -104,6 +108,7 @@ def read(f, pcm = False):
     from soundfile import read
     return read(f)
 
+
 def preprocess(signal, add_noise=False):
     if len(signal.shape) > 1:
         signal = signal.ravel()
@@ -112,6 +117,7 @@ def preprocess(signal, add_noise=False):
     if add_noise:
         signal = signal + 1e-13 * np.random.randn(signal.shape)
     return signal
+
 
 def logmel(signal, fs, n_filters=40, n_ceps=13,
         win=0.025, shift=0.01,
@@ -167,6 +173,7 @@ def logmel(signal, fs, n_filters=40, n_ceps=13,
         return logmel, idx
     return logmel
 
+
 def mfcc(signal, fs, n_ceps, n_filters=40,
         win=0.025, shift=0.01,
         delta1=True, delta2=True, energy=True,
@@ -219,6 +226,7 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
     if returnVAD and vad:
         return mfcc, idx
     return mfcc
+
 
 def spectrogram(signal, fs, n_ceps=13, n_filters=40,
         win=0.025, shift=0.01,

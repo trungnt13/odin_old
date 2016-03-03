@@ -18,6 +18,8 @@ __all__ = [
 # ===========================================================================
 # Helper
 # ===========================================================================
+
+
 class _iterator_wrapper(object):
 
     '''Fake class with iter function like dnntoolkit.batch'''
@@ -39,8 +41,10 @@ class _iterator_wrapper(object):
             raise ValueError(
                 'Creator of data for trainer must be a function or iterator')
 
+
 def _callback(trainer):
     pass
+
 
 def _parse_data_config(task, data):
     '''return train,valid,test'''
@@ -79,6 +83,8 @@ def _parse_data_config(task, data):
 # ===========================================================================
 # Task
 # ===========================================================================
+
+
 class _data(OdinObject):
 
     """
@@ -165,6 +171,7 @@ class _data(OdinObject):
             j = self._get_data_str(j)
             s += '      - batch[%d]: %s\n' % (i, j)
         return s
+
 
 class _task(object):
 
@@ -281,6 +288,7 @@ class _task(object):
 # ======================================================================
 # Trainer
 # ======================================================================
+
 
 class trainer(OdinObject):
 
@@ -693,7 +701,7 @@ class trainer(OdinObject):
             self._run(iterate=False, progress=progress).next()
         except Exception, e:
             self.log(str(e), 40)
-            import traceback; traceback.print_exc();
+            import traceback; traceback.print_exc()
             return False
         return True
 

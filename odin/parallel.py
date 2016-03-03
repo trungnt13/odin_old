@@ -16,6 +16,8 @@ __all__ = [
 # ===========================================================================
 # MPI MapReduce
 # ===========================================================================
+
+
 class MapReduce(OdinObject):
 
     """ This class manage all MapReduce task by callback function:
@@ -99,7 +101,7 @@ class MapReduce(OdinObject):
         if func is not None and \
            hasattr(func, '__call__') and \
            (func.func_code.co_argcount == 2 or func.func_code.co_argcount == 3):
-           return
+            return
         raise ValueError('Map/Reduce function must be callable and '
                          'has 2 or 3 args')
 

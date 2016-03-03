@@ -20,6 +20,7 @@ __all__ = [
     "Conv3D",
 ]
 
+
 def conv_output_length(input_length, filter_size, stride, pad=0):
     """Helper function to compute the output size of a convolution operation
 
@@ -85,6 +86,7 @@ def conv_output_length(input_length, filter_size, stride, pad=0):
 
     return output_length
 
+
 def pool_output_length(input_length, pool_size, stride, pad, ignore_border):
     """
     Compute the output length of a pooling operator
@@ -138,6 +140,7 @@ def pool_output_length(input_length, pool_size, stride, pad, ignore_border):
                 0, (input_length - pool_size + stride - 1) // stride) + 1
 
     return output_length
+
 
 class Pool2D(OdinFunction):
 
@@ -246,6 +249,7 @@ class Pool2D(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
 
 class MaxPool2D(Pool2D):
 
@@ -372,6 +376,7 @@ class Pool3D(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
 
 class MaxPool3D(Pool3D):
 
@@ -626,6 +631,7 @@ class BaseConvLayer(OdinFunction):
         config['untie_biases'] = self.untie_biases
         config['flip_filters'] = self.flip_filters
         return config
+
 
 class Conv2D(BaseConvLayer):
 

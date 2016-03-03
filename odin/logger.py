@@ -35,6 +35,8 @@ __all__ = [
 # ===========================================================================
 # Reusable function
 # ===========================================================================
+
+
 def create_logger(name=None, logging_path=None, mode='w', multiprocess=False):
     ''' All logger are created at DEBUG level
 
@@ -99,12 +101,15 @@ def create_logger(name=None, logging_path=None, mode='w', multiprocess=False):
 _logging = False
 _default_logger = create_logger()
 
+
 def set_enable(enable):
     global _logging
     _logging = enable
 
+
 def is_enable():
     return _logging
+
 
 def set_print_level(level):
     ''' VERBOSITY level:
@@ -117,6 +122,7 @@ def set_print_level(level):
     '''
     for h in _default_logger.handlers:
         h.setLevel(level)
+
 
 def set_save_path(logging_path, mode='w', multiprocess=False):
     '''All old path will be ignored'''
@@ -141,26 +147,32 @@ def set_save_path(logging_path, mode='w', multiprocess=False):
             else:
                 log.addHandler(fh)
 
+
 def warning(*anything, **kwargs):
     if not _logging: return
     _default_logger.warning(*anything)
+
 
 def error(*anything, **kwargs):
     if not _logging: return
     _default_logger.error(*anything)
 
+
 def critical(*anything, **kwargs):
     if not _logging: return
     _default_logger.critical(*anything)
+
 
 def debug(*anything, **kwargs):
     if not _logging: return
     _default_logger.debug(*anything)
 
+
 def info(*anything, **kwargs):
     if not _logging: return
     if len(anything) == 0: _default_logger.info('')
     else: _default_logger.info(*anything)
+
 
 def log(*anything, **kwargs):
     '''This log is at INFO level'''
@@ -184,6 +196,7 @@ def log(*anything, **kwargs):
 # ===========================================================================
 _last_progress_idx = None
 _progress_map = {}
+
 
 def progress(p, max_val,
              title='Progress', bar='=',

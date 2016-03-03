@@ -22,6 +22,8 @@ __all__ = [
 # ===========================================================================
 # Helper function
 # ===========================================================================
+
+
 def _auto_batch_size(shape):
     # This method calculate based on reference to imagenet size
     batch = 256
@@ -29,10 +31,12 @@ def _auto_batch_size(shape):
     batch /= ratio
     return 2**int(np.log2(batch))
 
+
 def _get_chunk_size(shape, size):
     if size == 'auto':
         return True
     return (2**int(np.ceil(np.log2(size))),) + shape[1:]
+
 
 def _hdf5_get_all_dataset(hdf, fileter_func=None, path='/'):
     res = []
@@ -51,6 +55,7 @@ def _hdf5_get_all_dataset(hdf, fileter_func=None, path='/'):
             for i in hdf[p].keys():
                 q.put(p + '/' + i)
     return res
+
 
 def _hdf5_append_to_dataset(hdf_dataset, data):
     curr_size = hdf_dataset.shape[0]
@@ -71,6 +76,8 @@ class _dummy_shuffle():
 # ===========================================================================
 # Main code
 # ===========================================================================
+
+
 class batch(object):
 
     """Batch object
@@ -532,6 +539,7 @@ class batch(object):
         s = s[:-1] + '>'
         return s
 
+
 class dataset(OdinObject):
 
     '''
@@ -826,4 +834,3 @@ class dataset(OdinObject):
 
     def load_reuters(path):
         pass
-

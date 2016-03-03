@@ -25,6 +25,7 @@ _EPSILON = config.epsilon()
 # ===========================================================================
 theano.config.floatX = _FLOATX
 
+
 def _on_gpu():
     '''Return whether the session is set to
     run on GPU or not (i.e. on CPU).
@@ -38,12 +39,15 @@ if _on_gpu():
     '''
     from theano.sandbox.cuda import dnn
 
+
 def get_session():
     return _on_gpu()
 
 # ===========================================================================
 # VARIABLE MANIPULATION
 # ===========================================================================
+
+
 def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     '''Instantiate a tensor variable.
     '''
@@ -53,11 +57,14 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
                              broadcastable=broadcastable)
     return theano.shared(value=value, name=name, strict=False)
 
+
 def is_variable(v):
     return isinstance(v, theano.compile.SharedVariable)
 
 _PLACEHOLDER_ID = 0
 _PLACEHOLDER_SHAPE = {}
+
+
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     '''Instantiate an input data placeholder variable.
     '''
@@ -80,8 +87,10 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
         [None for _ in range(ndim)] if shape is None else shape
     return placeholder
 
+
 def is_expression(v):
     return isinstance(v, theano.tensor.TensorVariable)
+
 
 def eval(x):
     '''Run a graph.
@@ -94,6 +103,8 @@ def eval(x):
 # ===========================================================================
 # Shape operator
 # ===========================================================================
+
+
 def shape(x):
     '''Return the shape of a tensor.
 
@@ -107,14 +118,18 @@ def shape(x):
             _PLACEHOLDER_SHAPE[shape] = _PLACEHOLDER_SHAPE[x.name]
     return shape
 
+
 def int_shape(x):
     return x.shape.eval()
+
 
 def ndim(x):
     return x.ndim
 
+
 def broadcastable(x):
     return x.broadcastable
+
 
 def addbroadcast(x, *axes):
     return T.addbroadcast(x, *axes)
@@ -122,23 +137,29 @@ def addbroadcast(x, *axes):
 # ===========================================================================
 # Predefined data
 # ===========================================================================
+
+
 def zeros(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-zeros variable.
     '''
     return T.ones(shape=shape, dtype=dtype)
-    # variable(np.zeros(shape), dtype, name)
+    #return variable(np.zeros(shape), dtype, name)
+
 
 def ones(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-ones variable.
     '''
     return T.ones(shape=shape, dtype=dtype)
-    # variable(np.ones(shape), dtype, name)
+    #return variable(np.ones(shape), dtype, name)
+
 
 def ones_like(x):
     return T.ones_like(x)
 
+
 def zeros_like(x):
     return T.zeros_like(x)
+
 
 def count_params(x):
     '''Return number of scalars in a tensor.
@@ -147,10 +168,12 @@ def count_params(x):
     '''
     return np.prod(x.shape.eval())
 
+
 def cast(x, dtype):
     if 'theano.' in str(x.__class__):
         return T.cast(x, dtype)
     return np.cast[dtype](x)
+
 
 def castX(x):
     return cast(x, _FLOATX)
@@ -202,11 +225,13 @@ def prod(x, axis=None, keepdims=False):
     '''
     return T.prod(x, axis=axis, keepdims=keepdims)
 
+
 def mean(x, axis=None, keepdims=False):
     dtype = None
     if 'int' in x.dtype:
         dtype = _FLOATX
     return T.mean(x, axis=axis, keepdims=keepdims, dtype=dtype)
+
 
 def std(x, axis=None, keepdims=False):
     return T.std(x, axis=axis, keepdims=keepdims)
@@ -274,6 +299,7 @@ def clip(x, min_value, max_value):
         max_value = min_value
     return T.clip(x, min_value, max_value)
 
+
 def maximum(x, y):
     return T.maximum(x, y)
 
@@ -284,11 +310,14 @@ def minimum(x, y):
 # ===========================================================================
 # SHAPE OPERATIONS
 # ===========================================================================
+
+
 def reverse(x, axis=-1):
     '''Apply [::-1] to appropriate axis'''
     if axis < 0:
         axis += x.ndim
     return x[(slice(None),) * axis + (slice(None, None, -1),)]
+
 
 def concatenate(tensors, axis=-1):
     return T.concatenate(tensors, axis=axis)
@@ -335,6 +364,7 @@ def resize_images(X, height_factor, width_factor, dim_ordering):
     else:
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
 
+
 def repeat(x, n):
     '''Repeat a 2D tensor.
 
@@ -345,11 +375,14 @@ def repeat(x, n):
     x = x.dimshuffle((0, 'x', 1))
     return T.extra_ops.repeat(x, n, axis=1)
 
+
 def tile(x, n):
     return T.tile(x, n)
 
+
 def flatten(x, outdim=2):
     return T.flatten(x, outdim)
+
 
 def expand_dims(x, dim=-1):
     '''Add a 1-sized dimension at index "dim".
@@ -362,6 +395,7 @@ def expand_dims(x, dim=-1):
             dim = dim % x.type.ndim + 1
     pattern.insert(dim, 'x')
     return x.dimshuffle(pattern)
+
 
 def squeeze(x, axis):
     '''Remove a 1-dimension from the tensor at index "axis".
@@ -415,20 +449,25 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
     return T.set_subtensor(output[indices], x)
 
+
 def stack(*x):
     return T.stack(*x)
 
 # ===========================================================================
 # VALUE MANIPULATION
 # ===========================================================================
+
+
 def get_value(x, borrow=False):
     if not hasattr(x, 'get_value'):
         raise Exception("'get_value() can only be called on a variable. " +
                         "If you have an expression instead, use eval().")
     return x.get_value(borrow=borrow)
 
+
 def set_value(x, value):
     x.set_value(np.asarray(value, dtype=x.dtype))
+
 
 def set_subtensor(x, y):
     return T.set_subtensor(x, y)
@@ -436,6 +475,8 @@ def set_subtensor(x, y):
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
+
+
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[], **kwargs):
@@ -450,6 +491,7 @@ class Function(object):
 
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
+
 
 def grad_clip(x, clip):
     '''
@@ -485,6 +527,7 @@ def grad_clip(x, clip):
 
     '''
     return theano.gradient.grad_clip(x, -clip, clip)
+
 
 def gradients(loss, variables, consider_constant=None, known_grads=None):
     """
@@ -539,8 +582,10 @@ def gradients(loss, variables, consider_constant=None, known_grads=None):
         consider_constant=consider_constant, known_grads=known_grads,
         disconnected_inputs='warn')
 
+
 def jacobian(loss, variables):
     return theano.gradient.jacobian(loss, variables, disconnected_inputs='warn')
+
 
 def hessian(loss, variables):
     return theano.gradient.hessian(loss, variables, disconnected_inputs='warn')
@@ -548,6 +593,8 @@ def hessian(loss, variables):
 # ===========================================================================
 # CONTROL FLOW
 # ===========================================================================
+
+
 def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
     n_steps=None, truncate_gradient=-1, go_backwards=False):
     return theano.scan(step_fn,
@@ -558,8 +605,10 @@ def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
         go_backwards=go_backwards,
         strict=False)
 
-def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None,
-         go_backwards=False):
+
+def loop(step_fn, n_steps,
+    sequences=None, outputs_info=None, non_sequences=None,
+    go_backwards=False):
     """
     Helper function to unroll for loops. Can be used to unroll theano.scan.
     The parameter names are identical to theano.scan, please refer to here
@@ -640,6 +689,7 @@ def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None
         output_scan.append(T.stack(*l))
 
     return output_scan
+
 
 def rnn(step_function, inputs, initial_states,
         go_backwards=False, mask=None, constants=None):
@@ -738,6 +788,7 @@ def rnn(step_function, inputs, initial_states,
     states = [T.squeeze(state[-1]) for state in states]
     return last_output, outputs, states
 
+
 def switch(condition, then_expression, else_expression):
     '''condition: scalar tensor.
     '''
@@ -757,14 +808,18 @@ def relu(x, alpha=0., max_value=None):
         x = T.minimum(x, max_value)
     return x
 
+
 def softmax(x):
     return T.nnet.softmax(x)
+
 
 def softplus(x):
     return T.nnet.softplus(x)
 
+
 def linear(x):
     return x
+
 
 def categorical_crossentropy(output, target, from_logits=False):
     if from_logits:
@@ -856,15 +911,20 @@ def dropout(x, level, rescale=True, noise_shape=None,
     return x
 
 # ==================== Regularizations ==================== #
+
+
 def l2_normalize(x, axis):
     norm = T.sqrt(T.sum(T.square(x), axis=axis, keepdims=True))
     return x / norm
 
+
 def l2_regularize(x):
     return T.sum(T.square(x))
 
+
 def l1_regularize(x):
     return T.sum(T.abs_(x))
+
 
 def jacobian_regularize(hidden, params):
     ''' Computes the jacobian of the hidden layer with respect to
@@ -876,6 +936,7 @@ def jacobian_regularize(hidden, params):
     # Compute the jacobian and average over the number of samples/minibatch
     L = T.sum(T.pow(L, 2)) / hidden.shape[0]
     return T.mean(L)
+
 
 def kl_gaussian(mean, logsigma,
                 prior_mean=0., prior_logsigma=0.):
@@ -898,6 +959,7 @@ def kl_gaussian(mean, logsigma,
           T.exp(2 * prior_logsigma))
     return T.mean(kl)
 
+
 def correntropy_regularize(x, sigma=1.):
     '''
     Note
@@ -911,6 +973,8 @@ def correntropy_regularize(x, sigma=1.):
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
+
+
 def conv2d(x, kernel, strides=(1, 1),
            border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
@@ -998,6 +1062,7 @@ def conv2d(x, kernel, strides=(1, 1),
         conv_out = conv_out.dimshuffle((0, 2, 3, 1))
     return conv_out
 
+
 def conv3d(x, kernel, strides=(1, 1, 1),
            border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
@@ -1066,6 +1131,7 @@ def conv3d(x, kernel, strides=(1, 1, 1),
         conv_out = conv_out.dimshuffle((0, 2, 3, 1))
     return conv_out
 
+
 def pool2d(x, pool_size, strides=(1, 1), border_mode='valid',
            dim_ordering='th', pool_mode='max'):
     # ====== dim ordering ====== #
@@ -1100,6 +1166,7 @@ def pool2d(x, pool_size, strides=(1, 1), border_mode='valid',
     if dim_ordering == 'tf':
         pool_out = pool_out.dimshuffle((0, 2, 3, 1))
     return pool_out
+
 
 def pool3d(x, pool_size, strides=(1, 1, 1), border_mode='valid',
            dim_ordering='th', pool_mode='max'):
@@ -1150,6 +1217,8 @@ def pool3d(x, pool_size, strides=(1, 1, 1), border_mode='valid',
 # ===========================================================================
 # RANDOMNESS
 # ===========================================================================
+
+
 class _RandomWrapper(object):
 
     def __init__(self, rng, state):
@@ -1169,11 +1238,13 @@ class _RandomWrapper(object):
     def binomial(self, shape, p, dtype=_FLOATX):
         return self._rng.binomial(size=shape, n=1, p=p, dtype=dtype)
 
+
 def rng(seed=None):
     if seed is None:
         seed = get_random_magic_seed()
     return _RandomWrapper(RandomStreams(seed=seed),
                           np.random.RandomState(seed=seed))
+
 
 def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
@@ -1181,11 +1252,13 @@ def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     rng = RandomStreams(seed=seed)
     return rng.normal(size=shape, avg=mean, std=std, dtype=dtype)
 
+
 def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
         seed = get_random_magic_seed()
     rng = RandomStreams(seed=seed)
     return rng.uniform(shape, low=low, high=high, dtype=dtype)
+
 
 def random_binomial(shape, p, dtype=_FLOATX, seed=None):
     if seed is None:
@@ -1203,35 +1276,43 @@ batched_tensordot -> reimplement
 # Comparator
 # ===========================================================================
 
+
 def neq(a, b):
     """a != b"""
     return T.neq(a, b)
+
 
 def eq(a, b):
     """a == b"""
     return T.eq(a, b)
 
+
 def gt(a, b):
     """a > b"""
     return T.gt(a, b)
+
 
 def ge(a, b):
     """a >= b"""
     return T.ge(a, b)
 
+
 def lt(a, b):
     """a < b"""
     return T.lt(a, b)
 
+
 def le(a, b):
     """a <= b"""
     return T.le(a, b)
+
 
 def one_hot(x, nb_class):
     ''' x: 1D-integer vector '''
     ret = T.zeros((x.shape[0], nb_class), dtype=_FLOATX)
     ret = T.set_subtensor(ret[T.arange(x.shape[0]), x], 1)
     return ret
+
 
 def one_hot_max(x, axis=-1):
     '''
@@ -1249,6 +1330,7 @@ def one_hot_max(x, axis=-1):
              T.argmax(x, axis=axis, keepdims=True)),
         _FLOATX
     )
+
 
 def apply_mask(x, mask):
     '''

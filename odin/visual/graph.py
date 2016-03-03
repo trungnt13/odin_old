@@ -5,6 +5,7 @@ from .. import config
 from .. import utils
 from .. import tensor
 
+
 def draw_computational_graph(var_or_func, save_path=None):
     '''
     Use d3viz to provide interactive html graph for theano

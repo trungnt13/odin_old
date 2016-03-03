@@ -20,6 +20,7 @@ from six.moves import zip, range
 # Main Test
 # ===========================================================================
 
+
 class BackendTest(unittest.TestCase):
 
     def setUp(self):
@@ -70,18 +71,21 @@ class BackendTest(unittest.TestCase):
                 s1 = seq1[i]
                 s2 = seq2[i]
                 output1 = output1 * s1 + nonseq1
-                o1.append(np.copy(output1).reshape(1, 2, 2))
                 output2 = output2 * s2 + nonseq2
+                o1.append(np.copy(output1).reshape(1, 2, 2))
                 o2.append(np.copy(output2).reshape(1, 2, 2))
             return np.vstack(o1), np.vstack(o2)
 
-        # ====== odin tensor version ====== #
+        r_np = numpy_loop()
+
+        # ====== odin loop ====== #
         seq1 = T.variable(np.arange(10))
         seq2 = T.variable(np.arange(10, 15))
         nonseq1 = T.variable(2.)
         nonseq2 = T.variable(3.)
-        output1 = T.zeros((2, 2)) + 1
-        output2 = T.zeros((2, 2)) + 2
+        # TODO: something wrong if we use T.zeros((2,2)) here
+        output1 = T.variable(np.zeros((2, 2))) + 1
+        output2 = T.variable(np.zeros((2, 2))) + 2
 
         def step_fn(s1, s2, o1, o2, ns1, ns2):
             return o1 * s1 + ns1, o2 * s2 + ns2
@@ -92,15 +96,32 @@ class BackendTest(unittest.TestCase):
             non_sequences=[nonseq1, nonseq2],
             n_steps=5,
             go_backwards=False)
-
         f = T.function(
             inputs=[],
             outputs=r)
-        r = f()
+        r_loop = f()
 
-        r_np = numpy_loop()
-        self.assertAlmostEqual(np.sum(np.abs(r[0] - r_np[0])), 0.)
-        self.assertAlmostEqual(np.sum(np.abs(r[1] - r_np[1])), 0.)
+        # ====== odin scan ====== #
+        r = T.scan(step_fn,
+            sequences=[seq1, seq2],
+            outputs_info=[output1, output2],
+            non_sequences=[nonseq1, nonseq2],
+            n_steps=5,
+            go_backwards=False)[0]
+        f = T.function(
+            inputs=[],
+            outputs=r)
+        r_scan = f()
+
+        # print()
+        # print(r_scan)
+        # print(r_loop)
+        # print(r_np)
+
+        self.assertAlmostEqual(np.sum(np.abs(r_loop[0] - r_np[0])), 0.)
+        self.assertAlmostEqual(np.sum(np.abs(r_loop[1] - r_np[1])), 0.)
+        self.assertAlmostEqual(np.sum(np.abs(r_loop[0] - r_scan[0])), 0.)
+        self.assertAlmostEqual(np.sum(np.abs(r_loop[1] - r_scan[1])), 0.)
 
     def test_scan(self):
         def step(s1, s2, s3, o1, o2, n1, n2):

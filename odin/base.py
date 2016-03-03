@@ -28,6 +28,7 @@ _FOOT_PRINT = '''
 # Based class design
 # ===========================================================================
 
+
 class OdinObject(object):
     __metaclass__ = ABCMeta
     _logging = True
@@ -77,6 +78,7 @@ class OdinObject(object):
 
     def raise_runtime(self, msg):
         raise RuntimeError('[%s] ' % self.__class__.__name__ + msg)
+
 
 class OdinParams(OdinObject):
 
@@ -128,6 +130,7 @@ class OdinParams(OdinObject):
             return [self._params]
         elif isinstance(self._params, OdinFunction):
             return self._params.get_params(globals, trainable, regularizable)
+
 
 class OdinFunction(OdinObject):
     __metaclass__ = ABCMeta
@@ -197,7 +200,7 @@ class OdinFunction(OdinObject):
         if incoming is not None:
             if not isinstance(incoming, (tuple, list)) or \
                isinstance(incoming[-1], (int, long, float)):
-               incoming = [incoming]
+                incoming = [incoming]
             # ====== Parse incoming ====== #
             for i in incoming:
                 # shape_tuple
@@ -598,6 +601,7 @@ class OdinFunction(OdinObject):
             params = OdinParams(name, spec, trainable, regularizable)
         self.params[name] = params
         return params
+
 
 class OdinUnsupervisedFunction(OdinFunction):
 

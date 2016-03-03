@@ -26,6 +26,7 @@ def _hdf5_save_overwrite(hdf5, key, value):
         del hdf5[key]
     hdf5[key] = value
 
+
 class api(object):
 
     @staticmethod
@@ -237,11 +238,15 @@ class api(object):
 # ===========================================================================
 # DAA
 # ===========================================================================
+
+
 def _get_ms_time():
     return int(round(time.time() * 1000)) # in ms
 
+
 def _create_comparator(t):
     return lambda x: x == t
+
 
 def _is_tags_match(func, tags, absolute=False):
     '''
@@ -262,6 +267,7 @@ def _is_tags_match(func, tags, absolute=False):
     if absolute and len(func) != len(tags):
         return False
     return True
+
 
 class frame(object):
 
@@ -485,6 +491,7 @@ class frame(object):
             s += '   - tags: %-10s  -  freq:%d' % (k, v) + '\n'
         return s
 
+
 class queue(object):
 
     """ FIFO, fast, NO thread-safe queue
@@ -535,6 +542,8 @@ class queue(object):
 # ===========================================================================
 # Utilities functions
 # ===========================================================================
+
+
 def segment_list(l, n_seg):
     '''
     Example
@@ -558,6 +567,7 @@ def segment_list(l, n_seg):
             end = max(start + size, len(l))
         segments.append(l[start:end])
     return segments
+
 
 def create_batch(n_samples, batch_size,
     start=None, end=None, prng=None, upsample=None, keep_size=False):
@@ -663,6 +673,8 @@ def create_batch(n_samples, batch_size,
 # ===========================================================================
 # Python utilities
 # ===========================================================================
+
+
 def serialize_sandbox(environment):
     '''environment, dictionary (e.g. globals(), locals())
     Returns
@@ -684,6 +696,7 @@ def serialize_sandbox(environment):
 
     return sandbox
 
+
 def deserialize_sandbox(sandbox):
     '''
     environment : dictionary
@@ -702,6 +715,7 @@ def deserialize_sandbox(sandbox):
                 v = importlib.import_module(v['name'])
             environment[k] = v
     return environment
+
 
 class function(object):
 
@@ -736,7 +750,7 @@ class function(object):
         if self._function == other._function and \
            self._function_args == other._function_args and \
            self._function_kwargs == other._function_kwargs:
-           return True
+            return True
         return False
 
     def get_config(self):
@@ -773,6 +787,8 @@ class function(object):
 # ===========================================================================
 # Python
 # ===========================================================================
+
+
 def get_all_files(path, filter_func=None):
     ''' Recurrsively get all files in the given path '''
     file_list = []
@@ -794,6 +810,7 @@ def get_all_files(path, filter_func=None):
             file_list.append(p)
     return file_list
 
+
 def get_tmp_dir():
     import pwd
     user_name = pwd.getpwuid(os.getuid())[0]
@@ -801,6 +818,7 @@ def get_tmp_dir():
     if not os.path.exists(tmp_path):
         os.makedirs(tmp_path)
     return tmp_path
+
 
 def get_from_module(module, identifier, environment=None):
     '''
@@ -829,6 +847,7 @@ def get_from_module(module, identifier, environment=None):
         if identifier in i:
             return i[1]
     return None
+
 
 def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
               prefer_compiled=False):
@@ -908,6 +927,7 @@ def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
                 ids.append(i[1])
     # remove duplicate py
     return ids
+
 
 def as_tuple(x, N, t=None):
     """

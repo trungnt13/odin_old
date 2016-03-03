@@ -47,10 +47,12 @@ def get_colour(colour):
     """
     return bcolours.get(colour, bcolours['ENDC'])
 
+
 def print_return_str(text, end='\n'):
     # if not return_str:
         # print(text, end=end)
     return text + end
+
 
 def printcolour(text, sameline=False, colour=get_colour("ENDC")):
     """
@@ -63,6 +65,7 @@ def printcolour(text, sameline=False, colour=get_colour("ENDC")):
     if colour == 'default' or colour == 'ENDC' or colour is None:
         return print_return_str(text, sep)
     return print_return_str(get_colour(colour) + text + bcolours["ENDC"], sep)
+
 
 def drange(start, stop, step=1.0, include_stop=False):
     """
@@ -140,6 +143,8 @@ def read_numbers(numbers):
 # ===========================================================================
 # Main
 # ===========================================================================
+
+
 def print_hist(f, height=20.0, bincount=None, binwidth=None, pch="o",
     colour="default", title="", xlab=None, showSummary=False,
     regular=False, return_str=False):
@@ -298,6 +303,7 @@ def print_hist(f, height=20.0, bincount=None, binwidth=None, pch="o",
         return splot
     else:
         logger.critical('[PLOT]\n' + splot)
+
 
 def print_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     colour="default", title="", xlab=None, showSummary=False,
@@ -485,6 +491,7 @@ def print_bar(f, height=20.0, bincount=None, binwidth=None, pch="o",
     else:
         logger.critical('[PLOT]\n' + splot)
 
+
 def print_scatter(xs, ys, size=None, pch='o',
                 colour='red', title=None, return_str=False):
     ''' Scatter plot.
@@ -550,6 +557,7 @@ def print_scatter(xs, ys, size=None, pch='o',
         return splot
     else:
         logger.critical('[PLOT]\n' + splot)
+
 
 def print_hinton(arr, max_arr=None, return_str=False):
     ''' Print bar string, fast way to visual magnitude of value in terminal

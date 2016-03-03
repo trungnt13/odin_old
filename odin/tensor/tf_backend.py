@@ -27,6 +27,7 @@ _EPSILON = config.epsilon()
 # ===========================================================================
 _SESSION = None
 
+
 def get_session():
     global _SESSION
     if _SESSION is None:
@@ -37,11 +38,14 @@ def get_session():
             _SESSION = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=nb_thread))
     return _SESSION
 
+
 def _set_session(session):
     global _SESSION
     _SESSION = session
 
 # From Theano
+
+
 def _format_as(use_list, use_tuple, outputs):
     """
     Formats the outputs according to the flags `use_list` and `use_tuple`.
@@ -70,6 +74,7 @@ def _format_as(use_list, use_tuple, outputs):
     else:
         return outputs
 
+
 def _wrap_into_list(x):
     """
     Wrap the input into a list if it is not already a list.
@@ -83,15 +88,20 @@ def _wrap_into_list(x):
 # ===========================================================================
 # VARIABLE MANIPULATION
 # ===========================================================================
+
+
 def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     v = tf.Variable(np.asarray(value, dtype=dtype), name=name)
     get_session().run(v.initializer)
     return v
 
+
 def is_variable(v):
     return isinstance(v, tf.python.Variable)
 
 _PLACEHOLDER_ID = 0
+
+
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     # name must match: [A-Za-z0-9.][A-Za-z0-9_.\-/]*
     if not shape:
@@ -107,8 +117,10 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     name = name_prefix + name
     return tf.placeholder(dtype, shape=shape, name=name)
 
+
 def is_expression(v):
     return isinstance(v, tf.python.Tensor)
+
 
 def eval(x):
     '''Run a graph.
@@ -120,18 +132,24 @@ def eval(x):
 # ===========================================================================
 # Shape operators
 # ===========================================================================
+
+
 def shape(x):
     return x.get_shape()
+
 
 def int_shape(x):
     shape = x.get_shape()
     return tuple([i.__int__() for i in shape])
 
+
 def ndim(x):
     return len(x.get_shape())
 
+
 def broadcastable(x):
     return None
+
 
 def addbroadcast(x, *axes):
     return x
@@ -139,6 +157,8 @@ def addbroadcast(x, *axes):
 # ===========================================================================
 # Predefined data
 # ===========================================================================
+
+
 def zeros(shape, dtype=_FLOATX, name=None):
     return tf.zeros(shape, dtype=dtype, name=name)
     # variable(np.zeros(shape), dtype, name)
@@ -169,12 +189,15 @@ def cast(x, dtype):
         return tf.cast(x, dtype)
     return np.cast[dtype](x)
 
+
 def castX(x):
     return cast(x, _FLOATX)
 
 # ===========================================================================
 # LINEAR ALGEBRA
 # ===========================================================================
+
+
 def dot(x, y):
     return tf.matmul(x, y)
 
@@ -195,8 +218,9 @@ def gather(reference, indices):
     return tf.gather(reference, indices)
 
 
+# ===========================================================================
 # ELEMENT-WISE OPERATIONS
-
+# ===========================================================================
 def normalize_axis(axis, ndim):
     if type(axis) is tuple:
         axis = list(axis)
@@ -341,13 +365,16 @@ def reverse(x, axis=-1):
     dims[axis] = True
     return tf.reverse(x, dims)
 
+
 def concatenate(tensors, axis=-1):
     if axis < 0:
         axis = axis % len(tensors[0].get_shape())
     return tf.concat(axis, tensors)
 
+
 def reshape(x, shape):
     return tf.reshape(x, shape)
+
 
 def dimshuffle(x, pattern):
     '''
@@ -358,6 +385,7 @@ def dimshuffle(x, pattern):
     if 'x' in pattern:
         raise NotImplementedError
     return tf.transpose(x, perm=pattern)
+
 
 def resize_images(X, height_factor, width_factor, dim_ordering):
     '''Resize the images contained in a 4D tensor of shape
@@ -378,6 +406,7 @@ def resize_images(X, height_factor, width_factor, dim_ordering):
         return tf.image.resize_nearest_neighbor(X, (new_height, new_width))
     else:
         raise Exception('Invalid dim_ordering: ' + dim_ordering)
+
 
 def repeat_elements(x, rep, axis):
     '''Repeats the elements of a tensor along an axis, like np.repeat
@@ -404,8 +433,10 @@ def repeat(x, n):
     stacked = tf.pack(tensors)
     return tf.transpose(stacked, (1, 0, 2))
 
+
 def tile(x, n):
     return tf.tile(x, n)
+
 
 def flatten(x, outdim=2):
     '''Turn a n-D tensor into a m-D tensor (m < n) where
@@ -417,15 +448,18 @@ def flatten(x, outdim=2):
         pattern = [-1, np.prod(x.get_shape()[(outdim - 1):].as_list())]
     return tf.reshape(x, pattern)
 
+
 def expand_dims(x, dim=-1):
     '''Add a 1-sized dimension at index "dim".
     '''
     return tf.expand_dims(x, dim)
 
+
 def squeeze(x, axis):
     '''Remove a 1-dimension from the tensor at index "axis".
     '''
     return tf.squeeze(x, [axis])
+
 
 def temporal_padding(x, padding=1):
     '''Pad the middle dimension of a 3D tensor
@@ -433,6 +467,7 @@ def temporal_padding(x, padding=1):
     '''
     pattern = [[0, 0], [padding, padding], [0, 0]]
     return tf.pad(x, pattern)
+
 
 def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
     '''Pad the 2nd and 3rd dimensions of a 4D tensor
@@ -447,19 +482,24 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
                    [0, 0]]
     return tf.pad(x, pattern)
 
+
 def stack(*x):
     return tf.pack(x)
 
 # ===========================================================================
 # VALUE MANIPULATION
 # ===========================================================================
+
+
 def get_value(x, borrow=False):
     '''Technically the same as eval() for TF.
     '''
     return x.eval(session=get_session())
 
+
 def set_value(x, value):
     tf.assign(x, np.asarray(value)).op.run(session=get_session())
+
 
 def set_subtensor(x, y):
     raise NotImplementedError
@@ -467,6 +507,8 @@ def set_subtensor(x, y):
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
+
+
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[]):
@@ -493,6 +535,7 @@ class Function(object):
         if self._return_list:
             return updated[:len(self.outputs)]
         return updated[0]
+
 
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
@@ -576,6 +619,7 @@ def grad_clip(x, clip):
     # TODO: no implementation for grad_clipping on tensorflow on forward pass
     return x
 
+
 def jacobian(expression, wrt):
     # copying theano's implementation, which is based on scan
     #from theano.tensor import arange
@@ -624,12 +668,15 @@ def jacobian(expression, wrt):
     assert not updates
     return _format_as(using_list, using_tuple, jacobs)
 
+
 def hessian(expression, wrt):
     raise NotImplementedError
 
 # ===========================================================================
 # CONTROL FLOW
 # ===========================================================================
+
+
 def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
     n_steps=None, truncate_gradient=-1, go_backwards=False):
     from operator import itemgetter
@@ -679,6 +726,7 @@ def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
         return outputs[0], None
     else:
         return None, None
+
 
 def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None,
          go_backwards=False):
@@ -761,6 +809,7 @@ def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None
         l = map(lambda x: x[i], output)
         output_scan.append(tf.pack(l))
     return output_scan
+
 
 def rnn(step_function, inputs, initial_states,
         go_backwards=False, mask=None, constants=None):
@@ -891,14 +940,18 @@ def relu(x, alpha=0., max_value=None):
     x -= alpha * negative_part
     return x
 
+
 def linear(x):
     return x
+
 
 def softmax(x):
     return tf.nn.softmax(x)
 
+
 def softplus(x):
     return tf.nn.softplus(x)
+
 
 def categorical_crossentropy(output, target, from_logits=False):
     '''Note: tf.nn.softmax_cross_entropy_with_logits
@@ -994,16 +1047,21 @@ def dropout(x, level, rescale=True, noise_shape=None,
     return x
 
 # ==================== Regularizations ==================== #
+
+
 def l2_normalize(x, axis):
     if axis < 0:
         axis = axis % len(x.get_shape())
     return tf.nn.l2_normalize(x, dim=axis)
 
+
 def l2_regularize(x):
     return sum(tf.square(x))
 
+
 def l1_regularize(x):
     return sum(tf.abs(x))
+
 
 def jacobian_regularize(hidden, params):
     ''' Computes the jacobian of the hidden layer with respect to
@@ -1015,6 +1073,7 @@ def jacobian_regularize(hidden, params):
     # Compute the jacobian and average over the number of samples/minibatch
     L = sum(mean(tf.pow(L, 2), axis=0)) # avr over all samples in batch
     return mean(L)
+
 
 def kl_gaussian(mean_, logsigma,
                 prior_mean=0., prior_logsigma=0.,
@@ -1039,6 +1098,7 @@ def kl_gaussian(mean_, logsigma,
           tf.exp(2 * prior_logsigma))
     return mean(kl) * regularizer_scale
 
+
 def correntropy_regularize(x, sigma=1.):
     '''
     Note
@@ -1052,6 +1112,8 @@ def correntropy_regularize(x, sigma=1.):
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
+
+
 def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
     '''Runs on cuDNN if available.
@@ -1095,9 +1157,11 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
         x = tf.cast(x, 'float64')
     return x
 
+
 def conv3d(x, kernel, strides=(1, 1, 1), border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
     raise NotImplementedError
+
 
 def pool2d(x, pool_size, strides=(1, 1),
            border_mode='valid', dim_ordering='th', pool_mode='max'):
@@ -1146,6 +1210,7 @@ def pool2d(x, pool_size, strides=(1, 1),
         x = tf.cast(x, 'float64')
     return x
 
+
 def pool3d(x, pool_size, strides=(1, 1, 1),
            border_mode='valid', dim_ordering='th', pool_mode='max'):
     raise NotImplementedError
@@ -1153,6 +1218,8 @@ def pool3d(x, pool_size, strides=(1, 1, 1),
 # ===========================================================================
 # RANDOMNESS
 # ===========================================================================
+
+
 class _RandomWrapper(object):
 
     def __init__(self, rng):
@@ -1179,10 +1246,12 @@ class _RandomWrapper(object):
                 p),
             dtype)
 
+
 def rng(seed=None):
     if seed is None:
         seed = get_random_magic_seed()
     return _RandomWrapper(seed)
+
 
 def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
@@ -1190,11 +1259,13 @@ def random_normal(shape, mean=0.0, std=1.0, dtype=_FLOATX, seed=None):
     return tf.random_normal(shape, mean=mean, stddev=std,
                             dtype=dtype, seed=seed)
 
+
 def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
     if seed is None:
         seed = get_random_magic_seed()
     return tf.random_uniform(shape, minval=low, maxval=high,
                              dtype=dtype, seed=seed)
+
 
 def random_binomial(shape, p, dtype=_FLOATX, seed=None):
     if seed is None:
@@ -1209,29 +1280,37 @@ def random_binomial(shape, p, dtype=_FLOATX, seed=None):
 # ===========================================================================
 # Comparator
 # ===========================================================================
+
+
 def eq(x, y):
     """a == b"""
     return tf.equal(x, y)
+
 
 def neq(x, y):
     """a != b"""
     return tf.not_equal(x, y)
 
+
 def gt(a, b):
     """a > b"""
     return tf.greater(a, b)
+
 
 def ge(a, b):
     """a >= b"""
     return tf.greater_equal(a, b)
 
+
 def lt(a, b):
     """a < b"""
     return tf.less(a, b)
 
+
 def le(a, b):
     """a <= b"""
     return tf.less_equal(a, b)
+
 
 def one_hot(x, nb_class):
     ''' x: 1D-integer vector '''
@@ -1239,6 +1318,7 @@ def one_hot(x, nb_class):
     ret = tf.zeros((shape[0].value, nb_class), dtype=_FLOATX)
     ret[np.arange(shape[0].value), x] = 1
     return ret
+
 
 def one_hot_max(x, axis=-1):
     '''
@@ -1259,6 +1339,7 @@ def one_hot_max(x, axis=-1):
                 expand_dims(tf.argmax(x, axis))),
         _FLOATX
     )
+
 
 def apply_mask(x, mask):
     '''

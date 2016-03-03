@@ -17,6 +17,8 @@ __all__ = [
 # ===========================================================================
 # Helper
 # ===========================================================================
+
+
 def _hdf5_save_overwrite(hdf5, key, value):
     if key in hdf5:
         del hdf5[key]
@@ -25,6 +27,8 @@ def _hdf5_save_overwrite(hdf5, key, value):
 # ===========================================================================
 # Eearly stopping
 # ===========================================================================
+
+
 def _check_gs(validation):
     ''' Generalization sensitive:
     validation is list of cost values (assumpt: lower is better)
@@ -42,6 +46,7 @@ def _check_gs(validation):
         shouldSave = 1
 
     return shouldSave, shouldStop
+
 
 def _check_gl(validation, threshold=5):
     ''' Generalization loss:
@@ -122,6 +127,8 @@ def _check_hope_and_hop(validation):
 # ===========================================================================
 # Model
 # ===========================================================================
+
+
 class model(OdinObject):
 
     """Supported API:
@@ -329,7 +336,7 @@ class model(OdinObject):
                 except Exception, e:
                     self.log('*** Cannot load old weights ***', 50)
                     self.log(str(e), 40)
-                    import traceback; traceback.print_exc();
+                    import traceback; traceback.print_exc()
             # ====== fetch new weights into model, create checkpoints ====== #
             else:
                 weights = self.get_weights()

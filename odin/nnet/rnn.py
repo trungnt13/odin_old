@@ -19,6 +19,7 @@ __all__ = [
     "Recurrent",
 ]
 
+
 class Cell(OdinFunction):
 
     """docstring for Cell"""
@@ -64,11 +65,14 @@ class Cell(OdinFunction):
         '''
         raise NotImplementedError
 
+
 def gru():
     pass
 
+
 def block_input(x_t, h_t1, b):
     pass
+
 
 class Recurrent(OdinFunction):
 
@@ -333,10 +337,10 @@ class Recurrent(OdinFunction):
             shape = tuple(hidden_init.output_shape[0][1:])
             if len(hidden_init.output_shape) != 1 and \
                len(hidden_init.output_shape) != len(incoming):
-               self.raise_arguments('hidden_init must outputs 1 initialization '
-                                    'for all incoming, or each initialization '
-                                    'for each incoming, %d is wrong number of '
-                                    'output.' % len(hidden_init.output_shape))
+                self.raise_arguments('hidden_init must outputs 1 initialization '
+                                     'for all incoming, or each initialization '
+                                     'for each incoming, %d is wrong number of '
+                                     'output.' % len(hidden_init.output_shape))
         else:
             shape = (1,) + self.output_dims
             hidden_init = self.create_params(hidden_init,

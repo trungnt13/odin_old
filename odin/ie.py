@@ -10,10 +10,12 @@ from . import logger
 # Net
 # ======================================================================
 
+
 class ParanoidURLopener(FancyURLopener):
 
     def http_error_default(self, url, fp, errcode, errmsg, headers):
         raise Exception('URL fetch failure on {}: {} -- {}'.format(url, errcode, errmsg))
+
 
 def get_file(fname, origin):
     ''' Get file from internet or local network.
@@ -63,6 +65,7 @@ def get_file(fname, origin):
         progbar = None
 
     return fpath
+
 
 class SSH(object):
 

@@ -8,6 +8,8 @@ from .. import logger
 # Helpers
 # From DeepLearningTutorials: http://deeplearning.net
 # ===========================================================================
+
+
 def resize_images(x, shape):
     from scipy.misc import imresize
 
@@ -25,6 +27,7 @@ def resize_images(x, shape):
     for i in x:
         imgs.append(reszie_func(i, shape))
     return imgs
+
 
 def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.):
     ''' This function create tile of images
@@ -85,6 +88,8 @@ def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.
 # ===========================================================================
 # Plotting methods
 # ===========================================================================
+
+
 def plot_images(X, tile_shape=None, tile_spacing=None,
     fig=None, path=None, title=None):
     '''
@@ -119,6 +124,7 @@ def plot_images(X, tile_shape=None, tile_spacing=None,
     if path:
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
     return fig
+
 
 def plot_images_old(x, fig=None, titles=None, path=None, show=False):
     '''
@@ -170,6 +176,7 @@ def plot_images_old(x, fig=None, titles=None, path=None, show=False):
     else:
         return fig
 
+
 def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
     from matplotlib import pyplot as plt
 
@@ -197,6 +204,7 @@ def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
     axis.set_xlabel('Predicted label')
     # axis.tight_layout()
     return axis
+
 
 def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None,
     keep_aspect=True):
@@ -268,6 +276,7 @@ def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None,
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
     return ax
 
+
 def plot_weights3D(x, colormap = "Greys", path=None):
     '''
     Example
@@ -329,6 +338,7 @@ def plot_weights3D(x, colormap = "Greys", path=None):
         plt.savefig(path, dpi=300, format='png', bbox_inches='tight')
     return fig
 
+
 def plot_hinton(matrix, max_weight=None, ax=None):
     '''
     Hinton diagrams are useful for visualizing the values of a 2D array (e.g.
@@ -368,15 +378,19 @@ def plot_hinton(matrix, max_weight=None, ax=None):
 # ===========================================================================
 # Helper methods
 # ===========================================================================
+
+
 def plot_show():
     from matplotlib import pyplot as plt
     plt.show(block=False)
     raw_input('<enter> to close all plots')
     plt.close('all')
 
+
 def plot_close():
     from matplotlib import pyplot as plt
     plt.close('all')
+
 
 def plot_save(path, figs=None, dpi=300):
     try:
