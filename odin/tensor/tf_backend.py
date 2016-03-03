@@ -96,6 +96,14 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     return v
 
 
+def zeros_var(shape, dtype=_FLOATX, name=None):
+    return variable(np.zeros(shape), dtype, name)
+
+
+def ones_var(shape, dtype=_FLOATX, name=None):
+    return variable(np.ones(shape), dtype, name)
+
+
 def is_variable(v):
     return isinstance(v, tf.python.Variable)
 
@@ -161,12 +169,10 @@ def addbroadcast(x, *axes):
 
 def zeros(shape, dtype=_FLOATX, name=None):
     return tf.zeros(shape, dtype=dtype, name=name)
-    # variable(np.zeros(shape), dtype, name)
 
 
 def ones(shape, dtype=_FLOATX, name=None):
     return tf.ones(shape, dtype=dtype, name=name)
-    # variable(np.ones(shape), dtype, name)
 
 
 def ones_like(x, name=None):

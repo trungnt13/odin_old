@@ -58,6 +58,18 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     return theano.shared(value=value, name=name, strict=False)
 
 
+def zeros_var(shape, dtype=_FLOATX, name=None):
+    '''Instantiate an all-zeros variable.
+    '''
+    return variable(np.zeros(shape), dtype, name)
+
+
+def ones_var(shape, dtype=_FLOATX, name=None):
+    '''Instantiate an all-ones variable.
+    '''
+    return variable(np.ones(shape), dtype, name)
+
+
 def is_variable(v):
     return isinstance(v, theano.compile.SharedVariable)
 
@@ -142,15 +154,13 @@ def addbroadcast(x, *axes):
 def zeros(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-zeros variable.
     '''
-    return T.ones(shape=shape, dtype=dtype)
-    #return variable(np.zeros(shape), dtype, name)
+    return T.zeros(shape=shape, dtype=dtype)
 
 
 def ones(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-ones variable.
     '''
     return T.ones(shape=shape, dtype=dtype)
-    #return variable(np.ones(shape), dtype, name)
 
 
 def ones_like(x):
@@ -483,6 +493,7 @@ class Function(object):
         self.function = theano.function(
             inputs, outputs,
             updates=updates,
+            on_unused_input='ignore',
             allow_input_downcast=True, **kwargs)
 
     def __call__(self, *inputs):

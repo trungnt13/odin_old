@@ -84,8 +84,8 @@ class BackendTest(unittest.TestCase):
         nonseq1 = T.variable(2.)
         nonseq2 = T.variable(3.)
         # TODO: something wrong if we use T.zeros((2,2)) here
-        output1 = T.variable(np.zeros((2, 2))) + 1
-        output2 = T.variable(np.zeros((2, 2))) + 2
+        output1 = T.zeros((2, 2)) + 1
+        output2 = T.zeros((2, 2)) + 2
 
         def step_fn(s1, s2, o1, o2, ns1, ns2):
             return o1 * s1 + ns1, o2 * s2 + ns2

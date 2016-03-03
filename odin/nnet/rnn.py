@@ -160,8 +160,17 @@ class Recurrent(OdinFunction):
     Examples
     --------
 
-    The following example constructs a simple `CustomRecurrentLayer` which
+    The following example constructs a simple `Recurrent` which
     has dense input-to-hidden and hidden-to-hidden connections.
+
+    >>> import odin
+    >>> input_shape = (None, 28, 10)
+    >>> mask_shape = (None, 28)
+    >>> f = odin.nnet.Recurrent(
+    >>>     incoming=input_shape, mask=mask_shape,
+    >>>     input_to_hidden=odin.nnet.Dense((None, 28, 10),num_units=13),
+    >>>     hidden_to_hidden=odin.nnet.Dense((None, 13),num_units=13),
+    >>> )
 
     >>> import lasagne
     >>> n_batch, n_steps, n_in = (2, 3, 4)
@@ -206,11 +215,12 @@ class Recurrent(OdinFunction):
                  only_return_final=False,
                  **kwargs):
         # ====== validate arguments ====== #
-        if not isinstance(mask, (tuple, list)):
+        if not isinstance(mask, (tuple, list)) or \
+           isinstance(mask[-1], (int, float, long)):
             mask = [mask]
-        if not isinstance(incoming, (tuple, list)):
-            incoming = [incoming]
-        if isinstance(incoming[0], (int, float, long)): # shape tuple
+        # shape tuple
+        if not isinstance(incoming, (tuple, list)) or \
+           isinstance(incoming[-1], (int, float, long)):
             incoming = [incoming]
         # ====== process incoming ====== #
         self._incoming_mask = [] # list of [inc_idx, mask_idx, inc_idx, ...]
@@ -247,7 +257,7 @@ class Recurrent(OdinFunction):
         # ====== check hidden_to_hidden ====== #
         if isinstance(hidden_to_hidden, (int, long, float)):
             hidden_to_hidden = Dense((None, int(hidden_to_hidden)),
-                num_units=int(hidden_to_hidden))
+                num_units=int(hidden_to_hidden), nonlinearity=T.linear)
         elif not isinstance(hidden_to_hidden, OdinFunction):
             self.raise_arguments('hidden_to_hidden connection cannot be None, '
                                  'and must be int represent number of hidden '
@@ -260,7 +270,8 @@ class Recurrent(OdinFunction):
         # ====== check input_to_hidden ====== #
         if input_to_hidden is None:
             input_to_hidden = Dense((None,) + self.input_dims,
-                                    num_units=self.output_dims[0])
+                                    num_units=self.output_dims[0],
+                                    nonlinearity=T.linear)
         elif isinstance(input_to_hidden, OdinFunction):
             pass
         else:
@@ -454,8 +465,9 @@ class Recurrent(OdinFunction):
             # The code below simply repeats self.hid_init num_batch times in
             # its first dimension.  Turns out using a dot product and a
             # dimshuffle is faster than T.repeat.
-            if isinstance(self.hidden_init, OdinFunction) and \
-               self.hidden_init.output_shape[idx][0] == 1:
+            if not isinstance(self.hidden_init, OdinFunction) or \
+                (isinstance(self.hidden_init, OdinFunction) and
+                 self.hidden_init.output_shape[idx][0] == 1):
                 # in this case, the OdinFunction only return 1 hidden_init
                 # vector, need to repeat it for each batch
                 dot_dims = (list(range(1, T.ndim(Hinit) - 1)) +
