@@ -34,11 +34,6 @@ class Dense(OdinFunction):
     def output_shape(self):
         return [(i[0], self.num_units) for i in self.input_shape]
 
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
-
     def __call__(self, training=False):
         inputs = self.get_inputs(training)
         outputs = []

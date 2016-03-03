@@ -247,11 +247,6 @@ class Pool2D(OdinFunction):
         self._log_footprint(training, inputs, outputs)
         return outputs
 
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
-
 class MaxPool2D(Pool2D):
 
     """
@@ -377,11 +372,6 @@ class Pool3D(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
-
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
 
 class MaxPool3D(Pool3D):
 
@@ -597,11 +587,6 @@ class BaseConvLayer(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
-
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
 
     def convolve(self, input, **kwargs):
         """

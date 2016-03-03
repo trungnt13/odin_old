@@ -124,6 +124,60 @@ class FunctionsTest(unittest.TestCase):
         shape = f(np.random.rand(13, 28),
               np.random.rand(10, 30))[0].shape
         self.assertEqual(shape, (13, 20))
+
+    def test_rnn(self):
+        # ====== simulate data ====== #
+        X = np.ones((128, 28, 10))
+        Xmask = np.ones((128, 28))
+        X1 = np.ones((128, 20, 10))
+
+        y = np.ones((128, 28, 5))
+        y1 = np.ones((128, 20, 5))
+
+        # ====== build model ====== #
+        v1 = T.placeholder(shape=(None, 28, 10))
+        hid_init1 = nnet.Dense(v1, num_units=5)
+        v2 = T.placeholder(shape=(None, 20, 10))
+        hid_init2 = nnet.Dense(v2, num_units=5)
+        hid_init = nnet.Ops([hid_init1, hid_init2], ops=T.linear)
+        f = nnet.Recurrent(
+            incoming=[v1, v2], mask=[(None, 28)],
+            hidden_to_hidden=5,
+            hidden_init=hid_init, learn_init=True,
+            nonlinearity=T.sigmoid,
+            unroll_scan=False,
+            backwards=False,
+            grad_clipping=0.001
+        )
+
+        print('\n')
+        print('Building prediction function ...')
+        f_pred = T.function(
+            inputs=f.input_var,
+            outputs=f())
+        cost, updates = f.get_optimization(
+            objective=objectives.mean_squared_loss,
+            optimizer=optimizers.rmsprop,
+            globals=True,
+            training=True)
+        print('Building training function ...')
+        f_train = T.function(
+            inputs=f.input_var + f.output_var,
+            outputs=cost,
+            updates=updates)
+        print('Input variables: ', f.input_var)
+        print('Ouput variables: ', f.output_var)
+        print('Input shape:     ', f.input_shape)
+        print('Output shape:    ', f.output_shape)
+        print('Params:          ', f.get_params(True))
+        print('Prediction shape:', [i.shape for i in f_pred(X, Xmask, X1)])
+        print('Training cost:',
+            f_train(X, Xmask, X1, y, y1),
+            f_train(X, Xmask, X1, y, y1),
+            f_train(X, Xmask, X1, y, y1),
+            f_train(X, Xmask, X1, y, y1),
+            f_train(X, Xmask, X1, y, y1),
+            f_train(X, Xmask, X1, y, y1))
 # ===========================================================================
 # Main
 # ===========================================================================

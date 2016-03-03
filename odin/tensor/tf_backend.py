@@ -100,7 +100,7 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
 
     # ====== Modify add name prefix ====== #
     global _PLACEHOLDER_ID
-    name_prefix = 'ID.%d.' % _PLACEHOLDER_ID
+    name_prefix = 'ID.%02d.' % _PLACEHOLDER_ID
     _PLACEHOLDER_ID += 1
     if name is None:
         name = ''
@@ -140,11 +140,13 @@ def addbroadcast(x, *axes):
 # Predefined data
 # ===========================================================================
 def zeros(shape, dtype=_FLOATX, name=None):
-    return variable(np.zeros(shape), dtype, name)
+    return tf.zeros(shape, dtype=dtype, name=name)
+    # variable(np.zeros(shape), dtype, name)
 
 
 def ones(shape, dtype=_FLOATX, name=None):
-    return variable(np.ones(shape), dtype, name)
+    return tf.ones(shape, dtype=dtype, name=name)
+    # variable(np.ones(shape), dtype, name)
 
 
 def ones_like(x, name=None):
@@ -536,6 +538,43 @@ def gradients(loss, variables, consider_constant=None, known_grads=None):
         grad = [known_grads[i] if i in known_grads else j
                 for i, j in zip(variables, grad)]
     return grad
+
+
+def grad_clip(x, clip):
+    '''
+    This clip the gradient of expression, used on forward pass but clip the
+    gradient on backward pass
+
+    This is an elemwise operation.
+
+    Parameters
+    ----------
+    x: expression
+        the variable we want its gradient inputs clipped
+    lower_bound: float
+        The lower bound of the gradient value
+    upper_bound: float
+        The upper bound of the gradient value.
+
+    Example
+    -------
+    >>> x = theano.tensor.scalar()
+    >>>
+    >>> z = theano.tensor.grad(grad_clip(x, -1, 1)**2, x)
+    >>> z2 = theano.tensor.grad(x**2, x)
+    >>>
+    >>> f = theano.function([x], outputs = [z, z2])
+    >>>
+    >>> print(f(2.0))  # output (1.0, 4.0)
+
+    Note
+    ----
+    We register an opt in tensor/opt.py that remove the GradClip.
+    So it have 0 cost in the forward and only do work in the grad.
+
+    '''
+    # TODO: no implementation for grad_clipping on tensorflow on forward pass
+    return x
 
 def jacobian(expression, wrt):
     # copying theano's implementation, which is based on scan

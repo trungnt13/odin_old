@@ -69,7 +69,7 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
 
     # ====== Modify add name prefix ====== #
     global _PLACEHOLDER_ID
-    name_prefix = 'ID.%d.' % _PLACEHOLDER_ID
+    name_prefix = 'ID.%02d.' % _PLACEHOLDER_ID
     _PLACEHOLDER_ID += 1
     if name is None:
         name = ''
@@ -101,6 +101,7 @@ def shape(x):
     Theano backend (Theano tensor type) and TF backend (TF TensorShape).
     '''
     shape = x.shape
+    # little to eval the shape of placeholder
     if hasattr(x, 'name'):
         if x.name in _PLACEHOLDER_SHAPE:
             _PLACEHOLDER_SHAPE[shape] = _PLACEHOLDER_SHAPE[x.name]
@@ -124,22 +125,20 @@ def addbroadcast(x, *axes):
 def zeros(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-zeros variable.
     '''
-    return variable(np.zeros(shape), dtype, name)
-
+    return T.ones(shape=shape, dtype=dtype)
+    # variable(np.zeros(shape), dtype, name)
 
 def ones(shape, dtype=_FLOATX, name=None):
     '''Instantiate an all-ones variable.
     '''
-    return variable(np.ones(shape), dtype, name)
-
+    return T.ones(shape=shape, dtype=dtype)
+    # variable(np.ones(shape), dtype, name)
 
 def ones_like(x):
     return T.ones_like(x)
 
-
 def zeros_like(x):
     return T.zeros_like(x)
-
 
 def count_params(x):
     '''Return number of scalars in a tensor.
@@ -452,6 +451,41 @@ class Function(object):
 def function(inputs, outputs, updates=[]):
     return Function(inputs, outputs, updates=updates)
 
+def grad_clip(x, clip):
+    '''
+    This clip the gradient of expression, used on forward pass but clip the
+    gradient on backward pass
+
+    This is an elemwise operation.
+
+    Parameters
+    ----------
+    x: expression
+        the variable we want its gradient inputs clipped
+    lower_bound: float
+        The lower bound of the gradient value
+    upper_bound: float
+        The upper bound of the gradient value.
+
+    Example
+    -------
+    >>> x = theano.tensor.scalar()
+    >>>
+    >>> z = theano.tensor.grad(grad_clip(x, -1, 1)**2, x)
+    >>> z2 = theano.tensor.grad(x**2, x)
+    >>>
+    >>> f = theano.function([x], outputs = [z, z2])
+    >>>
+    >>> print(f(2.0))  # output (1.0, 4.0)
+
+    Note
+    ----
+    We register an opt in tensor/opt.py that remove the GradClip.
+    So it have 0 cost in the forward and only do work in the grad.
+
+    '''
+    return theano.gradient.grad_clip(x, -clip, clip)
+
 def gradients(loss, variables, consider_constant=None, known_grads=None):
     """
     Return symbolic gradients for one or more variables with respect to some
@@ -521,7 +555,8 @@ def scan(step_fn, sequences=None, outputs_info=None, non_sequences=None,
         outputs_info=outputs_info,
         non_sequences=non_sequences,
         n_steps=n_steps, truncate_gradient=truncate_gradient,
-        go_backwards=go_backwards)
+        go_backwards=go_backwards,
+        strict=False)
 
 def loop(step_fn, n_steps, sequences=None, outputs_info=None, non_sequences=None,
          go_backwards=False):

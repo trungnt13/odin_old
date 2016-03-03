@@ -214,6 +214,7 @@ class OdinFunction(OdinObject):
                         input_shape += outshape
                     else: # other framework only return 1 output shape
                         input_shape.append(outshape)
+                # variable or placeholder
                 elif T.is_variable(i) or T.is_expression(i):
                     shape = T.eval(T.shape(i))
                     if any(j is None for j in shape[1:]):
@@ -224,7 +225,7 @@ class OdinFunction(OdinObject):
                     input_function.append(i)
                 else:
                     self.raise_arguments(
-                        'Unsupport incomming type %s' % i.__class__)
+                        'Unsupport incomming type: %s' % i.__class__)
         self._incoming = input_function
         self._input_shape = input_shape
 
@@ -336,15 +337,44 @@ class OdinFunction(OdinObject):
         i = tuple(shape[:(n - 1)]) + (np.prod(shape[(n - 1):]),)
         for j in self.input_shape:
             if i != tuple(j[:(n - 1)]) + (np.prod(j[(n - 1):]),):
-                self.raise_arguments('All incoming inputs must be flatten to %d '
+                self.raise_arguments('All incoming inputs must be flatten to %d'
                                      ' dimension and have the same shape, but'
-                                     ' %s does not satisfy the condition.' %
-                                     (n, str(j)))
+                                     ' %s != %s.' %
+                                     (n, str(i), str(j)))
         # critical, keep the shape in int32
         return (i[0],) + tuple(int(i) for i in i[1:])
 
-    def _deterministic_optimization_procedure(self, objective, optimizer,
-                                              globals, training):
+    # ==================== Abstract methods ==================== #
+    @abstractproperty
+    def output_shape(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def __call__(self, training=False):
+        raise NotImplementedError
+
+    def get_optimization(self, objective, optimizer=None,
+                         globals=True, training=True):
+        '''
+
+        Parameters
+        ----------
+        objective : function
+            often a function(y_pred, y_true) for supervised function, however,
+            can have different form for unsupervised task
+        optimizer : function (optional)
+            function(loss_or_grads, params)
+        globals : bool
+            training on globals' parameters, or just optimize locals' parameters
+        training : bool
+            use output for training or output for prediction (in production)
+
+        Return
+        ------
+        cost, updates : computational expression, OrderDict
+            cost for monitoring the training process, and the update for the
+            optimization
+        '''
         self._validation_optimization_params(objective, optimizer)
         y_pred = self(training=training)
         y_true = self.output_var
@@ -375,39 +405,6 @@ class OdinFunction(OdinObject):
                     consider_constant=self.get_cache(training=training))
             opt = optimizer(grad, params)
         return obj, opt
-
-    # ==================== Abstract methods ==================== #
-    @abstractproperty
-    def output_shape(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def __call__(self, training=False):
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        '''
-        Parameters
-        ----------
-        objective : function
-            often a function(y_pred, y_true) for supervised function, however,
-            can have different form for unsupervised task
-        optimizer : function (optional)
-            function(loss_or_grads, params)
-        globals : bool
-            training on globals' parameters, or just optimize locals' parameters
-        training : bool
-            use output for training or output for prediction (in production)
-
-        Return
-        ------
-        cost, updates : computational expression, OrderDict
-            cost for monitoring the training process, and the update for the
-            optimization
-        '''
-        raise NotImplementedError
 
     # ==================== Built-in ==================== #
     @property
@@ -455,6 +452,7 @@ class OdinFunction(OdinObject):
                 else: # input from API layers
                     api = API.get_object_api(i)
                     self._input_var += API.get_input_variables(i, api)
+            # not duplicate
             self._input_var = T.np_ordered_set(self._input_var).tolist()
         return self._input_var
 
@@ -529,7 +527,12 @@ class OdinFunction(OdinObject):
         if globals:
             for i in self._incoming:
                 if i is not None:
-                    params += i.get_params(globals, trainable, regularizable)
+                    api = API.get_object_api(i)
+                    if api is not None:
+                        params += API.get_params(
+                            i, globals, trainable, regularizable)
+                # TODO: add the case incoming is variable,
+                # which can be trainable
 
         # ====== Params from this layers ====== #
         local_params = []

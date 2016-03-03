@@ -90,11 +90,6 @@ class Dropout(OdinFunction):
     def output_shape(self):
         return self.input_shape
 
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
-
     def __call__(self, training=False):
         # return deterministic value
         inputs = self.get_inputs(training)
@@ -192,11 +187,6 @@ class FastDropout(OdinFunction):
     def output_shape(self):
         return self.input_shape
 
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
-
     def __call__(self, training=False):
         # return deterministic value
         inputs = self.get_inputs(training)
@@ -277,11 +267,6 @@ class Noise(OdinFunction):
     @property
     def output_shape(self):
         return self.input_shape
-
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)
 
     def __call__(self, training=False):
         inputs = self.get_inputs(training)

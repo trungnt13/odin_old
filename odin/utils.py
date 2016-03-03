@@ -42,7 +42,7 @@ class api(object):
                 return 'keras'
             elif 'odin.' in i:
                 return 'odin'
-        raise ValueError('Currently not support API: %s' % str(model_inherit))
+        return None
 
     @staticmethod
     def load_weights(hdf5, api):
@@ -88,8 +88,9 @@ class api(object):
             raise ValueError('Currently not support API: %s' % api)
 
     @staticmethod
-    def get_params(model, trainable=None, regularizable=None):
-        if 'lasagne' in str(model.__class__):
+    def get_params(model, globals=True, trainable=None, regularizable=None):
+        api_ = api.get_object_api(model)
+        if api_ == 'lasagne':
             import lasagne
             tags = {}
             if trainable is not None:
@@ -97,7 +98,7 @@ class api(object):
             if regularizable is not None:
                 tags['regularizable'] = regularizable
             return lasagne.layers.get_all_params(model, **tags)
-        elif 'keras' in str(model.__class__):
+        elif api_ == 'keras':
             weights = []
             for l in model.layers:
                 if trainable is None:
@@ -107,11 +108,13 @@ class api(object):
                 else:
                     weights += l.non_trainable_weights
             return weights
+        elif api_ == 'odin':
+            return model.get_params(globals, trainable, regularizable)
         else:
             raise ValueError('Currently not support API')
 
     @staticmethod
-    def get_params_value(model, trainable=None, regularizable=None):
+    def get_params_value(model, globals=True, trainable=None, regularizable=None):
         if 'lasagne' in str(model.__class__):
             import lasagne
             tags = {}

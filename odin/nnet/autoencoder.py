@@ -65,7 +65,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         self._log_footprint(training, inputs, outputs)
         return outputs
 
-    def get_optimization(self, objective=None, optimizer=None,
+    def get_optimization(self, objective, optimizer=None,
                          globals=True, training=True):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
@@ -245,7 +245,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         self._log_footprint(training, X, outputs)
         return outputs
 
-    def get_optimization(self, objective=None, optimizer=None,
+    def get_optimization(self, objective, optimizer=None,
                          globals=True, training=True):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
@@ -423,7 +423,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             outputs = self.decoder(training)
         return outputs
 
-    def get_optimization(self, objective=None, optimizer=None,
+    def get_optimization(self, objective, optimizer=None,
                          globals=True, training=True):
         # ====== Get the outputs ====== #
         tmp = self._reconstruction_mode
