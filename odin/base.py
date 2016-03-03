@@ -151,7 +151,8 @@ class OdinFunction(OdinObject):
     Parameters
     ----------
     incoming : a :class:`OdinFunction`, Lasagne :class:`Layer` instance,
-               keras :class:`Models` instance, or shape tuple
+               keras :class:`Models` instance, variable, placeholder or
+               shape tuple
         The layer feeding into this layer, or the expected input shape.
     unsupervised : bool
         whether or not this is unsupervised model, this affect the output_var
@@ -213,11 +214,13 @@ class OdinFunction(OdinObject):
                         input_shape += outshape
                     else: # other framework only return 1 output shape
                         input_shape.append(outshape)
-                elif T.is_variable(i):
-                    input_shape.append(T.eval(T.shape(i)))
-                    input_function.append(i)
-                elif T.is_expression(i):
-                    input_shape.append(T.eval(T.shape(i)))
+                elif T.is_variable(i) or T.is_expression(i):
+                    shape = T.eval(T.shape(i))
+                    if any(j is None for j in shape[1:]):
+                        self.raise_arguments('Only first dimension is allowed to'
+                                             ' be None, shape:%s does not satisfy'
+                                             ' the condition.' % str(shape))
+                    input_shape.append(shape)
                     input_function.append(i)
                 else:
                     self.raise_arguments(
