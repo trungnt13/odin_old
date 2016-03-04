@@ -163,41 +163,49 @@ class Recurrent(OdinFunction):
     The following example constructs a simple `Recurrent` which
     has dense input-to-hidden and hidden-to-hidden connections.
 
+    >>> import numpy as np
     >>> import odin
+    >>> X = np.ones((128, 28, 10))
+    >>> Xmask = np.ones((128, 28))
+    ...
     >>> input_shape = (None, 28, 10)
     >>> mask_shape = (None, 28)
     >>> f = odin.nnet.Recurrent(
-    >>>     incoming=input_shape, mask=mask_shape,
-    >>>     input_to_hidden=odin.nnet.Dense((None, 28, 10),num_units=13),
-    >>>     hidden_to_hidden=odin.nnet.Dense((None, 13),num_units=13),
-    >>> )
+    ...     incoming=input_shape, mask=mask_shape,
+    ...     input_to_hidden=odin.nnet.Dense((None, 10), num_units=13),
+    ...     hidden_to_hidden=odin.nnet.Dense((None, 13), num_units=13))
+    >>> f_pred = T.function(
+    ...     inputs=f.input_var,
+    ...     outputs=f())
+    >>> print('Prediction shape:', [i.shape for i in f_pred(X, Xmask)])
+    ... # Prediction shape: [(128, 28, 13)]
 
-    >>> import lasagne
-    >>> n_batch, n_steps, n_in = (2, 3, 4)
-    >>> n_hid = 5
-    >>> l_in = lasagne.layers.InputLayer((n_batch, n_steps, n_in))
-    >>> l_in_hid = lasagne.layers.DenseLayer(
-    ...     lasagne.layers.InputLayer((None, n_in)), n_hid)
-    >>> l_hid_hid = lasagne.layers.DenseLayer(
-    ...     lasagne.layers.InputLayer((None, n_hid)), n_hid)
-    >>> l_rec = lasagne.layers.CustomRecurrentLayer(l_in, l_in_hid, l_hid_hid)
-
-    The CustomRecurrentLayer can also support "convolutional recurrence", as is
+    The `Recurrent` can also support "convolutional recurrence", as is
     demonstrated below.
 
-    >>> n_batch, n_steps, n_channels, width, height = (2, 3, 4, 5, 6)
+    >>> import numpy as np
+    >>> import odin
+    >>> n_batch, n_steps, n_channels, width, height = (13, 3, 4, 5, 6)
     >>> n_out_filters = 7
     >>> filter_shape = (3, 3)
-    >>> l_in = lasagne.layers.InputLayer(
-    ...     (n_batch, n_steps, n_channels, width, height))
-    >>> l_in_to_hid = lasagne.layers.Conv2DLayer(
-    ...     lasagne.layers.InputLayer((None, n_channels, width, height)),
-    ...     n_out_filters, filter_shape, pad='same')
-    >>> l_hid_to_hid = lasagne.layers.Conv2DLayer(
-    ...     lasagne.layers.InputLayer(l_in_to_hid.output_shape),
-    ...     n_out_filters, filter_shape, pad='same')
-    >>> l_rec = lasagne.layers.CustomRecurrentLayer(
-    ...     l_in, l_in_to_hid, l_hid_to_hid)
+    ...
+    >>> X = np.random.rand(n_batch, n_steps, n_channels, width, height)
+    ...
+    >>> in_to_hid = odin.nnet.Conv2D(
+    ...     incoming=(None, n_channels, width, height),
+    ...     num_filters=n_out_filters, filter_size=filter_shape, pad='same')
+    >>> hid_to_hid = odin.nnet.Conv2D(
+    ...     incoming = in_to_hid.output_shape,
+    ...     num_filters=n_out_filters, filter_size=filter_shape, pad='same')
+    >>> f = odin.nnet.Recurrent(
+    ...     incoming=(n_batch, n_steps, n_channels, width, height),
+    ...     input_to_hidden=in_to_hid,
+    ...     hidden_to_hidden=hid_to_hid)
+    >>> f_pred = T.function(
+    ...     inputs=f.input_var,
+    ...     outputs=f())
+    >>> print('Prediction shape:', [i.shape for i in f_pred(X)])
+    ... # Prediction shape: [(13, 3, 7, 5, 6)]
 
     References
     ----------
