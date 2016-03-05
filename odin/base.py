@@ -116,6 +116,10 @@ class OdinParams(OdinObject):
 
     @property
     def name(self):
+        # if is a variable return its name, because tensorflow add :0 to end
+        # of variable name
+        if T.is_variable(self._params):
+            return self._params.name
         return self._name
 
     def as_variables(self, globals, trainable, regularizable):
@@ -134,6 +138,7 @@ class OdinParams(OdinObject):
 
 class OdinFunction(OdinObject):
     __metaclass__ = ABCMeta
+    _ID = 0
 
     '''
     Properties
@@ -177,6 +182,10 @@ class OdinFunction(OdinObject):
         elif not isinstance(name, (tuple, list)):
             name = [name]
         self._name = name
+
+        # unique identity number of a function during execution
+        self._function_id = OdinFunction._ID
+        OdinFunction._ID += 1
 
         # you can have 2 different version of parameters, for training and for
         # making prediction
@@ -430,9 +439,10 @@ class OdinFunction(OdinObject):
     # ==================== Built-in ==================== #
     @property
     def name(self):
+        function_id = '%03d.' % self._function_id
         if len(self._name) == 0:
-            return self.__class__.__name__
-        return ','.join(self._name)
+            return function_id + self.__class__.__name__
+        return function_id + ','.join(self._name)
 
     @property
     def input_shape(self):
@@ -624,7 +634,10 @@ class OdinFunction(OdinObject):
         # ====== create and return params ====== #
         if params is None:
             params = OdinParams(name, spec, trainable, regularizable)
-        self.params[name] = params
+        if params.name in self.params:
+            self.raise_arguments("Parameters' name already exist, choose other "
+                                 "name for your parameters.")
+        self.params[params.name] = params
         return params
 
 

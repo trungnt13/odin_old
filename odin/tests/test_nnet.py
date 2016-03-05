@@ -127,35 +127,66 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(shape, (13, 20))
 
     def test_rnn(self):
-        # ====== simulate data ====== #
+        np.random.seed(1208251813)
+        # ====== Simulate the data ====== #
         X = np.ones((128, 28, 10))
         Xmask = np.ones((128, 28))
-        X1 = np.ones((128, 20, 10))
+        X1 = np.ones((256, 20, 10))
 
-        y = np.ones((128, 28, 5))
-        y1 = np.ones((128, 20, 5))
+        return_final = True
+        if return_final:
+            y = np.ones((128, 12))
+            y1 = np.ones((256, 12))
+        else:
+            y = np.ones((128, 28, 12))
+            y1 = np.ones((256, 20, 12))
 
-        # ====== build model ====== #
-        v1 = T.placeholder(shape=(None, 28, 10))
-        hid_init1 = nnet.Dense(v1, num_units=5)
-        v2 = T.placeholder(shape=(None, 20, 10))
-        hid_init2 = nnet.Dense(v2, num_units=5)
-        hid_init = nnet.Ops([hid_init1, hid_init2], ops=T.linear)
+        # ====== Build the network ====== #
+        v1 = T.placeholder(shape=(None, 28, 10), name='v1')
+        v2 = T.placeholder(shape=(None, 20, 10), name='v2')
+        hid_init = nnet.Ops([
+            nnet.Dense(v1, num_units=5),
+            nnet.Dense(v2, num_units=5)
+        ], ops=T.linear)
+        out_init = nnet.Ops([
+            nnet.Dense(v1, num_units=12),
+            nnet.Dense(v2, num_units=12),
+        ], ops=T.linear)
+        # hid_init = odin.nnet.Ops(hid_init, ops=lambda x: T.mean(x, axis=0, keepdims=True))
         f = nnet.Recurrent(
             incoming=[v1, v2], mask=[(None, 28)],
-            hidden_to_hidden=5,
-            hidden_init=hid_init, learn_init=True,
+            input_to_hidden=nnet.Dense((None, 10), num_units=5),
+            hidden_to_hidden=nnet.Dense((None, 5), num_units=5),
+            hidden_to_output=nnet.Dense((None, 5), num_units=12),
+            hidden_init=hid_init,
+            output_init=out_init,
+            learn_init=True,
             nonlinearity=T.sigmoid,
             unroll_scan=False,
             backwards=False,
-            grad_clipping=0.001
+            only_return_final=return_final
         )
-
-        print('\n')
+        print()
         print('Building prediction function ...')
         f_pred = T.function(
             inputs=f.input_var,
             outputs=f())
+        print('Input variables: ', f.input_var)
+        self.assertEqual(len(f.input_var), 3)
+        print('Ouput variables: ', f.output_var)
+        self.assertEqual(len(f.output_var), 2)
+        print('Input shape:     ', f.input_shape)
+        self.assertEqual(f.input_shape,
+            [(None, 28, 10), (None, 28), (None, 20, 10)])
+        print('Output shape:    ', f.output_shape)
+        self.assertEqual(f.output_shape,
+            [(None, 12), (None, 12)])
+        print('Params:          ', f.get_params(True))
+        self.assertEqual(len(f.get_params(True)), 14)
+        pred_shape = [i.shape for i in f_pred(X, Xmask, X1)]
+        print('Prediction shape:', pred_shape)
+        self.assertEqual(pred_shape, [(128, 12), (256, 12)])
+
         cost, updates = f.get_optimization(
             objective=objectives.mean_squared_loss,
             optimizer=optimizers.rmsprop,
@@ -166,19 +197,14 @@ class FunctionsTest(unittest.TestCase):
             inputs=f.input_var + f.output_var,
             outputs=cost,
             updates=updates)
-        print('Input variables: ', f.input_var)
-        print('Ouput variables: ', f.output_var)
-        print('Input shape:     ', f.input_shape)
-        print('Output shape:    ', f.output_shape)
-        print('Params:          ', f.get_params(True))
-        print('Prediction shape:', [i.shape for i in f_pred(X, Xmask, X1)])
-        print('Training cost:',
-            f_train(X, Xmask, X1, y, y1),
-            f_train(X, Xmask, X1, y, y1),
-            f_train(X, Xmask, X1, y, y1),
-            f_train(X, Xmask, X1, y, y1),
-            f_train(X, Xmask, X1, y, y1),
-            f_train(X, Xmask, X1, y, y1))
+        cost = [f_train(X, Xmask, X1, y, y1),
+                f_train(X, Xmask, X1, y, y1),
+                f_train(X, Xmask, X1, y, y1),
+                f_train(X, Xmask, X1, y, y1),
+                f_train(X, Xmask, X1, y, y1),
+                f_train(X, Xmask, X1, y, y1)]
+        print('Training cost:', cost)
+        self.assertGreater(cost[:-1], cost[1:])
 
     def test_rnn_auto_input_to_hidden(self):
         X = np.random.rand(16, 30, 3, 28, 28)
@@ -227,6 +253,16 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(tuple(cell_new.eval().shape), (256, 13))
         self.assertEqual(T.sum(T.abs(T.eval(T.tanh(cell_new) - hid_new))).eval(),
                          0.)
+
+    def test_non_memorize_cell(self):
+        np.random.seed(1208251813)
+        X = T.variable(np.random.rand(256, 128, 20))
+        c = nnet.GRUCell(hid_init=(None, 13), input_dims=(None, 128, 20))
+        c.add_gate(name='reset')
+        c.add_gate(name='update')
+        params = c.get_params(True, regularizable=None)
+        self.assertEqual(len(params), 6)
+        self.assertEqual(len(c()), 0)
 
 # ===========================================================================
 # Main

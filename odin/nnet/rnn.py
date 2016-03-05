@@ -17,8 +17,10 @@ from .ops import Ops
 
 __all__ = [
     "Cell",
+    "GRUCell",
     "Recurrent",
     "lstm_algorithm",
+    "gru_algorithm",
     "simple_algorithm"
 ]
 
@@ -38,7 +40,8 @@ def _check_shape_match(shape1, shape2):
 
     '''
     # TODO: (None, 32) will match (None, 32, 28, 28) - maybe an error
-    if not all(s1 is None or s2 is None or s1 == s2
+    if len(shape1) != len(shape2) or \
+       not all(s1 is None or s2 is None or s1 == s2
                for s1, s2 in zip(shape1[1:], shape2[1:])):
         return False
     return True
@@ -53,6 +56,11 @@ def _validate_initialization(init, desire_dims, n_incoming,
         shape = tuple(T.eval(T.shape(init)))
     elif isinstance(init, OdinFunction):
         shape = tuple(init.output_shape[0][1:])
+        for i in init.output_shape:
+            if shape != i[1:]:
+                raise ValueError('For OdinFunction as initialization, all '
+                                 'output_shape must have the same [1:] '
+                                 'dimension.')
         if len(init.output_shape) != 1 and \
            len(init.output_shape) != n_incoming: # each incoming can have different init
             raise ValueError('initialization must outputs 1 initialization '
@@ -107,6 +115,11 @@ def lstm_algorithm(hid_prev, out_prev, cell_prev,
     return hid, cell
 
 
+def gru_algorithm(hid_prev, out_prev, cell_prev,
+                  gates, gates_params, nonlinearity):
+    pass
+
+
 def simple_algorithm(hid_prev, out_prev, cell_prev,
                      gates, gates_params, nonlinearity):
     ''' This algorithm take sum of all gated previous cell'''
@@ -131,11 +144,16 @@ def simple_algorithm(hid_prev, out_prev, cell_prev,
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
+    memory : bool
+        if True this cell has its own memory vector which is internal state of
+        the recurrent algorithm, otherwise, it only uses hidden state and
+        output state (if available) as its memory
     """
 
     def __init__(self, cell_init, input_dims, learnable=False,
                  W_cell=None, nonlinearity=T.tanh,
                  algorithm=simple_algorithm,
+                 memory=True,
                  **kwargs):
         super(Cell, self).__init__(cell_init, unsupervised=False, **kwargs)
 
@@ -167,6 +185,7 @@ class Cell(OdinFunction):
             self.raise_arguments('Algorithm function must be callable and '
                                  'has 6 input arguments.')
         self.algorithm = algorithm
+        self.memory = memory
         # store all gate informations
         self._gates = []
 
@@ -291,7 +310,15 @@ class Cell(OdinFunction):
 
     # ==================== Override functions ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
-        params = super(Cell, self).get_params(globals, trainable, regularizable)
+        if self.memory: # if has memory return all parameters
+            return super(Cell, self).get_params(globals, trainable, regularizable)
+        # no memory, only return gates' parameters
+        params = []
+        for g in self._gates:
+            for i in g:
+                if T.is_variable(i):
+                    params += self.params[i.name].as_variables(
+                        globals, trainable, regularizable)
         return params
 
     # ==================== Abstract function ==================== #
@@ -301,12 +328,41 @@ class Cell(OdinFunction):
 
     def __call__(self, training=False):
         ''' Return the initial states of cell '''
-        inputs = self.get_inputs(training)
+        if self.memory: # has memory cell, return its initial state
+            inputs = self.get_inputs(training)
+        else: # no memory
+            inputs = []
         outputs = inputs
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
 
+
+class GRUCell(Cell):
+
+    """docstring for GRUCell"""
+
+    def __init__(self, hid_init, input_dims,
+                 nonlinearity=T.tanh,
+                 **kwargs):
+        if isinstance(hid_init, (int, float, long)):
+            hid_init = (None, int(hid_init))
+        elif isinstance(hid_init, (tuple, list)) and \
+        isinstance(hid_init[-1], (int, float, long)):
+            pass
+        else:
+            self.raise_arguments('hid_init must be an integer - number of '
+                                 'hidden units or shape tuple which is the '
+                                 'shape of hidden state.')
+        super(GRUCell, self).__init__(hid_init, input_dims, learnable=False,
+                 W_cell=None, nonlinearity=nonlinearity,
+                 algorithm=gru_algorithm, memory=False,
+                 **kwargs)
+
+
+# ===========================================================================
+# Main Recurrent algorithm
+# ===========================================================================
 
 class Recurrent(OdinFunction):
 
@@ -349,12 +405,27 @@ class Recurrent(OdinFunction):
         :class:`OdinFunction`.
         If 'auto' is given, this layer automatically create a Dense layer to
         transform the input to the same dimension as hidden state
+    hidden_to_output : :class:`OdinFunction`, None, int, shape tuple
+        Function which transform the current hidden state to output of the
+        funciton, the output will be passed during recurrent and can be used
+        for generative model. This layer may be connected to a chain of layers.
+        If an integer is given, it is the number of hidden unit and a
+        :class:`odin.nnet.Dense` is created as default. Note: we only consider
+        the first output from given :class:`OdinFunction`.
     hidden_init : callable, np.ndarray, theano.shared or :class:`OdinFunction`,
                   variable, placeholder
         Initializer for initial hidden state (:math:`h_0`). The shape of the
         initialization must be `(1,) + hidden_to_hidden.output_shape[1:]`. In
         case, and :class:`OdinFunction` is given, the output_shape can be
         one initialization for all sample in batch (as given above) or
+        `(batch_size,) + hidden_to_hidden.output_shape[1:]`
+    output_init : callable, np.ndarray, theano.shared or :class:`OdinFunction`,
+                  variable, placeholder
+        Initializer for initial output if the hidden_to_output connection is
+        specified. The shape of the initialization must be
+        `(1,) + hidden_to_hidden.output_shape[1:]`. In case, and
+        :class:`OdinFunction` is given, the output_shape can be one
+        initialization for all sample in batch (as given above) or
         `(batch_size,) + hidden_to_hidden.output_shape[1:]`
     learn_init : bool
         If True, initial hidden values are learned, which also means if
@@ -692,6 +763,10 @@ class Recurrent(OdinFunction):
                 globals, trainable, regularizable)
         return T.np_ordered_set(params).tolist()
 
+    @property
+    def input_var(self):
+        return super(Recurrent, self).input_var
+
     # ==================== Recurrent methods ==================== #
     def add_cell(self, cell):
         if not isinstance(cell, Cell):
@@ -708,9 +783,9 @@ class Recurrent(OdinFunction):
         for i in self._incoming_mask[::2]:
             shape = input_shape[i]
             if self.only_return_final:
-                outshape.append((shape[0],) + self.hidden_dims)
+                outshape.append((shape[0],) + self.output_dims)
             else:
-                outshape.append((shape[0], shape[1],) + self.hidden_dims)
+                outshape.append((shape[0], shape[1],) + self.output_dims)
         return outshape
 
     def __call__(self, training=False):
@@ -841,6 +916,7 @@ class Recurrent(OdinFunction):
                 out = self.hidden_to_output(training)[0]
                 return [hid, out]
 
+            # ====== create loop or scan funciton ====== #
             if self.unroll_scan:
                 # Explicitly unroll the recurrence instead of using scan
                 out = T.loop(
