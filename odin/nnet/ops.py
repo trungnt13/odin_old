@@ -5,6 +5,7 @@ import numpy as np
 from .. import tensor as T
 from ..base import OdinFunction
 
+
 class Ops(OdinFunction):
 
     """
@@ -50,8 +51,12 @@ class Ops(OdinFunction):
                  broadcast=True, **kwargs):
         super(Ops, self).__init__(incoming, unsupervised=False, **kwargs)
         self.ops = ops
-        self._shape = output_shape
         self.broadcast = broadcast
+
+        if isinstance(output_shape, (tuple, list)) and \
+           isinstance(output_shape[-1], (int, float, long)):
+            output_shape = [output_shape]
+        self._shape = output_shape
 
     @property
     def output_shape(self):
@@ -85,3 +90,12 @@ class Ops(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
+
+class Switch(object):
+
+    """docstring for Switch"""
+
+    def __init__(self, training, predicting):
+        super(Switch, self).__init__()
+        self.arg = arg

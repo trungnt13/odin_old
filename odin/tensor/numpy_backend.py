@@ -17,16 +17,20 @@ from ..config import floatX
 _MAGIC_SEED = 12082518
 _SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
 
+
 def set_magic_seed(seed):
     global _MAGIC_SEED, _SEED_GENERATOR
     _MAGIC_SEED = seed
     _SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
 
+
 def get_magic_seed():
     return _MAGIC_SEED
 
+
 def get_random_magic_seed():
     return _SEED_GENERATOR.randint(10e6)
+
 
 def get_random_generator():
     return _SEED_GENERATOR
@@ -34,8 +38,11 @@ def get_random_generator():
 # ===========================================================================
 # Main
 # ===========================================================================
+
+
 def is_ndarray(x):
     return isinstance(x, np.ndarray)
+
 
 def np_masked_output(X, X_mask):
     '''
@@ -53,6 +60,7 @@ def np_masked_output(X, X_mask):
         res.append(x.tolist())
     return res
 
+
 def np_one_hot(y, n_classes=None):
     '''Convert class vector (integers from 0 to nb_classes)
     to binary class matrix, for use with categorical_crossentropy
@@ -64,6 +72,7 @@ def np_one_hot(y, n_classes=None):
     for i in range(len(y)):
         Y[i, y[i]] = 1.
     return Y
+
 
 def np_split_chunks(a, maxlen, overlap):
     '''
@@ -85,14 +94,16 @@ def np_split_chunks(a, maxlen, overlap):
         chunks.append(a[-maxlen:])
     return chunks
 
+
 def np_ordered_set(seq):
-   seen = {}
-   result = []
-   for marker in seq:
-       if marker in seen: continue
-       seen[marker] = 1
-       result.append(marker)
-   return np.asarray(result)
+    seen = {}
+    result = []
+    for marker in seq:
+        if marker in seen: continue
+        seen[marker] = 1
+        result.append(marker)
+    return np.asarray(result)
+
 
 def np_shrink_labels(labels, maxdist=1):
     '''
@@ -124,8 +135,16 @@ def np_shrink_labels(labels, maxdist=1):
 # ===========================================================================
 # Special random algorithm for weights initialization
 # ===========================================================================
+
+
+def np_normal(shape, mean=0., std=1.):
+    return np.cast[floatX()](
+        get_random_generator().normal(mean, std, size=shape))
+
+
 def np_constant(shape, val=0.):
     return np.cast[floatX()](np.zeros(shape) + val)
+
 
 def np_symmetric_uniform(shape, range=0.01, std=None, mean=0.0):
     if std is not None:
@@ -160,6 +179,7 @@ def np_glorot_uniform(shape, gain=1.0, c01b=False):
     return np.cast[floatX()](
         get_random_generator().uniform(low=a, high=b, size=shape))
 
+
 def np_glorot_normal(shape, gain=1.0, c01b=False):
     if c01b:
         if len(shape) != 4:
@@ -177,6 +197,7 @@ def np_glorot_normal(shape, gain=1.0, c01b=False):
     std = gain * np.sqrt(2.0 / ((n1 + n2) * receptive_field_size))
     return np.cast[floatX()](
         get_random_generator().normal(0.0, std, size=shape))
+
 
 def np_he_normal(shape, gain=1.0, c01b=False):
     if gain == 'relu':
@@ -199,6 +220,7 @@ def np_he_normal(shape, gain=1.0, c01b=False):
     std = gain * np.sqrt(1.0 / fan_in)
     return np.cast[floatX()](
         get_random_generator().normal(0.0, std, size=shape))
+
 
 def np_he_uniform(shape, gain=1.0, c01b=False):
     if gain == 'relu':
@@ -223,6 +245,7 @@ def np_he_uniform(shape, gain=1.0, c01b=False):
     b = 0.0 + np.sqrt(3) * std
     return np.cast[floatX()](
         get_random_generator().uniform(low=a, high=b, size=shape))
+
 
 def np_orthogonal(shape, gain=1.0):
     if gain == 'relu':

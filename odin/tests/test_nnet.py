@@ -20,6 +20,7 @@ from six.moves import zip, range
 # Main Test
 # ===========================================================================
 
+
 class FunctionsTest(unittest.TestCase):
 
     def setUp(self):
@@ -178,6 +179,55 @@ class FunctionsTest(unittest.TestCase):
             f_train(X, Xmask, X1, y, y1),
             f_train(X, Xmask, X1, y, y1),
             f_train(X, Xmask, X1, y, y1))
+
+    def test_rnn_auto_input_to_hidden(self):
+        X = np.random.rand(16, 30, 3, 28, 28)
+        f = nnet.Recurrent(
+            incoming=(None, 30, 3, 28, 28), mask=None,
+            input_to_hidden='auto',
+            hidden_to_hidden=nnet.Conv2D(
+                (None, 32, 28, 28), num_filters=32, filter_size=(3, 3), pad='same'),
+            hidden_init=None, learn_init=True,
+            nonlinearity=T.sigmoid,
+            unroll_scan=False,
+            backwards=False,
+            grad_clipping=0.001,
+            only_return_final=False
+        )
+        f = T.function(inputs=f.input_var, outputs=f())
+        self.assertEqual(tuple(f(X)[0].shape), (16, 30, 32, 28, 28))
+
+    def test_memory_cell(self):
+        np.random.seed(1208251813)
+        X = T.variable(np.random.rand(256, 128, 20))
+
+        c = nnet.Cell(cell_init=T.zeros_var(shape=(256, 13), name='cell_init'),
+                      input_dims=(None, 128, 20),
+                      W_cell=T.np_normal,
+                      learnable=True,
+                      algorithm=nnet.simple_algorithm,
+                      nonlinearity=T.tanh)
+        # 1 parameter for cell_init
+        c.add_gate(name='forget') # 4 params
+        c.add_gate(name='input') # 4 params
+        c.add_gate(name='cellin', nonlinearity=T.tanh, force_no_cell=True) # 3 params
+        c.add_gate(name='output') # 4 params
+        self.assertEqual(len(c.get_params(True)), 16)
+
+        X = T.dimshuffle(X, (1, 0, 2))
+        X = c.precompute(X)
+        self.assertEqual(tuple(T.eval(T.shape(X))), (128, 256, 52))
+
+        hidden_init = T.zeros_var(shape=(256, 13), name='hid_init')
+        output_init = hidden_init
+        cell_init = c()[0]
+        cell = c.step([X[0]], hidden_init, output_init, cell_init)
+        hid_new, cell_new = cell[0]
+        self.assertEqual(tuple(hid_new.eval().shape), (256, 13))
+        self.assertEqual(tuple(cell_new.eval().shape), (256, 13))
+        self.assertEqual(T.sum(T.abs(T.eval(T.tanh(cell_new) - hid_new))).eval(),
+                         0.)
+
 # ===========================================================================
 # Main
 # ===========================================================================

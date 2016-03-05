@@ -5,6 +5,7 @@ import numpy as np
 from .. import tensor as T
 from ..base import OdinFunction
 
+
 class Dense(OdinFunction):
 
     def __init__(self, incoming, num_units,

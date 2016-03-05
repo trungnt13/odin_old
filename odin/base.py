@@ -6,7 +6,7 @@
 
 from __future__ import print_function, division, absolute_import
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
 from six.moves import zip, range
 
@@ -196,6 +196,8 @@ class OdinFunction(OdinObject):
         # ====== Accept None incoming ====== #
         input_function = []
         input_shape = []
+        # flags for variables as incoming that can be learnt
+        self._learnable_incoming = defaultdict(lambda: False)
         # ====== check if incoming contain list of acceptable info ====== #
         if incoming is not None:
             if not isinstance(incoming, (tuple, list)) or \
@@ -226,6 +228,9 @@ class OdinFunction(OdinObject):
                                              ' the condition.' % str(shape))
                     input_shape.append(shape)
                     input_function.append(i)
+                    # this variable cannot interact anything
+                    if T.is_variable(i):
+                        self.set_learnable_incoming(i, False, False)
                 else:
                     self.raise_arguments(
                         'Unsupport incomming type: %s' % i.__class__)
@@ -237,6 +242,19 @@ class OdinFunction(OdinObject):
         #{index : placeholder}, store placeholder created by this Function
         self._local_input_var = {}
         self._output_var = None
+
+        return self
+
+    def set_learnable_incoming(self, variable, trainable, regularizable):
+        '''If a variable is specified at the incoming, you can set it learnable
+        by using this function.
+
+        Note
+        ----
+        No cleaner way to do this
+        '''
+        if T.is_variable(variable):
+            self._learnable_incoming[variable] = [trainable, regularizable]
         return self
 
     def set_intermediate_inputs(self, inputs):
@@ -334,7 +352,7 @@ class OdinFunction(OdinObject):
         same shape
         Returns
         -------
-        actual input dimension after flattened
+        full input shape after flattened
         '''
         shape = self.input_shape[0]
         i = tuple(shape[:(n - 1)]) + (np.prod(shape[(n - 1):]),)
@@ -530,12 +548,19 @@ class OdinFunction(OdinObject):
         if globals:
             for i in self._incoming:
                 if i is not None:
-                    api = API.get_object_api(i)
-                    if api is not None:
-                        params += API.get_params(
-                            i, globals, trainable, regularizable)
-                # TODO: add the case incoming is variable,
-                # which can be trainable
+                    # variables that learnable
+                    if T.is_variable(i):
+                        learnable = self._learnable_incoming[i]
+                        if learnable and \
+                           (learnable[0] == trainable or trainable is None) and \
+                           (learnable[1] == regularizable or regularizable is None):
+                            params.append(i)
+                    # other api
+                    else:
+                        api = API.get_object_api(i)
+                        if api is not None:
+                            params += API.get_params(
+                                i, globals, trainable, regularizable)
 
         # ====== Params from this layers ====== #
         local_params = []
