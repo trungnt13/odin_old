@@ -266,8 +266,35 @@ class OdinFunction(OdinObject):
             self._learnable_incoming[variable] = [trainable, regularizable]
         return self
 
-    def set_intermediate_inputs(self, inputs):
-        self._intermediate_inputs = inputs
+    def set_intermediate_inputs(self, inputs, root=False):
+        '''
+        Parameters
+        ----------
+        inputs : list(tensor)
+            inputs must be a list of anything you want this layer to process
+        root : bool
+            if True, go to roots of this Funciton and set their input to given
+            inputs
+        '''
+        if not isinstance(inputs, (tuple, list)):
+            inputs = [inputs]
+
+        if not root:
+            n_inputs = self.n_inputs
+            if len(inputs) != n_inputs and len(inputs) != 1:
+                self.raise_arguments("Cannot fit the given inputs to the "
+                                     "inputs of this funciton, n_given_inputs={} "
+                                     "!= n_function_inputs={}. Note: if you "
+                                     "don't know the number of inputs, just give "
+                                     "1 input and it will be duplicated to "
+                                     "all other inputs of function.".format(
+                                         len(inputs), n_inputs))
+            elif len(inputs) == 1:
+                inputs = inputs * n_inputs
+            self._intermediate_inputs = inputs
+        else:
+            for i in self.get_roots():
+                i.set_intermediate_inputs(inputs)
         return self
 
     def get_roots(self):
@@ -439,10 +466,20 @@ class OdinFunction(OdinObject):
     # ==================== Built-in ==================== #
     @property
     def name(self):
-        function_id = '%03d.' % self._function_id
+        function_id = '%03d_' % self._function_id
         if len(self._name) == 0:
             return function_id + self.__class__.__name__
         return function_id + ','.join(self._name)
+
+    @property
+    def n_inputs(self):
+        '''Return expected number of inputs will be returned by
+        get_inputs function
+        '''
+        # only OdinFunction can return multiple outputs
+        return sum(len(i.output_shape)
+                   if isinstance(i, OdinFunction) else 1
+                   for i in self.incoming)
 
     @property
     def input_shape(self):

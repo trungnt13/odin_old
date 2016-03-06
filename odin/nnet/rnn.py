@@ -12,7 +12,7 @@ from collections import defaultdict
 
 from .. import tensor as T
 from ..base import OdinFunction
-from ..utils import as_tuple
+from ..utils import as_tuple, as_index_map
 from .dense import Dense
 from .ops import Ops
 
@@ -80,68 +80,117 @@ def _validate_initialization(init, desire_dims, n_incoming,
                          ', but %s != %s' %
                          (str(shape), str(desire_dims)))
     return init
+
+
 # ===========================================================================
 # Step algorithm for GRU, LSTM, and creative
 # ===========================================================================
-
-
 def lstm_algorithm(hid_prev, out_prev, cell_prev,
-                   gates, gates_params, nonlinearity):
+                   in_precompute, hid_precompute,
+                   gates_params, nonlinearity):
     # For convention: the first 3 gates is:
     # forget_gate, input_gate and cell_new_input
     # all other the gates is output gates
+    if len(gates_params) < 4:
+        raise ValueError('LSTM algorithm need more than 4 gates to proceed. '
+                         'By default, the first gate is forget gate, then, '
+                         'input gate and cell_update. All the gates after '
+                         'that will be applied as output gate to the new cell '
+                         'state and sum up to new hidden state.')
+
+    # sum of precomputed activated input and hidden_previous
+    gates = [i + j for i, j in zip(in_precompute, hid_precompute)]
 
     # Compute cell-feedback connection to previous cell state
-    incomming_gates = [g + cell_prev * p[-1] # W_cell is at -1 index
-                       for g, p in zip(gates, gates_params)
-                       if p[-1] is not None]
+    # W_cell is at -1 index
+    incomming_gates = [g + cell_prev * p[-1] if p[-1] is not None else g
+                       for g, p in zip(gates[:3], gates_params[:3])]
     # Apply nonlinearities for incoming gates
     incomming_gates = [p[-2](g) # nonlinearity is at -2 index
-                       if p[-2] is not None else g
-                       for g, p in zip(gates, gates_params)]
+                       for g, p in zip(gates[:3], gates_params[:3])]
 
     # calculate new cells: c_t = f_t * c_prev + i_t * c_in
     cell = (incomming_gates[0] * cell_prev +
             incomming_gates[1] * incomming_gates[2])
 
     # Compute cell-feedback connection to previous cell state
-    outgoing_gates = [g + cell * p[-1]
-                      if p[-1] is not None else g
+    outgoing_gates = [g + cell * p[-1] if p[-1] is not None else g
                       for g, p in zip(gates[3:], gates_params[3:])]
     # Apply nonlinearities for outgoing gates
     outgoing_gates = [p[-2](g) # nonlinearity is at -2 index
-                      if p[-2] is not None else g
                       for g, p in zip(gates[3:], gates_params[3:])]
-    hid = sum(i * nonlinearity(cell) for i in outgoing_gates)
+    if len(outgoing_gates) > 0:
+        hid = sum(i * nonlinearity(cell) for i in outgoing_gates)
+    else:
+        hid = nonlinearity(cell)
     return hid, cell
 
 
 def gru_algorithm(hid_prev, out_prev, cell_prev,
-                  gates, gates_params, nonlinearity):
-    pass
+                  in_precompute, hid_precompute,
+                  gates_params, nonlinearity):
+    if len(gates_params) < 3:
+        raise ValueError('GRU algorithm need more than 3 gates to proceed. '
+                         'By default, forget and hidden_update are the last '
+                         '2 gates, and all the gates before them are update '
+                         'gates. Hence, we can have infinite number of update '
+                         'gates and they will be summed up to give final new '
+                         'hidden state.')
+    # ====== update gate ====== #
+    update_gates = []
+    for i, g in enumerate(gates_params[:-2]):
+        gate = in_precompute[i] + hid_precompute[i]
+        # activate nonlinearity
+        gate = g[-2](gate)
+        update_gates.append(gate)
+
+    # ====== reset gate ====== #
+    reset_gate = in_precompute[-2] + hid_precompute[-2]
+    # activate nonlinearity
+    reset_gate = gates_params[-2][-2](reset_gate)
+
+    # ====== hidden update ====== #
+    hid_update = in_precompute[-1] + reset_gate * hid_precompute[-1]
+    hid_update = gates_params[-1][-2](hid_update)
+
+    # ====== update new cell state ====== #
+    hid = None
+    for g in update_gates:
+        if hid is None:
+            hid = (1. - g) * hid_prev + g * hid_update
+        else:
+            hid = hid + (1. - g) * hid_prev + g * hid_update
+    return hid, cell_prev
 
 
 def simple_algorithm(hid_prev, out_prev, cell_prev,
-                     gates, gates_params, nonlinearity):
+                     in_precompute, hid_precompute,
+                     gates_params, nonlinearity):
     ''' This algorithm take sum of all gated previous cell'''
-
+    gates = [i + j for i, j in zip(in_precompute, hid_precompute)]
     # Compute cell-feedback connection to previous cell state
-    gates = [g + cell_prev * p[-1] # W_cell is at -1 index
-             if p[-1] is not None else g
+    # W_cell is at -1 index
+    gates = [g + cell_prev * p[-1] if p[-1] is not None else g
              for g, p in zip(gates, gates_params)]
     # Apply nonlinearities for incoming gates
-    gates = [p[-2](g) # nonlinearity is at -2 index
-             if p[-2] is not None else g
-             for g, p in zip(gates, gates_params)]
-    cell = sum(cell_prev * i for i in gates)
-    hid = nonlinearity(cell)
+    # nonlinearity is at -2 index
+    gates = [p[-2](g) for g, p in zip(gates, gates_params)]
+
+    if len(gates) > 0:
+        cell = sum(cell_prev * i for i in gates)
+    else:
+        cell = cell_prev
+
+    if cell is not None:
+        hid = nonlinearity(cell)
+    else:
+        hid = hid_prev
     return hid, cell
+
 
 # ===========================================================================
 # Recurrent implementation
 # ===========================================================================
-
-
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
@@ -184,9 +233,12 @@ class Cell(OdinFunction):
         if algorithm is None:
             algorithm = simple_algorithm
         if not hasattr(algorithm, '__call__') or \
-            algorithm.func_code.co_argcount != 6:
+            algorithm.func_code.co_argcount != 7:
             self.raise_arguments('Algorithm function must be callable and '
-                                 'has 6 input arguments.')
+                                 'has 7 input arguments, includes:hid_prev, '
+                                 'out_prev, cell_prev, in_precompute, '
+                                 'hid_precompute, gates_params, nonlinearity.')
+
         self.algorithm = algorithm
         self.memory = memory
         # store all gate informations
@@ -226,7 +278,7 @@ class Cell(OdinFunction):
 
         if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
             nonlinearity = T.sigmoid
-        # gate contain W_in, W_hid, b, nonlinearity, W_cell (optional)
+        # gate contain: W_in, W_hid, b, nonlinearity, W_cell (optional)
         self._gates.append(
             [W_in, W_hid, b, nonlinearity, W_cell])
         return self
@@ -279,7 +331,7 @@ class Cell(OdinFunction):
         X = T.dot(X, self.W_in_stacked) + self.b_stacked
         return X
 
-    def step(self, inputs, hid_prev, out_prev, cell_prev):
+    def step(self, input_n, hid_prev, out_prev, cell_prev):
         '''
         Parameters
         ----------
@@ -299,20 +351,25 @@ class Cell(OdinFunction):
             for each input in given list, create a new hidden state and
             cell state
         '''
-        cells = []
-        # each inputs give 1 cells state
-        for x in inputs:
-            # Calculate gates pre-activations and slice
-            gates = x + T.dot(hid_prev, self.W_hid_stacked)
+        # Calculate gates pre-activations and slice
+        if len(self._gates) > 0:
+            in_precompute = [self._slice_w(input_n, i)
+                             for i in range(len(self._gates))]
+        else:
+            in_precompute = [input_n]
 
+        if hasattr(self, 'self.W_hid_stacked'):
             # Extract the pre-activation gate values
-            gates = [self._slice_w(gates, i) for i in range(len(self._gates))]
+            hid_precompute = T.dot(hid_prev, self.W_hid_stacked)
+            hid_precompute = [self._slice_w(hid_precompute, i)
+                              for i in range(len(self._gates))]
+        else: # manually calculate pre-activation for each gates
+            hid_precompute = [T.dot(hid_prev, p[1])
+                              for p in self._gates]
 
-            cells.append(
-                self.algorithm(hid_prev, out_prev, cell_prev,
-                               gates, self._gates, self.nonlinearity)
-            )
-        return cells
+        return self.algorithm(hid_prev, out_prev, cell_prev,
+                              in_precompute, hid_precompute,
+                              self._gates, self.nonlinearity)
 
     # ==================== Override functions ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
@@ -327,10 +384,18 @@ class Cell(OdinFunction):
                         globals, trainable, regularizable)
         return params
 
+    @property
+    def input_var(self):
+        if self.memory:
+            return super(Cell, self).input_var
+        return []
+
     # ==================== Abstract function ==================== #
     @property
     def output_shape(self):
-        return self.input_shape
+        if self.memory:
+            return self.input_shape
+        return []
 
     def __call__(self, training=False):
         ''' Return the initial states of cell '''
@@ -780,19 +845,27 @@ class Recurrent(OdinFunction):
         if self.hidden_to_output is not None:
             params += self.hidden_to_output.get_params(
                 globals, trainable, regularizable)
+        # ====== cells ====== #
+        for c in self._cells:
+            params += c.get_params(globals, trainable, regularizable)
         return T.np_ordered_set(params).tolist()
 
     @property
     def input_var(self):
-        return super(Recurrent, self).input_var
+        placeholder = super(Recurrent, self).input_var
+        for c in self._cells:
+            placeholder += c.input_var
+        return T.np_ordered_set(placeholder).tolist()
 
     # ==================== Recurrent methods ==================== #
     def add_cell(self, cell):
         if not isinstance(cell, Cell):
             self.raise_arguments('Only accept instance of odin.nnet.Cell.')
             return self
-        # check cell.output_shape is the shape of hidden states
-        cell_output_shape = cell.output_shape
+        # check cell.output_shape is the shape of hidden states,
+        # input_shape = output_shape for cell, but GRUCell has no output_shape
+        # hence, we check the input_shape
+        cell_output_shape = cell.input_shape
         for i in cell_output_shape:
             if not _check_shape_match(i, (None,) + self.hidden_dims):
                 self.raise_arguments('Cell output_shape must match the shape '
@@ -841,7 +914,11 @@ class Recurrent(OdinFunction):
         inputs = self.get_inputs(training)
         outputs = []
         n_incoming = len(self._incoming_mask[::2])
-
+        # roots can have multiple hierarchical, hence, we don't care about
+        # OdinFunction, only need the input_variables
+        n_hidden_to_hidden_inputs = sum(len([j for j in i.incoming
+                                             if not isinstance(j, OdinFunction)])
+                                        for i in self.hidden_to_hidden.get_roots())
         # hidden init
         if isinstance(self.hidden_init, OdinFunction):
             # don't need to check number of returned values equal to 1,
@@ -911,8 +988,7 @@ class Recurrent(OdinFunction):
                 X = T.reshape(X, (seq_len * num_batch,) + trailing_dims)
                 # call the input_to_hidden OdinFunction, we must go to the roots
                 # and set the intermediate inputs
-                for i in self.input_to_hidden.get_roots():
-                    i.set_intermediate_inputs([X])
+                self.input_to_hidden.set_intermediate_inputs(X, root=True)
                 X = self.input_to_hidden(training)[0]
                 # Reshape back to (seq_len, batch_size, trailing dimensions...)
                 trailing_dims = tuple(T.shape(X)[n]
@@ -923,7 +999,8 @@ class Recurrent(OdinFunction):
                 X = [i.precompute(X) for i in self._cells]
             else:
                 X = [X]
-            X = T.np_ordered_set(X).tolist() # make sure no duplicate
+            # make sure no duplicate, and no None value
+            X, Cinput_map = as_index_map(self._cells, X)
 
             # ====== check initialization of states (hidden, output) ====== #
             # The code below simply repeats self.hid_init num_batch times in
@@ -952,14 +1029,14 @@ class Recurrent(OdinFunction):
             for i, j in zip(self._cells, Cinit):
                 if j is None:
                     pass
-                elif i.output_shape[idx][0] == 1:
+                elif i.output_shape[idx % len(i.output_shape)][0] == 1:
                     # in this case, the OdinFunction only return 1 hidden_init
                     # vector, need to repeat it for each batch
                     dot_dims = (list(range(1, T.ndim(j) - 1)) + [0, T.ndim(j) - 1])
                     j = T.dot(T.ones((num_batch, 1)), T.dimshuffle(j, dot_dims))
                 tmp.append(j)
             # NO duplicated and None
-            Cinit = T.np_ordered_set([i for i in tmp if i is not None]).tolist()
+            Cinit, Cinit_map = as_index_map(self._cells, tmp)
 
             # ====== check mask and form inputs to scan ====== #
             # only 1 input, 1 mask, 1 hidden, 1 output at a time
@@ -974,13 +1051,17 @@ class Recurrent(OdinFunction):
                 sequences += X
                 mask_idx = None
             hidden_idx = len(sequences)
+            # output_idx
             outputs_info = [Hinit] if Oinit is None else [Hinit, Oinit]
             output_idx = hidden_idx + 1 if Oinit is not None else None
+            # cell_idx
+            cell_idx = len(sequences) + len(outputs_info)
             outputs_info += Cinit
-            cell_idx = list(range(output_idx + 1, output_idx + 1 + len(Cinit)))
-            print(sequences, outputs_info)
-            print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx)
-            exit()
+            # print(sequences, outputs_info)
+            # print(X, Cinput_map)
+            # print(Cinit, Cinit_map)
+            # print(len(sequences), len(outputs_info))
+            # print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx)
 
             # ====== Create single recurrent computation step function ====== #
             def step(*args):
@@ -990,20 +1071,63 @@ class Recurrent(OdinFunction):
                 out_prev = None
                 if output_idx is not None:
                     out_prev = args[output_idx]
-                cell_prev = None
-                if len(cell_idx) > 0:
-                    cell_prev = [args[i] for i in cell_idx]
+                cell_prev = [i for i in args[cell_idx:]]
+                cell_to_hid = []
+                cell_to_cell = []
 
-                # Compute the hidden-to-hidden activation, we must go to the
-                # roots and set the intermediate inputs
-                for i in self.hidden_to_hidden.get_roots():
-                    i.set_intermediate_inputs([hid_prev])
-                hid = self.hidden_to_hidden(training)[0]
+                # TODO: decide to do hidden_to_hidden transform first or
+                # calculating cell activation first
 
-                # If the dot product is precomputed then add it, otherwise
-                # calculate the input_to_hidden values and add them
-                hid = hid + input_n # plus transformed input
-                # activate hidden
+                # activate each cell one-by-one
+                for c in self._cells:
+                    # get input to cell based on Cell_input_map
+                    c_in = Cinput_map[c]
+                    if c_in is not None:
+                        c_in = input_n[c_in]
+                    # get cell previous state based on Cell_init_map
+                    c_prev = Cinit_map[c]
+                    if c_prev is not None:
+                        c_prev = cell_prev[c_prev]
+                    # outputs are (hid_new, cell_new)
+                    c = c.step(c_in, hid_prev, out_prev, c_prev)
+                    cell_to_hid.append(c[0])
+                    cell_to_cell.append(c[1])
+                # no None value in cell_to_cell
+                cell_to_cell = [i for i in cell_to_cell if i is not None]
+                if len(cell_to_cell) != len(cell_prev):
+                    self.raise_arguments('The number of returned new cell states'
+                                         ' is different from number of previous'
+                                         ' cell states.')
+
+                # cell calculation give news hidden states
+                if len(cell_to_hid) > 0:
+                    # if hidden_to_hidden accept multiple inputs
+                    if n_hidden_to_hidden_inputs == len(cell_to_hid):
+                        self.hidden_to_hidden.set_intermediate_inputs(
+                            cell_to_hid, root=True)
+                        hid = self.hidden_to_hidden(training)[0]
+                    else: # fit each cell_hidden_state to hidden_to_hidden
+                        hid = []
+                        for h in cell_to_hid:
+                            self.hidden_to_hidden.set_intermediate_inputs(
+                                h, root=True)
+                            hid.append(self.hidden_to_hidden(training)[0])
+                        # naive approach, sum all of them
+                        hid = sum(i for i in hid)
+                else: # otherwise do normal recurrent calculation
+                    # Compute the hidden-to-hidden activation, we must go to the
+                    # roots and set the intermediate inputs
+                    self.hidden_to_hidden.set_intermediate_inputs(
+                        hid_prev, root=True)
+                    hid = self.hidden_to_hidden(training)[0]
+
+                    # If the dot product is precomputed then add it, otherwise
+                    # calculate the input_to_hidden values and add them
+                    hid = hid + input_n # plus transformed input
+                    # activate hidden
+
+                # final hidden state is activated one more time, you can use
+                # T.linear to stop double nonlinear during recurrent
                 hid = self.nonlinearity(hid)
 
                 if mask_idx is not None:
@@ -1011,16 +1135,19 @@ class Recurrent(OdinFunction):
                     # hidden state; proceed normally for any input with mask 1.
                     mask_n = args[mask_idx]
                     hid = T.switch(mask_n, hid, hid_prev)
+                    cell_to_cell = [T.switch(mask_n, c_new, c_prev)
+                                    for c_prev, c_new in zip(cell_prev, cell_to_cell)]
 
+                # not hidden_to_output connection is specified
                 if output_idx is None:
-                    return [hid]
+                    return [hid] + cell_to_cell
 
                 # Compute the hidden-to-output activation, we must go to the
                 # roots and set the intermediate inputs
-                for i in self.hidden_to_output.get_roots():
-                    i.set_intermediate_inputs([hid])
+                self.hidden_to_output.set_intermediate_inputs(hid, root=True)
                 out = self.hidden_to_output(training)[0]
-                return [hid, out]
+
+                return [hid, out] + cell_to_cell
 
             # ====== create loop or scan funciton ====== #
             if self.unroll_scan:
@@ -1040,10 +1167,13 @@ class Recurrent(OdinFunction):
                     outputs_info=outputs_info,
                     go_backwards=self.backwards,
                     truncate_gradient=self.gradient_steps)[0]
+
             # if hidden_to_output is not None, return the output instead of
             # hidden states
             if output_idx is not None:
-                out = out[-1]
+                out = out[1] # output
+            else:
+                out = out[0] # hidden
 
             # When it is requested that we only return the final sequence step,
             # we need to slice it out immediately after scan is applied

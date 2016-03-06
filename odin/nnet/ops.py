@@ -5,6 +5,11 @@ import numpy as np
 from .. import tensor as T
 from ..base import OdinFunction
 
+__all__ = [
+    'Ops',
+    'Get'
+]
+
 
 class Ops(OdinFunction):
 
@@ -98,4 +103,32 @@ class Switch(object):
 
     def __init__(self, training, predicting):
         super(Switch, self).__init__()
-        self.arg = arg
+
+
+class Get(OdinFunction):
+
+    """docstring for Get"""
+
+    def __init__(self, incoming, indices, **kwargs):
+        super(Get, self).__init__(incoming, unsupervised=False, **kwargs)
+        if not isinstance(indices, (tuple, list)):
+            indices = [indices]
+        # only OdinFunction can return multiple outputs
+        n_inputs = self.n_inputs
+        for i in indices:
+            if i >= n_inputs:
+                self.raise_arguments('Index can not be greater or equal to the '
+                                     'number of inputs, in this case, index={} '
+                                     '>= n_inputs={}'.format(i, n_inputs))
+        self.indices = indices
+
+    @property
+    def output_shape(self):
+        return [self.input_shape[i] for i in self.indices]
+
+    def __call__(self, training=False):
+        inputs = self.get_inputs(training)
+        outputs = [inputs[i] for i in self.indices]
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
+        return outputs

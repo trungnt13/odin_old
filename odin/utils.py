@@ -967,3 +967,28 @@ def as_tuple(x, N, t=None):
                          "with length {0}, got {1} instead".format(N, x))
 
     return X
+
+
+def as_index_map(keys, values):
+    '''
+    Return
+    ------
+    list : a list of `values` that is not None and non-duplicated,
+    map : but also build index map that which key to index of which value
+
+    Example
+    >>> print(_build_index_map([1, 2, 3, 4], [1, 1, None, 2]))
+    ... # ([1, 2], {1: 0, 2: 0, 3: None, 4: 1})
+
+    '''
+    seen = defaultdict(lambda: -1)
+    keys_to_index = {}
+    ret_values = []
+    for k, v in zip(keys, values):
+        if v is None:
+            seen[v] = None
+        elif seen[v] < 0:
+            ret_values.append(v)
+            seen[v] = len(ret_values) - 1
+        keys_to_index[k] = seen[v]
+    return ret_values, keys_to_index
