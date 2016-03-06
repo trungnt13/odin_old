@@ -8,6 +8,7 @@ from __future__ import print_function, division
 
 from six.moves import zip_longest, zip, range
 import numpy as np
+from collections import defaultdict
 
 from .. import tensor as T
 from ..base import OdinFunction
@@ -162,11 +163,13 @@ class Cell(OdinFunction):
         self.num_units = shape[-1]
 
         # ====== check input_dims ====== #
+        if isinstance(input_dims, (int, float, long)):
+            input_dims = (int(input_dims),)
         self.input_dims = input_dims
-        if any(i is None for i in self.input_dims[2:]):
-            self.raise_arguments('Incoming shape to cell cannot contain None'
-                                 ' dimension, it must contain input_dims and'
-                                 ' number of cell units as the last dimension.')
+        if any(i is None for i in self.input_dims):
+            self.raise_arguments('Input shape to cell cannot contain None'
+                                 ' dimension, it must contain input_dims'
+                                 ' excluded batch_size and seq_len dimension.')
         self.learnable = learnable
         for i in self.incoming:
             if T.is_variable(i):
@@ -198,7 +201,7 @@ class Cell(OdinFunction):
         # name contain the ID of gate within the cells
         name = str(len(self._gates)) if len(name) == 0 \
             else name + '_' + str(len(self._gates))
-        num_inputs = np.prod(self.input_dims[2:])
+        num_inputs = np.prod(self.input_dims)
         num_units = self.num_units
 
         W_in = self.create_params(
@@ -249,6 +252,9 @@ class Cell(OdinFunction):
         X : precomputed input
 
         '''
+        if len(self._gates) == 0:
+            return X
+
         # Stack input weight matrices into a (num_inputs, 4*num_units)
         # matrix, which speeds up computation
         self.W_in_stacked = T.concatenate(
@@ -342,21 +348,22 @@ class GRUCell(Cell):
 
     """docstring for GRUCell"""
 
-    def __init__(self, hid_init, input_dims,
+    def __init__(self, hid_shape, input_dims,
                  nonlinearity=T.tanh,
+                 algorithm=gru_algorithm,
                  **kwargs):
-        if isinstance(hid_init, (int, float, long)):
-            hid_init = (None, int(hid_init))
-        elif isinstance(hid_init, (tuple, list)) and \
-        isinstance(hid_init[-1], (int, float, long)):
+        if isinstance(hid_shape, (int, float, long)):
+            hid_shape = (None, int(hid_shape))
+        elif isinstance(hid_shape, (tuple, list)) and \
+        isinstance(hid_shape[-1], (int, float, long)):
             pass
         else:
-            self.raise_arguments('hid_init must be an integer - number of '
+            self.raise_arguments('hid_shape must be an integer - number of '
                                  'hidden units or shape tuple which is the '
                                  'shape of hidden state.')
-        super(GRUCell, self).__init__(hid_init, input_dims, learnable=False,
+        super(GRUCell, self).__init__(hid_shape, input_dims, learnable=False,
                  W_cell=None, nonlinearity=nonlinearity,
-                 algorithm=gru_algorithm, memory=False,
+                 algorithm=algorithm, memory=False,
                  **kwargs)
 
 
@@ -543,6 +550,7 @@ class Recurrent(OdinFunction):
                  unroll_scan=False,
                  only_return_final=False,
                  **kwargs):
+
         # ====== validate arguments ====== #
         if not isinstance(mask, (tuple, list)) or \
            isinstance(mask[-1], (int, float, long)):
@@ -551,6 +559,7 @@ class Recurrent(OdinFunction):
         if not isinstance(incoming, (tuple, list)) or \
            isinstance(incoming[-1], (int, float, long)):
             incoming = [incoming]
+
         # ====== process incoming ====== #
         self._incoming_mask = [] # list of [inc_idx, mask_idx, inc_idx, ...]
         incoming_list = []
@@ -564,6 +573,7 @@ class Recurrent(OdinFunction):
                 self._incoming_mask.append(None)
         super(Recurrent, self).__init__(
             incoming_list, unsupervised=False, **kwargs)
+
         # ====== parameters ====== #
         self.precompute_input = True
         self.input_to_hidden = input_to_hidden
@@ -574,7 +584,8 @@ class Recurrent(OdinFunction):
 
         self.gradient_steps = -1
         self.only_return_final = only_return_final
-        # ====== validate input_dim ====== #
+
+        # ====== validate input_dims ====== #
         self.input_dims = self.input_shape[0][2:]
         for i in self._incoming_mask[::2]: # incoming is the second
             if self.input_shape[i][2:] != self.input_dims:
@@ -582,6 +593,7 @@ class Recurrent(OdinFunction):
                                      'dimension must be the same for all inputs,'
                                      ' %s != %s' % (str(self.input_shape[i][2:]),
                                      str(self.input_dims)))
+
         # ====== check hidden_to_hidden ====== #
         if isinstance(hidden_to_hidden, (int, long, float)):
             hidden_to_hidden = Dense((None, int(hidden_to_hidden)),
@@ -612,6 +624,7 @@ class Recurrent(OdinFunction):
                                  "but hidden_to_hidden.output_shape={} and "
                                  "hidden_to_hidden.input_shape={}".format(
                                      output_shape, input_shape))
+
         # ====== check input_to_hidden ====== #
         if input_to_hidden == 'auto':
             input_to_hidden = Dense((None,) + self.input_dims,
@@ -662,12 +675,15 @@ class Recurrent(OdinFunction):
             # but don't check a dimension if it's None for either shape
             if not _check_shape_match(input_to_hidden.output_shape[0],
                                       hidden_to_hidden.output_shape[0]):
-                raise ValueError("The output shape for input_to_hidden and "
-                                 "hidden_to_hidden must be equal after the first "
-                                 "dimension, but input_to_hidden.output_shape={} "
-                                 "and hidden_to_hidden.output_shape={}".format(
-                                     input_to_hidden.output_shape,
-                                     hidden_to_hidden.output_shape))
+                self.log("The output shape for input_to_hidden and "
+                         "hidden_to_hidden must be equal after the first "
+                         "dimension, but input_to_hidden.output_shape={} "
+                         "and hidden_to_hidden.output_shape={}. Note:You might "
+                         "use cell to transform the block input back to "
+                         "hidden dimensions!".format(
+                             input_to_hidden.output_shape,
+                             hidden_to_hidden.output_shape), 30)
+
         # ====== output to hidden ====== #
         # if just shape tuple or an int, project the hidden to given dimensions
         if isinstance(hidden_to_output, (int, long, float)):
@@ -714,6 +730,7 @@ class Recurrent(OdinFunction):
                                      "hidden_to_hidden.output_shape={} and "
                                      "hidden_to_output.input_shape={}".format(
                                          output_shape, input_shape))
+
         # ====== Assign information ====== #
         self.input_to_hidden = input_to_hidden
         self.hidden_to_hidden = hidden_to_hidden
@@ -733,6 +750,8 @@ class Recurrent(OdinFunction):
                 self.create_params, learn_init, name='out_init')
         self.output_init = output_init
         self.learn_init = learn_init
+        # store all cell added to this Recurrent function
+        self._cells = []
 
     # ==================== Override methods of OdinFunction ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
@@ -770,9 +789,38 @@ class Recurrent(OdinFunction):
     # ==================== Recurrent methods ==================== #
     def add_cell(self, cell):
         if not isinstance(cell, Cell):
-            self.log('Only accept instance of odin.nnet.Cell, ignored given '
-                     'cell.', 30)
+            self.raise_arguments('Only accept instance of odin.nnet.Cell.')
             return self
+        # check cell.output_shape is the shape of hidden states
+        cell_output_shape = cell.output_shape
+        for i in cell_output_shape:
+            if not _check_shape_match(i, (None,) + self.hidden_dims):
+                self.raise_arguments('Cell output_shape must match the shape '
+                                     'of hidden state, but '
+                                     'cell.output_shape={} and '
+                                     'hidden_dims={}'.format(
+                                         i, (None,) + self.hidden_dims))
+            if i[0] != 1 and i[0] is not None:
+                self.raise_arguments('Cell initialization can only have first '
+                                     'dimension equal to 1 or None.')
+        # check cell.input_dims is the same dimensions with self.input_dims
+        input_dims = self.input_dims
+        if self.input_to_hidden is not None:
+            input_dims = self.input_to_hidden.output_shape[0][1:]
+        # np.prod because cell.input_dims can be flattened version
+        if (np.prod(input_dims) != np.prod(cell.input_dims) and
+            not _check_shape_match((None,) + cell.input_dims,
+                                  (None,) + input_dims)):
+            self.raise_arguments('Cell input_dims must match the input_dims '
+                                 'of this Recurrent or the output_shape of '
+                                 'input_to_hidden (if not None), but '
+                                 'cell.input_dims={} and '
+                                 'self.input_dims={}'.format(
+                                 cell.input_dims, input_dims))
+        # everything ok add the cell
+        if cell in self._cells:
+            self.raise_arguments('Cell cannot be duplicated in Recurrent function.')
+        self._cells.append(cell)
         return self
 
     # ==================== Abstract methods ==================== #
@@ -792,28 +840,54 @@ class Recurrent(OdinFunction):
         # ====== prepare inputs ====== #
         inputs = self.get_inputs(training)
         outputs = []
+        n_incoming = len(self._incoming_mask[::2])
+
         # hidden init
         if isinstance(self.hidden_init, OdinFunction):
+            # don't need to check number of returned values equal to 1,
+            # or n_incoming, we already checked at _validate_initialization
             hid_init = self.hidden_init(training)
         else:
             hid_init = [self.hidden_init]
         if len(hid_init) == 1:
-            hid_init = hid_init * len(self._incoming_mask[::2])
+            hid_init = hid_init * n_incoming
+
         # output init
         out_init = [None]
         if self.hidden_to_output is not None:
             if isinstance(self.output_init, OdinFunction):
+                # don't need to check number of returned values equal to 1,
+                # or n_incoming, we already checked at _validate_initialization
                 out_init = self.output_init(training)
             else:
                 out_init = [self.output_init]
         if len(out_init) == 1:
-            out_init = out_init * len(self._incoming_mask[::2])
+            out_init = out_init * n_incoming
+
+        # cell init
+        cell_init = []
+        for i in self._cells:
+            i = i(training)
+            # each cells will give number of initialization equal to number
+            # of incoming
+            if len(i) == 0:
+                cell_init.append([None] * n_incoming)
+            elif len(i) == 1:
+                cell_init.append(i * n_incoming)
+            elif len(i) == n_incoming:
+                cell_init.append(i)
+            else:
+                self.raise_arguments('The number of initialization returned '
+                                     'by cell can be 0, 1, or n_incoming, but '
+                                     'n_cell_init={} and n_incoming={}.'.format(
+                                         len(i), n_incoming))
+        cell_init = [[j[i] for j in cell_init] for i in range(n_incoming)]
 
         # ====== create recurrent for each input ====== #
-        for idx, (X, Xmask, Hinit, Oinit) in enumerate(
+        for idx, (X, Xmask, Hinit, Oinit, Cinit) in enumerate(
                 zip(self._incoming_mask[::2],
                     self._incoming_mask[1::2],
-                    hid_init, out_init)):
+                    hid_init, out_init, cell_init)):
             n_steps = self.input_shape[X][1]
             X = inputs[X]
             if Xmask is not None:
@@ -844,6 +918,13 @@ class Recurrent(OdinFunction):
                 trailing_dims = tuple(T.shape(X)[n]
                                       for n in range(1, T.ndim(X)))
                 X = T.reshape(X, (seq_len, num_batch) + trailing_dims)
+            # calculate cell precompute_input
+            if len(self._cells) > 0:
+                X = [i.precompute(X) for i in self._cells]
+            else:
+                X = [X]
+            X = T.np_ordered_set(X).tolist() # make sure no duplicate
+
             # ====== check initialization of states (hidden, output) ====== #
             # The code below simply repeats self.hid_init num_batch times in
             # its first dimension.  Turns out using a dot product and a
@@ -857,7 +938,7 @@ class Recurrent(OdinFunction):
                             [0, T.ndim(Hinit) - 1])
                 Hinit = T.dot(T.ones((num_batch, 1)),
                               T.dimshuffle(Hinit, dot_dims))
-            # we do the same for self.out_init
+            # we do the same for Oinit
             if self.hidden_to_output is not None:
                 if not isinstance(self.output_init, OdinFunction) or \
                     (isinstance(self.output_init, OdinFunction) and
@@ -866,27 +947,52 @@ class Recurrent(OdinFunction):
                                 [0, T.ndim(Oinit) - 1])
                     Oinit = T.dot(T.ones((num_batch, 1)),
                                   T.dimshuffle(Oinit, dot_dims))
+            # we do the same for Cinit
+            tmp = []
+            for i, j in zip(self._cells, Cinit):
+                if j is None:
+                    pass
+                elif i.output_shape[idx][0] == 1:
+                    # in this case, the OdinFunction only return 1 hidden_init
+                    # vector, need to repeat it for each batch
+                    dot_dims = (list(range(1, T.ndim(j) - 1)) + [0, T.ndim(j) - 1])
+                    j = T.dot(T.ones((num_batch, 1)), T.dimshuffle(j, dot_dims))
+                tmp.append(j)
+            # NO duplicated and None
+            Cinit = T.np_ordered_set([i for i in tmp if i is not None]).tolist()
 
             # ====== check mask and form inputs to scan ====== #
-            input_idx = 0
-            mask_idx = 1
+            # only 1 input, 1 mask, 1 hidden, 1 output at a time
+            # but cells can be multiple
+            input_idx = list(range(len(X)))
+            mask_idx = len(input_idx)
+            sequences = []
             if Xmask is not None:
                 Xmask = T.dimshuffle(Xmask, (1, 0, 'x'))
-                sequences = [X, Xmask]
+                sequences += X + [Xmask]
             else:
-                sequences = [X]
+                sequences += X
                 mask_idx = None
             hidden_idx = len(sequences)
             outputs_info = [Hinit] if Oinit is None else [Hinit, Oinit]
             output_idx = hidden_idx + 1 if Oinit is not None else None
+            outputs_info += Cinit
+            cell_idx = list(range(output_idx + 1, output_idx + 1 + len(Cinit)))
+            print(sequences, outputs_info)
+            print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx)
+            exit()
 
             # ====== Create single recurrent computation step function ====== #
             def step(*args):
-                input_n = args[input_idx]
+                # preprocess arguments
+                input_n = [args[i] for i in input_idx]
                 hid_prev = args[hidden_idx]
                 out_prev = None
                 if output_idx is not None:
                     out_prev = args[output_idx]
+                cell_prev = None
+                if len(cell_idx) > 0:
+                    cell_prev = [args[i] for i in cell_idx]
 
                 # Compute the hidden-to-hidden activation, we must go to the
                 # roots and set the intermediate inputs
