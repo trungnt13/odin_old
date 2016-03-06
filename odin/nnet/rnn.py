@@ -25,11 +25,10 @@ __all__ = [
     "simple_algorithm"
 ]
 
+
 # ===========================================================================
 # Helper
 # ===========================================================================
-
-
 def _check_shape_match(shape1, shape2):
     ''' Check that shape1 is the same as shape2 but don't check a dimension
     if it's None for either shape
@@ -439,7 +438,6 @@ class GRUCell(Cell):
 # ===========================================================================
 # Main Recurrent algorithm
 # ===========================================================================
-
 class Recurrent(OdinFunction):
 
     """ Adapted implementation from Lasagne for Odin with many improvement
