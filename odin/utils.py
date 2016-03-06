@@ -12,7 +12,7 @@ import types
 import time
 from collections import defaultdict, OrderedDict
 
-from six.moves import zip, range
+from six.moves import zip, range, zip_longest
 from six import string_types
 
 from . import tensor as T
@@ -984,7 +984,7 @@ def as_index_map(keys, values):
     seen = defaultdict(lambda: -1)
     keys_to_index = {}
     ret_values = []
-    for k, v in zip(keys, values):
+    for k, v in zip_longest(keys, values):
         if v is None:
             seen[v] = None
         elif seen[v] < 0:

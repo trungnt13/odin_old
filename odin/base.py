@@ -293,6 +293,10 @@ class OdinFunction(OdinObject):
                 inputs = inputs * n_inputs
             self._intermediate_inputs = inputs
         else:
+            self.log("You changed the root inputs, we will reset the whole "
+                     "function's tree for it takes effect. Bear in mind this "
+                     "situation when you used set_intermediate_inputs.", 20)
+            self.reset_cache(True)
             for i in self.get_roots():
                 i.set_intermediate_inputs(inputs)
         return self

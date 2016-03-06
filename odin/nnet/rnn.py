@@ -120,7 +120,8 @@ def lstm_algorithm(hid_prev, out_prev, cell_prev,
     outgoing_gates = [p[-2](g) # nonlinearity is at -2 index
                       for g, p in zip(gates[3:], gates_params[3:])]
     if len(outgoing_gates) > 0:
-        hid = sum(i * nonlinearity(cell) for i in outgoing_gates)
+        hid = sum(i * nonlinearity(cell)
+                  for i in outgoing_gates) / len(outgoing_gates)
     else:
         hid = nonlinearity(cell)
     return hid, cell
@@ -177,7 +178,7 @@ def simple_algorithm(hid_prev, out_prev, cell_prev,
     gates = [p[-2](g) for g, p in zip(gates, gates_params)]
 
     if len(gates) > 0:
-        cell = sum(cell_prev * i for i in gates)
+        cell = sum(cell_prev * i for i in gates) / len(gates)
     else:
         cell = cell_prev
 
@@ -962,9 +963,10 @@ class Recurrent(OdinFunction):
 
         # ====== create recurrent for each input ====== #
         for idx, (X, Xmask, Hinit, Oinit, Cinit) in enumerate(
-                zip(self._incoming_mask[::2],
-                    self._incoming_mask[1::2],
-                    hid_init, out_init, cell_init)):
+            zip(self._incoming_mask[::2],
+                self._incoming_mask[1::2],
+                hid_init, out_init, cell_init)):
+            # if idx == 0: continue
             n_steps = self.input_shape[X][1]
             X = inputs[X]
             if Xmask is not None:
@@ -1029,6 +1031,8 @@ class Recurrent(OdinFunction):
             for i, j in zip(self._cells, Cinit):
                 if j is None:
                     pass
+                # the number of cell's output_shape maybe different from the
+                # number of inputs to Recurrent
                 elif i.output_shape[idx % len(i.output_shape)][0] == 1:
                     # in this case, the OdinFunction only return 1 hidden_init
                     # vector, need to repeat it for each batch
@@ -1057,7 +1061,6 @@ class Recurrent(OdinFunction):
             # cell_idx
             cell_idx = len(sequences) + len(outputs_info)
             outputs_info += Cinit
-            # print(sequences, outputs_info)
             # print(X, Cinput_map)
             # print(Cinit, Cinit_map)
             # print(len(sequences), len(outputs_info))
@@ -1112,8 +1115,8 @@ class Recurrent(OdinFunction):
                             self.hidden_to_hidden.set_intermediate_inputs(
                                 h, root=True)
                             hid.append(self.hidden_to_hidden(training)[0])
-                        # naive approach, sum all of them
-                        hid = sum(i for i in hid)
+                        # naive approach, mean all of them
+                        hid = sum(i for i in hid) / len(hid)
                 else: # otherwise do normal recurrent calculation
                     # Compute the hidden-to-hidden activation, we must go to the
                     # roots and set the intermediate inputs
@@ -1123,7 +1126,8 @@ class Recurrent(OdinFunction):
 
                     # If the dot product is precomputed then add it, otherwise
                     # calculate the input_to_hidden values and add them
-                    hid = hid + input_n # plus transformed input
+                    for i in input_n:
+                        hid = hid + i # plus transformed input
                     # activate hidden
 
                 # final hidden state is activated one more time, you can use
