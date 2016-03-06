@@ -141,6 +141,24 @@ class FunctionsTest(unittest.TestCase):
             y = np.ones((128, 28, 12))
             y1 = np.ones((256, 20, 12))
 
+        # ====== create cells ====== #
+        cell1 = nnet.GRUCell(
+            hid_shape=(None, 5),
+            input_dims=5)
+        cell1.add_gate(name='update1')
+        cell1.add_gate(name='update2')
+        cell1.add_gate(name='reset')
+        cell1.add_gate(name='hidden')
+
+        cell2 = nnet.Cell(
+            cell_init=T.zeros_var(shape=(1, 5)),
+            input_dims=5,
+            algorithm=nnet.lstm_algorithm)
+        cell2.add_gate(name='forget')
+        cell2.add_gate(name='input')
+        cell2.add_gate(name='cell_update')
+        cell2.add_gate(name='output')
+
         # ====== Build the network ====== #
         v1 = T.placeholder(shape=(None, 28, 10), name='v1')
         v2 = T.placeholder(shape=(None, 20, 10), name='v2')
@@ -153,11 +171,18 @@ class FunctionsTest(unittest.TestCase):
             nnet.Dense(v2, num_units=12),
         ], ops=T.linear)
         # hid_init = odin.nnet.Ops(hid_init, ops=lambda x: T.mean(x, axis=0, keepdims=True))
+        hth = nnet.Get(
+            incoming=nnet.Dense([(None, 5), (None, 5)], num_units=5, name='hth'),
+            indices=(1))
+        hth = nnet.Ops(
+            incoming=nnet.Dense([(None, 5), (None, 5)], num_units=5, name='hth'),
+            ops=lambda x: sum(i for i in x) / len(x), broadcast=False)
+        # hth = odin.nnet.Dense([(None, 5)], num_units=5)
         f = nnet.Recurrent(
             incoming=[v1, v2], mask=[(None, 28)],
-            input_to_hidden=nnet.Dense((None, 10), num_units=5),
-            hidden_to_hidden=nnet.Dense((None, 5), num_units=5),
-            hidden_to_output=nnet.Dense((None, 5), num_units=12),
+            input_to_hidden=nnet.Dense((None, 10), num_units=5, name='ith'),
+            hidden_to_hidden=hth,
+            hidden_to_output=nnet.Dense((None, 5), num_units=12, name='hto'),
             hidden_init=hid_init,
             output_init=out_init,
             learn_init=True,
@@ -166,6 +191,10 @@ class FunctionsTest(unittest.TestCase):
             backwards=False,
             only_return_final=return_final
         )
+        f.add_cell(cell1)
+        f.add_cell(cell2)
+        # f.add_cell(cell3)
+
         print()
         print('Building prediction function ...')
         f_pred = T.function(
@@ -182,7 +211,7 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(f.output_shape,
             [(None, 12), (None, 12)])
         print('Params:          ', f.get_params(True))
-        self.assertEqual(len(f.get_params(True)), 14)
+        self.assertEqual(len(f.get_params(True)), 39)
         pred_shape = [i.shape for i in f_pred(X, Xmask, X1)]
         print('Prediction shape:', pred_shape)
         self.assertEqual(pred_shape, [(128, 12), (256, 12)])
@@ -208,12 +237,13 @@ class FunctionsTest(unittest.TestCase):
 
     def test_rnn_auto_input_to_hidden(self):
         X = np.random.rand(16, 30, 3, 28, 28)
+
         f = nnet.Recurrent(
             incoming=(None, 30, 3, 28, 28), mask=None,
             input_to_hidden='auto',
             hidden_to_hidden=nnet.Conv2D(
                 (None, 32, 28, 28), num_filters=32, filter_size=(3, 3), pad='same'),
-            hidden_init=None, learn_init=True,
+            hidden_init=None, learn_init=False,
             nonlinearity=T.sigmoid,
             unroll_scan=False,
             backwards=False,
@@ -228,7 +258,7 @@ class FunctionsTest(unittest.TestCase):
         X = T.variable(np.random.rand(256, 128, 20))
 
         c = nnet.Cell(cell_init=T.zeros_var(shape=(256, 13), name='cell_init'),
-                      input_dims=(None, 128, 20),
+                      input_dims=20,
                       W_cell=T.np_normal,
                       learnable=True,
                       algorithm=nnet.simple_algorithm,
@@ -240,6 +270,7 @@ class FunctionsTest(unittest.TestCase):
         c.add_gate(name='output') # 4 params
         self.assertEqual(len(c.get_params(True)), 16)
 
+        # n_steps x batch_size x n_features
         X = T.dimshuffle(X, (1, 0, 2))
         X = c.precompute(X)
         self.assertEqual(tuple(T.eval(T.shape(X))), (128, 256, 52))
@@ -247,8 +278,9 @@ class FunctionsTest(unittest.TestCase):
         hidden_init = T.zeros_var(shape=(256, 13), name='hid_init')
         output_init = hidden_init
         cell_init = c()[0]
-        cell = c.step([X[0]], hidden_init, output_init, cell_init)
-        hid_new, cell_new = cell[0]
+        # step function only apply for each time_step in the sequence
+        hid_new, cell_new = c.step(
+            X[0], hidden_init[0], output_init[0], cell_init[0])
         self.assertEqual(tuple(hid_new.eval().shape), (256, 13))
         self.assertEqual(tuple(cell_new.eval().shape), (256, 13))
         self.assertEqual(T.sum(T.abs(T.eval(T.tanh(cell_new) - hid_new))).eval(),
@@ -257,11 +289,14 @@ class FunctionsTest(unittest.TestCase):
     def test_non_memorize_cell(self):
         np.random.seed(1208251813)
         X = T.variable(np.random.rand(256, 128, 20))
-        c = nnet.GRUCell(hid_init=(None, 13), input_dims=(None, 128, 20))
+        c = nnet.GRUCell(hid_shape=(None, 13), input_dims=20)
+        c.add_gate(name='update1')
+        c.add_gate(name='update2')
         c.add_gate(name='reset')
-        c.add_gate(name='update')
+        c.add_gate(name='hidden_update')
         params = c.get_params(True, regularizable=None)
-        self.assertEqual(len(params), 6)
+        self.assertEqual(len(params), 12)
+        self.assertEqual(len(c.output_shape), 0)
         self.assertEqual(len(c()), 0)
 
 # ===========================================================================

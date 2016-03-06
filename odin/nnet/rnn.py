@@ -195,6 +195,9 @@ def simple_algorithm(hid_prev, out_prev, cell_prev,
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
+    input_dims : shape tuple, int
+        Input shape to cell cannot contain None dimension, it must contain
+        input_dims excluded `batch_size` and `seq_len` dimension.
     memory : bool
         if True this cell has its own memory vector which is internal state of
         the recurrent algorithm, otherwise, it only uses hidden state and
@@ -336,7 +339,7 @@ class Cell(OdinFunction):
         '''
         Parameters
         ----------
-        inputs : list(tensor)
+        input_n : tensor
             list of input tensors for this step function
         hid_prev : tensor
             preivious hidden state
@@ -808,7 +811,7 @@ class Recurrent(OdinFunction):
         # ====== check hidden init ====== #
         self.hidden_init = _validate_initialization(
             hidden_init, self.hidden_dims, len(incoming),
-            self.create_params, learn_init, 'hid_init')
+            self.create_params, learn_init, name='hid_init')
         # ====== check output init ====== #
         if self.hidden_to_output is not None:
             output_init = _validate_initialization(
@@ -966,7 +969,6 @@ class Recurrent(OdinFunction):
             zip(self._incoming_mask[::2],
                 self._incoming_mask[1::2],
                 hid_init, out_init, cell_init)):
-            # if idx == 0: continue
             n_steps = self.input_shape[X][1]
             X = inputs[X]
             if Xmask is not None:
@@ -1176,8 +1178,9 @@ class Recurrent(OdinFunction):
             # hidden states
             if output_idx is not None:
                 out = out[1] # output
-            else:
+            elif isinstance(out, (tuple, list)): # in case return hid & cells
                 out = out[0] # hidden
+            # otherwise, only hidden state returned
 
             # When it is requested that we only return the final sequence step,
             # we need to slice it out immediately after scan is applied

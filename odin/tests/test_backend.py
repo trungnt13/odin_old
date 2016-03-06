@@ -52,7 +52,7 @@ class BackendTest(unittest.TestCase):
             consider_constant=[x], known_grads={a: T.ones_like(a)})
         G = [T.eval(g) for g in G]
         G = [g.tolist() if isinstance(g, np.ndarray) else g for g in G]
-        G = [round(g, 6) for g in G]
+        G = [np.round(np.asarray(g), 6).tolist() for g in G]
         self.assertEqual(G, [1.0, 29.951998, 37.439999])
 
     def test_loop(self):
