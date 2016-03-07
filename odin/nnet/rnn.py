@@ -17,12 +17,15 @@ from .dense import Dense
 from .ops import Ops
 
 __all__ = [
+    "Gate",
     "Cell",
     "GRUCell",
     "Recurrent",
     "lstm_algorithm",
     "gru_algorithm",
-    "simple_algorithm"
+    "simple_algorithm",
+    "GRU",
+    "LSTM",
 ]
 
 
@@ -52,7 +55,7 @@ def _validate_initialization(init, desire_dims, n_incoming,
     if init is None:
         init = T.np_constant
 
-    if T.is_variable(init) or T.is_expression(init):
+    if T.is_expression(init):
         shape = tuple(T.eval(T.shape(init)))
     elif isinstance(init, OdinFunction):
         shape = tuple(init.output_shape[0][1:])
@@ -82,53 +85,78 @@ def _validate_initialization(init, desire_dims, n_incoming,
 
 
 # ===========================================================================
-# Step algorithm for GRU, LSTM, and creative
+# Step algorithm for GRU, LSTM, and be creative:
+# Basic algorithm must have following arguments:
+# hid_prev : tensor
+#   previous hidden step, shape = (1, num_units)
+# out_prev : tensor
+#   previous output (if no hidden_to_output connection specified, None),
+#   shape = (1, output_dims)
+# cell_prev : tensor
+#   previous cell state (if cell is memoryless, cell_prev=None),
+#   shape = (1, num_units)
+# in_precompute : tensor
+#   precomputed weighted input for all gates created by
+#   T.dot(input_n, stack(W_in)), shape = (batch_size, num_units)
+# hid_precompute : tensor
+#   precomputed weighted hidden for all gates created by
+#   T.dot(hidden_prev, stack(W_hid)), shape = (batch_size, num_units)
+# gate_params : list
+#   contain all information of cell parameters and its gates, each gate is a
+#   list of 5 parameters [W_in, W_hid, b, nonlinearity, W_cell (if available)]
+# nonlinearity : callable
+#   activation function of this cell, apply on new hidden state
+# slice_fn : function(W, n) -> W[n*size : (n+1)*size]
+#   slice function of cell to slice the precomputed values for each gate.
 # ===========================================================================
 def lstm_algorithm(hid_prev, out_prev, cell_prev,
                    in_precompute, hid_precompute,
-                   gates_params, nonlinearity):
+                   gates_params, nonlinearity, slice_fn):
     # For convention: the first 3 gates is:
-    # forget_gate, input_gate and cell_new_input
+    # input_gate, forget_gate and cell_new_input
     # all other the gates is output gates
     if len(gates_params) < 4:
         raise ValueError('LSTM algorithm need more than 4 gates to proceed. '
-                         'By default, the first gate is forget gate, then, '
-                         'input gate and cell_update. All the gates after '
+                         'By default, the first gate is input gate, then, '
+                         'forget gate and cell_update. All the gates after '
                          'that will be applied as output gate to the new cell '
                          'state and sum up to new hidden state.')
 
     # sum of precomputed activated input and hidden_previous
-    gates = [i + j for i, j in zip(in_precompute, hid_precompute)]
+    n_gates = len(gates_params)
+    gates = in_precompute + hid_precompute
+    gates = [slice_fn(gates, i) for i in range(n_gates)]
 
+    # ====== not work ====== #
     # Compute cell-feedback connection to previous cell state
-    # W_cell is at -1 index
-    incomming_gates = [g + cell_prev * p[-1] if p[-1] is not None else g
-                       for g, p in zip(gates[:3], gates_params[:3])]
-    # Apply nonlinearities for incoming gates
-    incomming_gates = [p[-2](g) # nonlinearity is at -2 index
-                       for g, p in zip(gates[:3], gates_params[:3])]
+    for i in range(3):
+        if gates_params[i][-1] is not None: # W_cell is at -1 index
+            gates[i] = gates[i] + cell_prev * gates_params[i][-1]
+        # Apply nonlinearities for incoming gates
+        gates[i] = gates_params[i][-2](gates[i])
 
     # calculate new cells: c_t = f_t * c_prev + i_t * c_in
-    cell = (incomming_gates[0] * cell_prev +
-            incomming_gates[1] * incomming_gates[2])
+    cell = gates[1] * cell_prev + gates[0] * gates[2]
 
-    # Compute cell-feedback connection to previous cell state
-    outgoing_gates = [g + cell * p[-1] if p[-1] is not None else g
-                      for g, p in zip(gates[3:], gates_params[3:])]
-    # Apply nonlinearities for outgoing gates
-    outgoing_gates = [p[-2](g) # nonlinearity is at -2 index
-                      for g, p in zip(gates[3:], gates_params[3:])]
-    if len(outgoing_gates) > 0:
-        hid = sum(i * nonlinearity(cell)
-                  for i in outgoing_gates) / len(outgoing_gates)
-    else:
-        hid = nonlinearity(cell)
+    hid = None
+    for i in range(3, len(gates)):
+        if gates_params[i][-1] is not None: # W_cell is at -1 index
+            gates[i] = gates[i] + cell * gates_params[i][-1]
+        # Apply nonlinearities for incoming gates
+        gates[i] = gates_params[i][-2](gates[i])
+
+        if hid is None:
+            hid = gates[i] * nonlinearity(cell)
+        else:
+            hid = hid + gates[i] * nonlinearity(cell)
+    if len(gates) - 3 > 1:
+        hid = hid / (len(gates) - 3)
     return hid, cell
 
 
 def gru_algorithm(hid_prev, out_prev, cell_prev,
                   in_precompute, hid_precompute,
-                  gates_params, nonlinearity):
+                  gates_params, nonlinearity, slice_fn):
     if len(gates_params) < 3:
         raise ValueError('GRU algorithm need more than 3 gates to proceed. '
                          'By default, forget and hidden_update are the last '
@@ -137,20 +165,21 @@ def gru_algorithm(hid_prev, out_prev, cell_prev,
                          'gates and they will be summed up to give final new '
                          'hidden state.')
     # ====== update gate ====== #
+    n_gates = len(gates_params)
     update_gates = []
     for i, g in enumerate(gates_params[:-2]):
-        gate = in_precompute[i] + hid_precompute[i]
+        gate = slice_fn(in_precompute, i) + slice_fn(hid_precompute, i)
         # activate nonlinearity
         gate = g[-2](gate)
         update_gates.append(gate)
 
     # ====== reset gate ====== #
-    reset_gate = in_precompute[-2] + hid_precompute[-2]
+    reset_gate = slice_fn(in_precompute, n_gates - 2) + slice_fn(hid_precompute, n_gates - 2)
     # activate nonlinearity
     reset_gate = gates_params[-2][-2](reset_gate)
 
     # ====== hidden update ====== #
-    hid_update = in_precompute[-1] + reset_gate * hid_precompute[-1]
+    hid_update = slice_fn(in_precompute, n_gates - 1) + reset_gate * slice_fn(hid_precompute, n_gates - 1)
     hid_update = gates_params[-1][-2](hid_update)
 
     # ====== update new cell state ====== #
@@ -160,21 +189,24 @@ def gru_algorithm(hid_prev, out_prev, cell_prev,
             hid = (1. - g) * hid_prev + g * hid_update
         else:
             hid = hid + (1. - g) * hid_prev + g * hid_update
-    return hid, cell_prev
+    if len(update_gates) > 1:
+        hid = hid / len(update_gates)
+    return nonlinearity(hid), cell_prev
 
 
 def simple_algorithm(hid_prev, out_prev, cell_prev,
                      in_precompute, hid_precompute,
-                     gates_params, nonlinearity):
+                     gates_params, nonlinearity, slice_fn):
     ''' This algorithm take sum of all gated previous cell'''
-    gates = [i + j for i, j in zip(in_precompute, hid_precompute)]
+    gates_precompute = in_precompute + hid_precompute
     # Compute cell-feedback connection to previous cell state
     # W_cell is at -1 index
-    gates = [g + cell_prev * p[-1] if p[-1] is not None else g
-             for g, p in zip(gates, gates_params)]
-    # Apply nonlinearities for incoming gates
-    # nonlinearity is at -2 index
-    gates = [p[-2](g) for g, p in zip(gates, gates_params)]
+    gates = []
+    for i, p in enumerate(gates_params):
+        g = slice_fn(gates_precompute, i)
+        if p[-1] is not None:
+            g = g + cell_prev * p[-1]
+        gates.append(p[-2](g))
 
     if len(gates) > 0:
         cell = sum(cell_prev * i for i in gates) / len(gates)
@@ -191,6 +223,63 @@ def simple_algorithm(hid_prev, out_prev, cell_prev,
 # ===========================================================================
 # Recurrent implementation
 # ===========================================================================
+class Gate(object):
+
+    """ Simple class to hold the parameters for a gate connection.  We define
+    a gate loosely as something which computes the linear mix of two inputs,
+    optionally computes an element-wise product with a third, adds a bias, and
+    applies a nonlinearity.
+
+    Parameters
+    ----------
+    W_in : Theano shared variable, numpy array or callable
+        Initializer for input-to-gate weight matrix.
+    W_hid : Theano shared variable, numpy array or callable
+        Initializer for hidden-to-gate weight matrix.
+    W_cell : Theano shared variable, numpy array, callable, or None
+        Initializer for cell-to-gate weight vector.  If None, no cell-to-gate
+        weight vector will be stored.
+    b : Theano shared variable, numpy array or callable
+        Initializer for input gate bias vector.
+    nonlinearity : callable or None
+        The nonlinearity that is applied to the input gate activation. If None
+        is provided, no nonlinearity will be applied.
+
+    Examples
+    --------
+    For :class:`LSTMLayer` the bias of the forget gate is often initialized to
+    a large positive value to encourage the layer initially remember the cell
+    value, see e.g. [1]_ page 15.
+
+    >>> import lasagne
+    >>> forget_gate = Gate(b=lasagne.init.Constant(5.0))
+    >>> l_lstm = LSTMLayer((10, 20, 30), num_units=10,
+    ...                    forgetgate=forget_gate)
+
+    References
+    ----------
+    .. [1] Gers, Felix A., Jürgen Schmidhuber, and Fred Cummins. "Learning to
+           forget: Continual prediction with LSTM." Neural computation 12.10
+           (2000): 2451-2471.
+
+    """
+
+    def __init__(self, W_in=T.np_glorot_normal, W_hid=T.np_glorot_normal,
+                 W_cell=T.np_glorot_normal, b=T.np_constant,
+                 nonlinearity=T.sigmoid,
+                 name=''):
+        self.W_in = W_in
+        self.W_hid = W_hid
+        self.b = b
+        self.name = name
+        self.W_cell = W_cell
+        # For the nonlinearity, if None is supplied, use identity
+        if nonlinearity is None:
+            self.nonlinearity = T.linear
+        else:
+            self.nonlinearity = nonlinearity
+
+
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
@@ -204,7 +293,7 @@ class Cell(OdinFunction):
     """
 
     def __init__(self, cell_init, input_dims, learnable=False,
-                 W_cell=None, nonlinearity=T.tanh,
+                 nonlinearity=T.tanh,
                  algorithm=simple_algorithm,
                  memory=True,
                  **kwargs):
@@ -228,7 +317,6 @@ class Cell(OdinFunction):
                 self.set_learnable_incoming(i,
                     trainable=learnable, regularizable=False)
         # ====== W_cell and nonlinearity check ====== #
-        self.W_cell = W_cell
         if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
             nonlinearity = T.linear
         self.nonlinearity = nonlinearity
@@ -236,26 +324,29 @@ class Cell(OdinFunction):
         if algorithm is None:
             algorithm = simple_algorithm
         if not hasattr(algorithm, '__call__') or \
-            algorithm.func_code.co_argcount != 7:
+            algorithm.func_code.co_argcount != 8:
             self.raise_arguments('Algorithm function must be callable and '
-                                 'has 7 input arguments, includes:hid_prev, '
+                                 'has 8 input arguments, includes:hid_prev, '
                                  'out_prev, cell_prev, in_precompute, '
-                                 'hid_precompute, gates_params, nonlinearity.')
+                                 'hid_precompute, gates_params, nonlinearity, '
+                                 'and slice_function to slice the concatenated'
+                                 ' precomputed input and hidden.')
 
         self.algorithm = algorithm
         self.memory = memory
         # store all gate informations
         self._gates = []
+        self._gates_map = defaultdict(list) # store mapping name -> gate
 
     def add_gate(self, W_in=T.np_glorot_normal,
                  W_hid=T.np_glorot_normal,
+                 W_cell=T.np_glorot_normal,
                  b=T.np_constant,
                  nonlinearity=T.sigmoid,
-                 name='',
-                 force_no_cell=False):
+                 name=''):
         # name contain the ID of gate within the cells
-        name = str(len(self._gates)) if len(name) == 0 \
-            else name + '_' + str(len(self._gates))
+        # name = str(len(self._gates)) if len(name) == 0 \
+        #     else name + '_' + str(len(self._gates))
         num_inputs = np.prod(self.input_dims)
         num_units = self.num_units
 
@@ -266,11 +357,12 @@ class Cell(OdinFunction):
             W_hid, (num_units, num_units), 'W_hid_' + str(name),
             regularizable=True, trainable=True)()
         # create cells
-        W_cell = None
-        if self.W_cell is not None and not force_no_cell:
+        if self.memory and W_cell is not None:
             W_cell = self.create_params(
-                self.W_cell, (num_units,), 'W_cell_' + str(name),
+                W_cell, (num_units,), 'W_cell_' + str(name),
                 regularizable=True, trainable=True)()
+        else:
+            W_cell = None
 
         if b is None:
             b = None
@@ -280,13 +372,19 @@ class Cell(OdinFunction):
                 regularizable=False, trainable=True)()
 
         if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
-            nonlinearity = T.sigmoid
+            nonlinearity = T.linear
         # gate contain: W_in, W_hid, b, nonlinearity, W_cell (optional)
-        self._gates.append(
-            [W_in, W_hid, b, nonlinearity, W_cell])
+        gate = [W_in, W_hid, b, nonlinearity, W_cell]
+        self._gates.append(gate)
+        self._gates_map[name].append(gate)
         return self
 
+    def get_gate(self, name):
+        ''' Return a list of gate had given name '''
+        return self._gates_map[name]
+
     # ==================== Cell methods ==================== #
+
     def _slice_w(self, W, n):
         if T.ndim(W) < 2:
             self.raise_arguments('Only slice weights with more than 2 '
@@ -334,11 +432,11 @@ class Cell(OdinFunction):
         X = T.dot(X, self.W_in_stacked) + self.b_stacked
         return X
 
-    def step(self, input_n, hid_prev, out_prev, cell_prev):
+    def step(self, in_precompute, hid_prev, out_prev, cell_prev):
         '''
         Parameters
         ----------
-        input_n : tensor
+        in_precompute : tensor
             list of input tensors for this step function
         hid_prev : tensor
             preivious hidden state
@@ -354,25 +452,15 @@ class Cell(OdinFunction):
             for each input in given list, create a new hidden state and
             cell state
         '''
-        # Calculate gates pre-activations and slice
-        if len(self._gates) > 0:
-            in_precompute = [self._slice_w(input_n, i)
-                             for i in range(len(self._gates))]
-        else:
-            in_precompute = [input_n]
-
-        if hasattr(self, 'self.W_hid_stacked'):
-            # Extract the pre-activation gate values
-            hid_precompute = T.dot(hid_prev, self.W_hid_stacked)
-            hid_precompute = [self._slice_w(hid_precompute, i)
-                              for i in range(len(self._gates))]
-        else: # manually calculate pre-activation for each gates
-            hid_precompute = [T.dot(hid_prev, p[1])
-                              for p in self._gates]
+        if not hasattr(self, 'W_hid_stacked'):
+            self.raise_arguments('Input to this step function must be the '
+                                 'precompute version of input.')
+        # Extract the pre-activation gate values
+        hid_precompute = T.dot(hid_prev, self.W_hid_stacked)
 
         return self.algorithm(hid_prev, out_prev, cell_prev,
                               in_precompute, hid_precompute,
-                              self._gates, self.nonlinearity)
+                              self._gates, self.nonlinearity, self._slice_w)
 
     # ==================== Override functions ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
@@ -414,10 +502,10 @@ class Cell(OdinFunction):
 
 class GRUCell(Cell):
 
-    """docstring for GRUCell"""
+    """GRUCell is a memoryless cell"""
 
     def __init__(self, hid_shape, input_dims,
-                 nonlinearity=T.tanh,
+                 nonlinearity=T.linear,
                  algorithm=gru_algorithm,
                  **kwargs):
         if isinstance(hid_shape, (int, float, long)):
@@ -429,8 +517,8 @@ class GRUCell(Cell):
             self.raise_arguments('hid_shape must be an integer - number of '
                                  'hidden units or shape tuple which is the '
                                  'shape of hidden state.')
-        super(GRUCell, self).__init__(hid_shape, input_dims, learnable=False,
-                 W_cell=None, nonlinearity=nonlinearity,
+        super(GRUCell, self).__init__(hid_shape, input_dims,
+                 learnable=False, nonlinearity=nonlinearity,
                  algorithm=algorithm, memory=False,
                  **kwargs)
 
@@ -1061,10 +1149,6 @@ class Recurrent(OdinFunction):
             # cell_idx
             cell_idx = len(sequences) + len(outputs_info)
             outputs_info += Cinit
-            # print(X, Cinput_map)
-            # print(Cinit, Cinit_map)
-            # print(len(sequences), len(outputs_info))
-            # print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx)
 
             # ====== Create single recurrent computation step function ====== #
             def step(*args):
@@ -1195,3 +1279,102 @@ class Recurrent(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
+
+# ===========================================================================
+# Particular architecture
+# ===========================================================================
+class GRU(Recurrent):
+
+    """Conventional GRU"""
+
+    def __init__(self, incoming, num_units, mask=None,
+                 resetgate=Gate(),
+                 updategate=Gate(),
+                 hidden_update=Gate(nonlinearity=T.tanh),
+                 hidden_init=T.np_constant, learn_init=False,
+                 nonlinearity=T.linear,
+                 backwards=False,
+                 unroll_scan=False,
+                 only_return_final=False,
+                 **kwargs):
+        super(GRU, self).__init__(incoming=incoming, mask=mask,
+            hidden_to_hidden=Ops(incoming=(None, num_units), ops=T.linear),
+            input_to_hidden=None,
+            hidden_to_output=None,
+            output_init=None,
+            hidden_init=hidden_init, learn_init=learn_init,
+            nonlinearity=T.linear,
+            backwards=backwards,
+            unroll_scan=unroll_scan,
+            only_return_final=only_return_final,
+            **kwargs)
+        # ====== create cell ====== #
+        cell = GRUCell(hid_shape=(None, num_units), input_dims=self.input_dims,
+                       nonlinearity=nonlinearity,
+                       algorithm=gru_algorithm)
+        cell.add_gate(W_in=updategate.W_in, W_hid=updategate.W_hid,
+                      b=updategate.b, nonlinearity=updategate.nonlinearity,
+                      name='update_gate')
+        cell.add_gate(W_in=resetgate.W_in, W_hid=resetgate.W_hid,
+                      b=resetgate.b, nonlinearity=resetgate.nonlinearity,
+                      name='reset_gate')
+        cell.add_gate(W_in=hidden_update.W_in, W_hid=hidden_update.W_hid,
+                      b=hidden_update.b, nonlinearity=hidden_update.nonlinearity,
+                      name='hidden_update')
+        self.add_cell(cell)
+
+
+class LSTM(Recurrent):
+
+    """Conventional LSTM"""
+
+    def __init__(self, incoming, num_units, mask=None,
+                 ingate=Gate(),
+                 forgetgate=Gate(),
+                 cell=Gate(W_cell=None, nonlinearity=T.tanh),
+                 outgate=Gate(),
+                 cell_init=T.np_constant, hidden_init=T.np_constant,
+                 learn_init=False,
+                 nonlinearity=T.tanh,
+                 backwards=False,
+                 unroll_scan=False,
+                 only_return_final=False,
+                 **kwargs):
+        super(LSTM, self).__init__(incoming=incoming, mask=mask,
+            hidden_to_hidden=Ops(incoming=(None, num_units), ops=T.linear),
+            input_to_hidden=None,
+            hidden_to_output=None,
+            output_init=None,
+            hidden_init=hidden_init, learn_init=learn_init,
+            nonlinearity=T.linear,
+            backwards=backwards,
+            unroll_scan=unroll_scan,
+            only_return_final=only_return_final,
+            **kwargs)
+        # ====== validate cell_init ====== #
+        if hasattr(cell_init, '__call__') and \
+           not isinstance(cell_init, OdinFunction):
+            cell_init = T.variable(cell_init(shape=(1, num_units)),
+                name='cell_init')
+        # ====== create cell ====== #
+        c = Cell(cell_init=cell_init, input_dims=self.input_dims,
+            learnable=learn_init, nonlinearity=nonlinearity,
+            algorithm=lstm_algorithm, memory=True)
+        c.add_gate(W_in=ingate.W_in, W_hid=ingate.W_hid,
+                   W_cell=ingate.W_cell, b=ingate.b,
+                   nonlinearity=ingate.nonlinearity,
+                   name='input_gate')
+        c.add_gate(W_in=forgetgate.W_in, W_hid=forgetgate.W_hid,
+                   W_cell=forgetgate.W_cell, b=forgetgate.b,
+                   nonlinearity=forgetgate.nonlinearity,
+                   name='forget_gate')
+        c.add_gate(W_in=cell.W_in, W_hid=cell.W_hid,
+                   W_cell=cell.W_cell, b=cell.b,
+                   nonlinearity=cell.nonlinearity,
+                   name='cell')
+        c.add_gate(W_in=outgate.W_in, W_hid=outgate.W_hid,
+                   W_cell=outgate.W_cell, b=outgate.b,
+                   nonlinearity=outgate.nonlinearity,
+                   name='output_update')
+        self.add_cell(c)

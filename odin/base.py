@@ -214,6 +214,9 @@ class OdinFunction(OdinObject):
                 incoming = [incoming]
             # ====== Parse incoming ====== #
             for i in incoming:
+                if T.is_ndarray(i): # if ndarray, create wrapper variable
+                    i = T.variable(i)
+
                 # shape_tuple
                 if isinstance(i, (tuple, list)):
                     input_function.append(None)

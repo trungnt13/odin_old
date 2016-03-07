@@ -211,7 +211,7 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(f.output_shape,
             [(None, 12), (None, 12)])
         print('Params:          ', f.get_params(True))
-        self.assertEqual(len(f.get_params(True)), 39)
+        self.assertEqual(len(f.get_params(True)), 43)
         pred_shape = [i.shape for i in f_pred(X, Xmask, X1)]
         print('Prediction shape:', pred_shape)
         self.assertEqual(pred_shape, [(128, 12), (256, 12)])
@@ -259,14 +259,13 @@ class FunctionsTest(unittest.TestCase):
 
         c = nnet.Cell(cell_init=T.zeros_var(shape=(256, 13), name='cell_init'),
                       input_dims=20,
-                      W_cell=T.np_normal,
                       learnable=True,
                       algorithm=nnet.simple_algorithm,
                       nonlinearity=T.tanh)
         # 1 parameter for cell_init
         c.add_gate(name='forget') # 4 params
         c.add_gate(name='input') # 4 params
-        c.add_gate(name='cellin', nonlinearity=T.tanh, force_no_cell=True) # 3 params
+        c.add_gate(name='cellin', nonlinearity=T.tanh, W_cell=None) # 3 params
         c.add_gate(name='output') # 4 params
         self.assertEqual(len(c.get_params(True)), 16)
 
@@ -298,6 +297,147 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(len(params), 12)
         self.assertEqual(len(c.output_shape), 0)
         self.assertEqual(len(c()), 0)
+
+    def test_gru(self):
+        try:
+            import lasagne
+        except:
+            print('\n This test require lasagne.')
+            return
+        # ====== generate data and weights ====== #
+        np.random.seed(12082518)
+        X = np.random.rand(128, 28, 13)
+        hid_init = T.np_glorot_normal((1, 12))
+
+        W_in_update = T.np_glorot_normal((13, 12))
+        W_hid_update = T.np_glorot_normal((12, 12))
+        b_update = T.np_constant((12,))
+
+        W_in_reset = T.np_glorot_normal((13, 12))
+        W_hid_reset = T.np_glorot_normal((12, 12))
+        b_reset = T.np_constant((12,))
+
+        W_in_hidden = T.np_glorot_normal((13, 12))
+        W_hid_hidden = T.np_glorot_normal((12, 12))
+        b_hidden = T.np_constant((12,))
+
+        # ====== odin ====== #
+        resetgate = nnet.Gate(
+            W_in=W_in_reset, W_hid=W_hid_reset, b=b_reset,
+            nonlinearity=T.sigmoid)
+        updategate = nnet.Gate(
+            W_in=W_in_update, W_hid=W_hid_update, b=b_update,
+            nonlinearity=T.sigmoid)
+        hidden_update = nnet.Gate(
+            W_in=W_in_hidden, W_hid=W_hid_hidden, b=b_hidden,
+            nonlinearity=T.tanh)
+
+        g = nnet.GRU((None, 28, 13), num_units=12,
+            resetgate=resetgate,
+            updategate=updategate,
+            hidden_update=hidden_update,
+            hidden_init=hid_init, learn_init=False)
+        f1 = T.function(inputs=g.input_var,
+            outputs=g()[0])
+
+        # ====== lasagne ====== #
+        resetgate = lasagne.layers.Gate(
+            W_in=W_in_reset, W_hid=W_hid_reset, b=b_reset, W_cell=None,
+            nonlinearity=T.sigmoid)
+        updategate = lasagne.layers.Gate(
+            W_in=W_in_update, W_hid=W_hid_update, b=b_update, W_cell=None,
+            nonlinearity=T.sigmoid)
+        hidden_update = lasagne.layers.Gate(
+            W_in=W_in_hidden, W_hid=W_hid_hidden, b=b_hidden, W_cell=None,
+            nonlinearity=T.tanh)
+        l_in = lasagne.layers.InputLayer(shape=(None, 28, 13))
+        l = lasagne.layers.GRULayer(l_in, num_units=12,
+            resetgate=resetgate,
+            updategate=updategate,
+            hidden_update=hidden_update,
+            hid_init=hid_init, learn_init=False)
+        f2 = T.function(inputs=[l_in.input_var],
+            outputs=lasagne.layers.get_output(l))
+
+        self.assertLessEqual(np.sum(np.abs(f1(X) - f2(X))), 0.005)
+
+    def test_lstm(self):
+        try:
+            import lasagne
+        except:
+            print('\n This test require lasagne.')
+            return
+        np.random.seed(12082518)
+        X = np.random.rand(128, 28, 13)
+        hid_init = T.variable(T.np_constant((1, 12), val=1.), name='hid_init')
+        cell_init = T.variable(T.np_constant((1, 12), val=2.), name='cell_init')
+
+        W_in_forget = T.np_glorot_normal((13, 12))
+        W_hid_forget = T.np_glorot_normal((12, 12))
+        W_cell_forget = T.np_glorot_normal((12,))
+        b_forget = T.np_constant((12,))
+
+        W_in_input = T.np_glorot_normal((13, 12))
+        W_hid_input = T.np_glorot_normal((12, 12))
+        W_cell_input = T.np_glorot_normal((12,))
+        b_input = T.np_constant((12,))
+
+        W_in_cell = T.np_glorot_normal((13, 12))
+        W_hid_cell = T.np_glorot_normal((12, 12))
+        b_cell = T.np_constant((12,))
+
+        W_in_output = T.np_glorot_normal((13, 12))
+        W_hid_output = T.np_glorot_normal((12, 12))
+        W_cell_output = T.np_glorot_normal((12,))
+        b_output = T.np_constant((12,))
+
+        forgetgate = nnet.Gate(W_in=W_in_forget, W_hid=W_hid_forget, b=b_forget,
+            W_cell=W_cell_forget, nonlinearity=T.sigmoid)
+        ingate = nnet.Gate(W_in=W_in_input, W_hid=W_hid_input, b=b_input,
+            W_cell=W_cell_input, nonlinearity=T.sigmoid)
+        cell = nnet.Gate(W_in=W_in_cell, W_hid=W_hid_cell, b=b_cell,
+            W_cell=None, nonlinearity=T.tanh)
+        outgate = nnet.Gate(W_in=W_in_output, W_hid=W_hid_output, b=b_output,
+            W_cell=W_cell_output, nonlinearity=T.sigmoid)
+
+        g = nnet.LSTM((None, 28, 13), num_units=12,
+            ingate=ingate,
+            forgetgate=forgetgate,
+            cell=cell,
+            outgate=outgate,
+            cell_init=cell_init,
+            unroll_scan=False,
+            hidden_init=hid_init, learn_init=False)
+        f1 = T.function(inputs=g.input_var, outputs=g()[0])
+        cost, updates = g.get_optimization(
+            objective=objectives.mean_squared_loss,
+            optimizer=optimizers.rmsprop,
+            globals=True,
+            training=True)
+
+        forgetgate = lasagne.layers.Gate(W_in=W_in_forget, W_hid=W_hid_forget, b=b_forget,
+            W_cell=W_cell_forget, nonlinearity=T.sigmoid)
+        ingate = lasagne.layers.Gate(W_in=W_in_input, W_hid=W_hid_input, b=b_input,
+            W_cell=W_cell_input, nonlinearity=T.sigmoid)
+        cell = lasagne.layers.Gate(W_in=W_in_cell, W_hid=W_hid_cell, b=b_cell,
+            W_cell=None, nonlinearity=T.tanh)
+        outgate = lasagne.layers.Gate(W_in=W_in_output, W_hid=W_hid_output, b=b_output,
+            W_cell=W_cell_output, nonlinearity=T.sigmoid)
+        l_in = lasagne.layers.InputLayer(shape=(None, 28, 13))
+        l = lasagne.layers.LSTMLayer(l_in, num_units=12,
+            ingate=ingate,
+            forgetgate=forgetgate,
+            cell=cell,
+            outgate=outgate,
+            cell_init=cell_init,
+            unroll_scan=False,
+            hid_init=hid_init, learn_init=False)
+        f2 = T.function(inputs=[l_in.input_var], outputs=lasagne.layers.get_output(l))
+
+        y1 = f1(X)
+        y2 = f2(X)
+        self.assertEqual(y1.shape, y2.shape)
+        self.assertLessEqual(np.sum(np.abs(y1 - y2)), 0.005)
 
 # ===========================================================================
 # Main

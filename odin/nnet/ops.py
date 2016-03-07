@@ -107,7 +107,7 @@ class Switch(object):
 
 class Get(OdinFunction):
 
-    """docstring for Get"""
+    """Get a particular output at given indices and return"""
 
     def __init__(self, incoming, indices, **kwargs):
         super(Get, self).__init__(incoming, unsupervised=False, **kwargs)

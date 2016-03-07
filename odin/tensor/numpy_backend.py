@@ -160,6 +160,7 @@ def np_symmetric_uniform(shape, range=0.01, std=None, mean=0.0):
 
 
 def np_glorot_uniform(shape, gain=1.0, c01b=False):
+    orig_shape = shape
     if c01b:
         if len(shape) != 4:
             raise RuntimeError(
@@ -168,8 +169,7 @@ def np_glorot_uniform(shape, gain=1.0, c01b=False):
         receptive_field_size = shape[1] * shape[2]
     else:
         if len(shape) < 2:
-            raise RuntimeError(
-                "This initializer only works with shapes of length >= 2")
+            shape = (1,) + tuple(shape)
         n1, n2 = shape[:2]
         receptive_field_size = np.prod(shape[2:])
 
@@ -177,10 +177,11 @@ def np_glorot_uniform(shape, gain=1.0, c01b=False):
     a = 0.0 - np.sqrt(3) * std
     b = 0.0 + np.sqrt(3) * std
     return np.cast[floatX()](
-        get_random_generator().uniform(low=a, high=b, size=shape))
+        get_random_generator().uniform(low=a, high=b, size=orig_shape))
 
 
 def np_glorot_normal(shape, gain=1.0, c01b=False):
+    orig_shape = shape
     if c01b:
         if len(shape) != 4:
             raise RuntimeError(
@@ -189,14 +190,13 @@ def np_glorot_normal(shape, gain=1.0, c01b=False):
         receptive_field_size = shape[1] * shape[2]
     else:
         if len(shape) < 2:
-            raise RuntimeError(
-                "This initializer only works with shapes of length >= 2")
+            shape = (1,) + tuple(shape)
         n1, n2 = shape[:2]
         receptive_field_size = np.prod(shape[2:])
 
     std = gain * np.sqrt(2.0 / ((n1 + n2) * receptive_field_size))
     return np.cast[floatX()](
-        get_random_generator().normal(0.0, std, size=shape))
+        get_random_generator().normal(0.0, std, size=orig_shape))
 
 
 def np_he_normal(shape, gain=1.0, c01b=False):
@@ -209,13 +209,10 @@ def np_he_normal(shape, gain=1.0, c01b=False):
                 "If c01b is True, only shapes of length 4 are accepted")
         fan_in = np.prod(shape[:3])
     else:
-        if len(shape) == 2:
+        if len(shape) <= 2:
             fan_in = shape[0]
         elif len(shape) > 2:
             fan_in = np.prod(shape[1:])
-        else:
-            raise RuntimeError(
-                "This initializer only works with shapes of length >= 2")
 
     std = gain * np.sqrt(1.0 / fan_in)
     return np.cast[floatX()](
@@ -232,13 +229,10 @@ def np_he_uniform(shape, gain=1.0, c01b=False):
                 "If c01b is True, only shapes of length 4 are accepted")
         fan_in = np.prod(shape[:3])
     else:
-        if len(shape) == 2:
+        if len(shape) <= 2:
             fan_in = shape[0]
         elif len(shape) > 2:
             fan_in = np.prod(shape[1:])
-        else:
-            raise RuntimeError(
-                "This initializer only works with shapes of length >= 2")
 
     std = gain * np.sqrt(1.0 / fan_in)
     a = 0.0 - np.sqrt(3) * std
@@ -252,8 +246,7 @@ def np_orthogonal(shape, gain=1.0):
         gain = np.sqrt(2)
 
     if len(shape) < 2:
-        raise RuntimeError("Only shapes of length 2 or more are "
-                           "supported.")
+        raise RuntimeError("Only shapes of length 2 or more are supported.")
 
     flat_shape = (shape[0], np.prod(shape[1:]))
     a = get_random_generator().normal(0.0, 1.0, flat_shape)
