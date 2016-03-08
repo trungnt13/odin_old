@@ -264,6 +264,17 @@ def prod(x, axis=None, keepdims=False):
     return tf.reduce_prod(x, reduction_indices=axis, keep_dims=keepdims)
 
 
+def var(x, axis=None, keepdims=False):
+    axis = normalize_axis(axis, ndim(x))
+    if x.dtype.base_dtype == tf.bool:
+        x = tf.cast(x, _FLOATX)
+    m = tf.reduce_mean(x, reduction_indices=axis, keep_dims=True)
+    devs_squared = tf.square(x - m)
+    return tf.reduce_mean(devs_squared,
+                          reduction_indices=axis,
+                          keep_dims=keepdims)
+
+
 def std(x, axis=None, keepdims=False):
     axis = normalize_axis(axis, ndim(x))
     if x.dtype.base_dtype == tf.bool:
@@ -389,8 +400,11 @@ def dimshuffle(x, pattern):
             dimension indices, e.g. [0, 2, 1].
     '''
     if 'x' in pattern:
-        raise NotImplementedError
-    return tf.transpose(x, perm=pattern)
+        x = tf.transpose(x, perm=[i for i in pattern if i != 'x'])
+    for i, p in enumerate(pattern):
+        if p == 'x':
+            x = tf.expand_dims(x, i)
+    return x
 
 
 def resize_images(X, height_factor, width_factor, dim_ordering):
@@ -510,9 +524,23 @@ def set_value(x, value):
 def set_subtensor(x, y):
     raise NotImplementedError
 
+
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
+_GLOBALS_UPDATES = OrderedDict()
+
+
+def add_global_updates(variable, value):
+    '''trick to update tensorflow variables anywhere
+    This dictionary will be reseted after each time you create a function
+    '''
+    _GLOBALS_UPDATES[variable] = value
+
+
+def reset_global_updates():
+    global _GLOBALS_UPDATES
+    _GLOBALS_UPDATES = OrderedDict()
 
 
 class Function(object):
@@ -531,13 +559,19 @@ class Function(object):
         self.outputs = list(outputs)
         with tf.control_dependencies(self.outputs):
             self.updates = [tf.assign(p, new_p) for (p, new_p) in updates]
+        # ====== add global_update ====== #
+        self.global_update = [tf.assign(p, new_p) for (p, new_p) in _GLOBALS_UPDATES.items()]
+        global _GLOBALS_UPDATES
+        _GLOBALS_UPDATES = OrderedDict()
 
     def __call__(self, *inputs):
         assert type(inputs) in {list, tuple}
         names = [v.name for v in self.inputs]
         feed_dict = dict(zip(names, inputs))
         session = get_session()
-        updated = session.run(self.outputs + self.updates, feed_dict=feed_dict)
+        # ====== add global updates ====== #
+        updated = session.run(self.outputs + self.updates + self.global_update,
+            feed_dict=feed_dict)
         if self._return_list:
             return updated[:len(self.outputs)]
         return updated[0]

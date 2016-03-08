@@ -150,8 +150,8 @@ class OdinFunction(OdinObject):
     Parameters
     ----------
     incoming : a :class:`OdinFunction`, Lasagne :class:`Layer` instance,
-               keras :class:`Models` instance, variable, placeholder or
-               shape tuple
+               keras :class:`Models` instance, variable, placeholder (or
+               shape tuple, which then converted to placeholder)
         The layer feeding into this layer, or the expected input shape.
     unsupervised : bool
         whether or not this is unsupervised model, this affect the output_var
@@ -190,6 +190,9 @@ class OdinFunction(OdinObject):
         # significantly reduce the performance
         self._cache_inputs_train = None
         self._cache_inputs_pred = None
+
+        self._cache_updates_train = OrderedDict()
+        self._cache_updates_pred = OrderedDict()
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
@@ -341,6 +344,30 @@ class OdinFunction(OdinObject):
                 children += i.get_children()
         return T.np_ordered_set(children).tolist()
 
+    def set_updates(self, key, value, training):
+        if not T.is_variable(key):
+            self.raise_arguments('Updates must contain variable as key.')
+        if training is None:
+            self._cache_updates_train[key] = value
+            self._cache_updates_pred[key] = value
+        elif training:
+            self._cache_updates_train[key] = value
+        else:
+            self._cache_updates_pred[key] = value
+
+    def get_updates(self, training):
+        updates = OrderedDict()
+        if training:
+            updates.update(self._cache_updates_train)
+        else:
+            updates.update(self._cache_updates_pred)
+
+        for i in self._incoming:
+            if not T.is_variable(i) and not T.is_expression(i) and i is not None:
+                api = API.get_object_api(i)
+                updates.update(API.get_states_updates(i, api, training))
+        return updates
+
     def get_cache(self, training):
         '''Return last inputs returned by this funcitons'''
         if training:
@@ -351,6 +378,8 @@ class OdinFunction(OdinObject):
         ''' Each time you call this function, its inputs are cached for reused
         Reset cache will force the function to call the inputs again
 
+        This function also reset the state updates of function
+
         Parameters
         ----------
         globals : bool
@@ -359,15 +388,14 @@ class OdinFunction(OdinObject):
         '''
         self._cache_inputs_pred = None
         self._cache_inputs_train = None
+        self._cache_updates_pred = None
+        self._cache_updates_train = None
+
         if globals:
             for i in self.get_children():
                 # a cycle graph may create infinite recursive, but who care
                 # we doesn't support cycle graph anyway
                 i.reset_cache(globals=globals)
-            # also the parameters of this function can contain other functions
-            for _, i in self.params.iteritems():
-                if isinstance(i._params, OdinFunction):
-                    i._params.reset_cache(globals=globals)
 
     # ==================== Helper private functions ==================== #
     def _log_footprint(self, training, inputs, outputs, **kwargs):
@@ -577,7 +605,7 @@ class OdinFunction(OdinObject):
             # this is from API
             else:
                 api = API.get_object_api(i)
-                inputs += API.get_outputs(i, api, training)
+                inputs += API.get_outputs(i, api, training, **kwargs)
         # cache the last calculated inputs (if you want to disconnect
         # gradient from this input downward, don't re-build the input
         # graph)

@@ -360,7 +360,8 @@ class model(OdinObject):
         # ====== Create prediction function ====== #
         if not self._pred_func:
             var = self._model_var
-            updates = API.get_states_updates(self._model, self._api)
+            updates = API.get_states_updates(self._model, self._api,
+                training=False)
             # create prediction function
             self._pred_func = tensor.function(
                 inputs=var['X_pred'],
@@ -388,7 +389,8 @@ class model(OdinObject):
            self._cost_func_old != cost_func:
             self._cost_func_old = cost_func
             var = self._model_var
-            updates = API.get_states_updates(self._model, self._api)
+            updates = API.get_states_updates(self._model, self._api,
+                training=False)
             # create cost function
             cost = cost_func(var['y_pred'], var['y_true'])
             self._cost_func = tensor.function(

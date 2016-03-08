@@ -10,6 +10,7 @@ from six.moves import zip_longest, zip, range
 import numpy as np
 from collections import defaultdict
 
+from .. import config
 from .. import tensor as T
 from ..base import OdinFunction
 from ..utils import as_tuple, as_index_map
@@ -135,9 +136,15 @@ class BatchNormalization(OdinFunction):
         super(BatchNormalization, self).__init__(
             incoming, unsupervised=False, **kwargs)
 
+        input_shape = self.input_shape[0]
+        for i in self.input_shape:
+            if i[1:] != input_shape[1:]:
+                self.raise_arguments('All dimensions from the second dimensions'
+                                     ' of all inputs must be similar, but '
+                                     '{} != {}'.format(i, input_shape))
         if axes == 'auto':
             # default: normalize over all but the second axis
-            axes = (0,) + tuple(range(2, len(self.input_shape)))
+            axes = (0,) + tuple(range(2, len(input_shape)))
         elif isinstance(axes, int):
             axes = (axes,)
         self.axes = axes
@@ -146,7 +153,7 @@ class BatchNormalization(OdinFunction):
         self.alpha = alpha
 
         # create parameters, ignoring all dimensions in axes
-        shape = [size for axis, size in enumerate(self.input_shape)
+        shape = [size for axis, size in enumerate(input_shape)
                  if axis not in self.axes]
         if any(size is None for size in shape):
             raise ValueError("BatchNormLayer needs specified input sizes for "
@@ -166,76 +173,66 @@ class BatchNormalization(OdinFunction):
         self.inv_std = self.create_params(inv_std, shape, 'inv_std',
                                       trainable=False, regularizable=False)
 
-        self.batch_norm_use_averages = None
-        self.batch_norm_update_averages = None
-
     # ==================== abstract methods ==================== #
     @property
     def output_shape(self):
         return self.input_shape
 
-    def set_mode(self, batch_norm_use_averages=None,
-        batch_norm_update_averages=None):
-        self.batch_norm_update_averages = batch_norm_update_averages
-        self.batch_norm_use_averages = batch_norm_use_averages
-        return self
+    def __call__(self, training, **kwargs):
+        batch_norm_use_averages = kwargs.get('batch_norm_use_averages', not training)
+        batch_norm_update_averages = kwargs.get('batch_norm_update_averages', training)
+        inputs = self.get_input(training, **kwargs)
 
-    def __call__(self, training):
-        inputs = self.get_input(training)
-        outputs = []
         for input in inputs:
-            input_mean = T.mean(input, axis=self.axes)
-            input_inv_std = 1.0 / T.sqrt(input.var(self.axes) + self.epsilon)
+            input_mean = T.mean(input, self.axes)
+            input_inv_std = 1. / T.sqrt(T.var(input, self.axes) + self.epsilon)
 
             # Decide whether to use the stored averages or mini-batch statistics
-            if self.batch_norm_use_averages is None:
-                self.batch_norm_use_averages = not training
-            use_averages = self.batch_norm_use_averages
-
-            if use_averages:
+            if batch_norm_use_averages:
                 mean = self.mean
                 inv_std = self.inv_std
             else:
                 mean = input_mean
                 inv_std = input_inv_std
 
-            # Decide whether to update the stored averages
-            if self.batch_norm_update_averages is None:
-                self.batch_norm_update_averages = training
-            update_averages = self.batch_norm_update_averages
-
-            if update_averages:
-                # Trick: To update the stored statistics, we create memory-aliased
-                # clones of the stored statistics:
-                running_mean = theano.clone(self.mean, share_inputs=False)
-                running_inv_std = theano.clone(self.inv_std, share_inputs=False)
-                # set a default update for them:
-                running_mean.default_update = ((1 - self.alpha) * running_mean +
-                                               self.alpha * input_mean)
-                running_inv_std.default_update = ((1 - self.alpha) *
-                                                  running_inv_std +
-                                                  self.alpha * input_inv_std)
-                # and make sure they end up in the graph without participating in
-                # the computation (this way their default_update will be collected
-                # and applied, but the computation will be optimized away):
-                mean += 0 * running_mean
-                inv_std += 0 * running_inv_std
+            if batch_norm_update_averages:
+                if config.backend() == 'theano':
+                    # this trick really fast and efficency so I want to keep it
+                    import theano
+                    # Trick: To update the stored statistics, we create memory-aliased
+                    # clones of the stored statistics:
+                    running_mean = theano.clone(self.mean, share_inputs=False)
+                    running_inv_std = theano.clone(self.inv_std, share_inputs=False)
+                    # set a default update for them:
+                    running_mean.default_update = ((1 - self.alpha) * running_mean +
+                                                   self.alpha * input_mean)
+                    running_inv_std.default_update = ((1 - self.alpha) *
+                                                      running_inv_std +
+                                                      self.alpha * input_inv_std)
+                    # and make sure they end up in the graph without participating in
+                    # the computation (this way their default_update will be collected
+                    # and applied, but the computation will be optimized away):
+                    mean += 0 * running_mean
+                    inv_std += 0 * running_inv_std
+                elif config.backend() == 'tensorflow':
+                    T.add_global_updates(self.mean, ((1 - self.alpha) * self.mean +
+                                                   self.alpha * input_mean))
+                    T.add_global_updates(self.inv_std, ((1 - self.alpha) *
+                                                      self.inv_std +
+                                                      self.alpha * input_inv_std))
 
             # prepare dimshuffle pattern inserting broadcastable axes as needed
-            param_axes = iter(range(input.ndim - len(self.axes)))
+            param_axes = iter(range(T.ndim(input) - len(self.axes)))
             pattern = ['x' if input_axis in self.axes
                        else next(param_axes)
-                       for input_axis in range(input.ndim)]
+                       for input_axis in range(T.ndim(input))]
 
             # apply dimshuffle pattern to all parameters
-            beta = 0 if self.beta is None else self.beta.dimshuffle(pattern)
-            gamma = 1 if self.gamma is None else self.gamma.dimshuffle(pattern)
-            mean = mean.dimshuffle(pattern)
-            inv_std = inv_std.dimshuffle(pattern)
+            beta = 0 if self.beta is None else T.dimshuffle(self.beta, pattern)
+            gamma = 1 if self.gamma is None else T.dimshuffle(self.gamma, pattern)
+            mean = T.dimshuffle(mean, pattern)
+            inv_std = T.dimshuffle(inv_std, pattern)
 
             # normalize
             normalized = (input - mean) * (gamma * inv_std) + beta
-            outputs.append(normalized)
-        # ====== log the footprint for debugging ====== #
-        self._log_footprint(training, inputs, outputs)
-        return outputs
+        return normalized

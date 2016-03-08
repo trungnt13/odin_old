@@ -56,8 +56,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         elif not self._connected_encoder_decoder:
             inputs = self.get_input(training, **kwargs)
             # intercept the inputs of decoder
-            for i in self.decoder.get_roots():
-                i.set_intermediate_inputs(inputs)
+            self.decoder.set_intermediate_inputs(inputs, root=True)
             outputs = self.decoder(training)
         # ====== Get reconstructed inputs from connected graph ====== #
         else:
@@ -421,8 +420,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         if self._reconstruction_mode:
             # intercept the old decoder roots to get reconstruction from
             # current outputs of this functions
-            for i in self.decoder.get_roots():
-                i.set_intermediate_inputs(outputs)
+            self.decoder.set_intermediate_inputs(outputs, root=True)
             outputs = self.decoder(training)
         return outputs
 

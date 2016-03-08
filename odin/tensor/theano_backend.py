@@ -43,11 +43,10 @@ if _on_gpu():
 def get_session():
     return _on_gpu()
 
+
 # ===========================================================================
 # VARIABLE MANIPULATION
 # ===========================================================================
-
-
 def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
     '''Instantiate a tensor variable.
     '''
@@ -213,7 +212,11 @@ def gather(reference, indices):
     return reference[indices]
 
 
+# ===========================================================================
 # ELEMENT-WISE OPERATIONS
+# ===========================================================================
+def var(x, axis=None, keepdims=False):
+    return T.var(x, axis=axis, keepdims=keepdims)
 
 
 def max(x, axis=None, keepdims=False):
@@ -463,11 +466,10 @@ def spatial_2d_padding(x, padding=(1, 1), dim_ordering='th'):
 def stack(*x):
     return T.stack(*x)
 
+
 # ===========================================================================
 # VALUE MANIPULATION
 # ===========================================================================
-
-
 def get_value(x, borrow=False):
     if not hasattr(x, 'get_value'):
         raise Exception("'get_value() can only be called on a variable. " +
@@ -482,11 +484,10 @@ def set_value(x, value):
 def set_subtensor(x, y):
     return T.set_subtensor(x, y)
 
+
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
-
-
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[], **kwargs):

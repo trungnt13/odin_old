@@ -215,25 +215,28 @@ class api(object):
             raise ValueError('Currently not support API: %s' % api)
 
     @staticmethod
-    def get_states_updates(model, api):
+    def get_states_updates(model, api, training):
+        ''' Return an OrderDict '''
         if api == 'lasagne':
             updates = []
         elif api == 'keras':
-            updates = model.state_updates
+            updates = OrderedDict(model.state_updates)
+        elif api == 'odin':
+            updates = model.get_updates(training)
         else:
             raise ValueError('Currently not support API: %s' % api)
         return updates
 
     @staticmethod
-    def get_outputs(model, api, training):
+    def get_outputs(model, api, training, **kwargs):
         '''Return a list of outputs from model of given api'''
         if api == 'lasagne':
             import lasagne
-            return [lasagne.layers.get_output(model, deterministic=not training)]
+            return [lasagne.layers.get_output(model, deterministic=not training, **kwargs)]
         elif api == 'keras':
             return [model.get_output(train=training)]
         elif api == 'odin':
-            return model(training=training)
+            return model(training=training, **kwargs)
 
 # ===========================================================================
 # DAA
