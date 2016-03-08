@@ -123,8 +123,15 @@ for iteration in range(1, 60):
             for t, char in enumerate(sentence):
                 x[0, t, char_indices[char]] = 1.
 
-            preds = f_pred(x).ravel()
-            next_index = sample(preds, diversity)
+            try:
+                preds = f_pred(x).ravel()
+                next_index = sample(preds, diversity)
+            except Exception, e:
+                print(preds)
+                a = np.log(preds) / diversity
+                a = np.exp(a) / np.sum(np.exp(a))
+                print(a)
+                raise e
             next_char = indices_char[next_index]
 
             generated += next_char
