@@ -155,7 +155,7 @@ class BackendTest(unittest.TestCase):
         self.assertAlmostEqual(round(T.eval(T.l2_regularize(x)), 5),
             round(33.7269096375, 5))
         self.assertAlmostEqual(round(T.eval(T.kl_gaussian(mean, logsigma)), 5),
-            round(0.8003901243209839, 5))
+            round(0.29442, 5))
         self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), 5),
             round(-5.86702489853, 5))
 

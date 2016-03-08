@@ -29,6 +29,14 @@ class FunctionsTest(unittest.TestCase):
     def tearDown(self):
         logger.set_enable(True)
 
+    def test_cnn(self):
+        np.random.seed(13)
+        f = nnet.Conv2D((None, 3, 28, 28),
+            num_filters=32, filter_size=(3, 3), stride=(1, 1), pad='same')
+        f = T.function(inputs=f.input_var, outputs=f())
+        self.assertEqual(f(np.random.rand(32, 3, 28, 28))[0].shape,
+                        (32, 32, 28, 28))
+
     def test_dense_func(self):
         d3 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)
         f_pred = T.function(d3.input_var, d3())
@@ -116,9 +124,10 @@ class FunctionsTest(unittest.TestCase):
 
     def test_function_as_weights(self):
         dense_in = nnet.Dense((10, 30), num_units=20, name='dense_in')
+
         dense = nnet.Dense((None, 28), num_units=10, name='dense1')
         dense = nnet.Dense(dense, num_units=20,
-            W=dense_in, name='dense2')
+            W=dense_in()[0], name='dense2')
         f = T.function(
             inputs=dense.input_var + dense_in.input_var,
             outputs= dense())

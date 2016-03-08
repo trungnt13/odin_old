@@ -55,9 +55,9 @@ class Dense(OdinFunction):
                 # if the input has more than two dimensions, flatten it into a
                 # batch of feature vectors.
                 x = T.flatten(x, 2)
-            activation = T.dot(x, self.W())
+            activation = T.dot(x, self.W)
             if self.b is not None:
-                activation = activation + T.reshape(self.b(), (1, -1))
+                activation = activation + T.reshape(self.b, (1, -1))
             outputs.append(self.nonlinearity(activation))
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
@@ -125,7 +125,7 @@ class Embedding(OdinFunction):
         self.output_size = output_size
 
         self.W = self.create_params(W, (input_size, output_size), name="W",
-            regularizable=True, trainable=True)()
+            regularizable=True, trainable=True)
 
         self.rescale = rescale
         if dropout is not None and not T.is_variable(dropout):

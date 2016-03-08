@@ -73,7 +73,7 @@ def _validate_initialization(init, desire_dims, n_incoming,
     else:
         shape = (1,) + desire_dims
         init = create_params(init, shape=shape, name=name,
-            regularizable=False, trainable=learnable)()
+            regularizable=False, trainable=learnable)
     # init shape must same as desire_dims (may or maynot include the batch_size)
     if shape != (1,) + desire_dims and \
        shape != desire_dims:
@@ -352,15 +352,15 @@ class Cell(OdinFunction):
 
         W_in = self.create_params(
             W_in, (num_inputs, num_units), 'W_in_' + str(name),
-            regularizable=True, trainable=True)()
+            regularizable=True, trainable=True)
         W_hid = self.create_params(
             W_hid, (num_units, num_units), 'W_hid_' + str(name),
-            regularizable=True, trainable=True)()
+            regularizable=True, trainable=True)
         # create cells
         if self.memory and W_cell is not None:
             W_cell = self.create_params(
                 W_cell, (num_units,), 'W_cell_' + str(name),
-                regularizable=True, trainable=True)()
+                regularizable=True, trainable=True)
         else:
             W_cell = None
 
@@ -369,7 +369,7 @@ class Cell(OdinFunction):
         else:
             b = self.create_params(
                 b, (num_units,), 'b_' + str(name),
-                regularizable=False, trainable=True)()
+                regularizable=False, trainable=True)
 
         if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
             nonlinearity = T.linear

@@ -1096,13 +1096,12 @@ def kl_gaussian(mean_, logsigma,
     Note
     ----
     origin implementation from seya:
-    https://github.com/EderSantana/seya/blob/master/seya/regularizers.py
-    Copyright (c) EderSantana
+    https://github.com/Philip-Bachman/ICML-2015/blob/master/LogPDFs.py
+    Copyright (c) Philip Bachman
     '''
-    kl = (prior_logsigma - logsigma +
-          0.5 * (-1 + tf.exp(2 * logsigma) + pow((mean_ - prior_mean), 2)) /
-          tf.exp(2 * prior_logsigma))
-    return mean(kl) * regularizer_scale
+    gauss_klds = 0.5 * (prior_logsigma - logsigma +
+            ((tf.exp(logsigma) + pow((mean_ - prior_mean), 2.0)) / tf.exp(prior_logsigma)) - 1.0)
+    return mean(gauss_klds)
 
 
 def correntropy_regularize(x, sigma=1.):
