@@ -19,7 +19,7 @@ import random
 import sys
 
 import os
-os.environ['ODIN'] = 'theano,float32,verbose30,cpu'
+os.environ['ODIN'] = 'theano,float32,verbose30,gpu'
 import odin
 from odin import nnet
 from odin import tensor as T
