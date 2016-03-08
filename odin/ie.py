@@ -1,3 +1,9 @@
+# ===========================================================================
+# This module is adpated from: https://github.com/fchollet/keras
+# Original work Copyright (c) 2014-2015 keras contributors
+# Modified work Copyright 2016-2017 TrungNT
+# ===========================================================================
+
 from __future__ import print_function, division, absolute_import
 
 import os
@@ -70,12 +76,13 @@ def get_file(fname, origin):
 class SSH(object):
 
     """Create a SSH connection object
-        Example:
-            ssh = SSH('192.168.1.16',username='user',password='pass')
-            ssh.ls('.') # same as ls in linux
-            ssh.open('/path/to/file') # open stream to any file in remote server
-            ssh.get_file('/path/to/file') # read the whole file in remote server
-            ssh.close()
+    Example
+    -------
+    >>> ssh = SSH('192.168.1.12',username='user',password='pass')
+    >>> ssh.ls('.') # same as ls in linux
+    >>> ssh.open('/path/to/file') # open stream to any file in remote server
+    >>> ssh.get_file('/path/to/file') # read the whole file in remote server
+    >>> ssh.close()
     """
 
     def __init__(self, hostname, username, password=None, pkey_path=None, port=22):

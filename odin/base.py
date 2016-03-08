@@ -140,7 +140,7 @@ class OdinFunction(OdinObject):
     __metaclass__ = ABCMeta
     _ID = 0
 
-    '''
+    """
     Properties
     ----------
     input_shape : list
@@ -169,7 +169,7 @@ class OdinFunction(OdinObject):
     name : a string, None or list of string
         An optional identifiers to attach to this layer.
 
-    '''
+    """
 
     def __init__(self, incoming, unsupervised, name=None, **kwargs):
         super(OdinFunction, self).__init__()

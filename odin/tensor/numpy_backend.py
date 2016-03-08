@@ -132,14 +132,20 @@ def np_shrink_labels(labels, maxdist=1):
         i += j
     return out
 
+
 # ===========================================================================
 # Special random algorithm for weights initialization
 # ===========================================================================
-
-
 def np_normal(shape, mean=0., std=1.):
     return np.cast[floatX()](
         get_random_generator().normal(mean, std, size=shape))
+
+
+def np_uniform(shape, range=0.05):
+    if isinstance(range, (int, float, long)):
+        range = (-abs(range), abs(range))
+    return np.cast[floatX()](
+        get_random_generator().uniform(low=range[0], high=range[1], size=shape))
 
 
 def np_constant(shape, val=0.):

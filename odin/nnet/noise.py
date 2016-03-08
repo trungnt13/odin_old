@@ -6,6 +6,7 @@ from six.moves import zip
 from .. import tensor as T
 from ..base import OdinFunction
 
+
 def _process_noise_dim(input_shape, dims):
     '''(None, 10, 10) with noise_dims=2
     => (None, 10, 1)
@@ -21,6 +22,7 @@ def _process_noise_dim(input_shape, dims):
                        for i, j in enumerate(shape)])
             )
     return noise_shape
+
 
 class Dropout(OdinFunction):
 
@@ -78,7 +80,7 @@ class Dropout(OdinFunction):
             incoming, unsupervised=False, **kwargs)
         self._rng = T.rng(seed=seed)
         if p is not None and not T.is_variable(p):
-                p = T.variable(p, name=self.name + '_p')
+            p = T.variable(p, name=self.name + '_p')
         self.p = p
         self.rescale = rescale
         if noise_dims is not None and not isinstance(noise_dims, (tuple, list)):
@@ -118,6 +120,7 @@ class Dropout(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
 
 class FastDropout(OdinFunction):
 
@@ -175,7 +178,7 @@ class FastDropout(OdinFunction):
             incoming, unsupervised=False, **kwargs)
         self._rng = T.rng(seed=seed)
         if p is not None and not T.is_variable(p):
-                p = T.variable(p, name=self.name + '_p')
+            p = T.variable(p, name=self.name + '_p')
         self.p = p
         self.rescale = rescale
         if noise_dims is not None and not isinstance(noise_dims, (tuple, list)):
@@ -215,6 +218,7 @@ class FastDropout(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
 
 class Noise(OdinFunction):
 
@@ -315,4 +319,3 @@ class Noise(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
-
