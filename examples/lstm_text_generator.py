@@ -21,7 +21,6 @@ import sys
 import os
 os.environ['ODIN'] = 'theano,float32,verbose30,gpu'
 import odin
-from odin import nnet
 from odin import tensor as T
 
 
@@ -71,9 +70,9 @@ for i, sentence in enumerate(sentences):
 
 # build the model: 2 stacked LSTM
 print('Build model...')
-f = odin.nnet.LSTM((None, maxlen, len(chars)), num_units=512)
+f = odin.nnet.LSTM((None, maxlen, len(chars)), num_units=256)
 f = odin.nnet.Dropout(f, p=0.2)
-f = odin.nnet.LSTM(f, num_units=512, only_return_final=True)
+f = odin.nnet.LSTM(f, num_units=256, only_return_final=True)
 f = odin.nnet.Dense(f, num_units=len(chars), nonlinearity=T.softmax)
 
 print('Input variables:', f.input_var)
