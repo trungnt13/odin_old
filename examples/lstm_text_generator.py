@@ -104,8 +104,6 @@ for iteration in range(1, 60):
             odin.batch(arrays=y).iter(128, shuffle=True, seed=seed))):
         cost.append(f_train(i, j))
         odin.logger.progress(k, niter, title='Cost:%.5f' % cost[-1])
-        if k == 2:
-            break
     print()
     odin.visual.print_bar(cost, bincount=20)
     print()
