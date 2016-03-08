@@ -46,8 +46,8 @@ class Dense(OdinFunction):
     def output_shape(self):
         return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False):
-        inputs = self.get_inputs(training)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
         outputs = []
         # ====== processing each inputs ====== #
         for x in inputs:
@@ -143,8 +143,8 @@ class Embedding(OdinFunction):
             outshape.append(input_shape + (self.output_size,))
         return outshape
 
-    def __call__(self, training=False):
-        inputs = self.get_inputs(training)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
 
         # ====== create dropout mask ====== #
         B = None

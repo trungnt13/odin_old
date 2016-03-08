@@ -488,10 +488,10 @@ class Cell(OdinFunction):
             return self.input_shape
         return []
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         ''' Return the initial states of cell '''
         if self.memory: # has memory cell, return its initial state
-            inputs = self.get_inputs(training)
+            inputs = self.get_input(training, **kwargs)
         else: # no memory
             inputs = []
         outputs = inputs
@@ -999,9 +999,9 @@ class Recurrent(OdinFunction):
                 outshape.append((shape[0], shape[1],) + self.output_dims)
         return outshape
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         # ====== prepare inputs ====== #
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         outputs = []
         n_incoming = len(self._incoming_mask[::2])
         # roots can have multiple hierarchical, hence, we don't care about

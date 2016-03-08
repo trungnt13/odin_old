@@ -92,9 +92,9 @@ class Dropout(OdinFunction):
     def output_shape(self):
         return self.input_shape
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         # return deterministic value
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         if not training or self.p is None:
             outputs = inputs
         else:
@@ -190,9 +190,9 @@ class FastDropout(OdinFunction):
     def output_shape(self):
         return self.input_shape
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         # return deterministic value
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         if not training or self.p is None:
             outputs = inputs
         else:
@@ -272,8 +272,8 @@ class Noise(OdinFunction):
     def output_shape(self):
         return self.input_shape
 
-    def __call__(self, training=False):
-        inputs = self.get_inputs(training)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
         if not training or self.sigma is None:
             outputs = inputs
         else:

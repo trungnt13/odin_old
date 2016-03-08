@@ -138,11 +138,11 @@ class RBM(OdinUnsupervisedFunction):
         # return hidden activations
         return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         ''' The sampling process was optimized using loop (unroll_scan) on
         theano which gives significantly speed up '''
         X = [T.flatten(i, 2) if T.ndim(i) > 2 else i
-             for i in self.get_inputs(training)]
+             for i in self.get_input(training, **kwargs)]
         self._last_inputs = X # must update last inputs because we reshape X
 
         # ====== create chain for each input ====== #

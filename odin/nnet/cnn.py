@@ -238,7 +238,7 @@ class Pool2D(OdinFunction):
         return outshape
 
     def __call__(self, training=False, **kwargs):
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         outputs = []
         for i in inputs:
             outputs.append(
@@ -365,7 +365,7 @@ class Pool3D(OdinFunction):
         return outshape
 
     def __call__(self, training=False, **kwargs):
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         outputs = []
         for i in inputs:
             outputs.append(
@@ -578,7 +578,7 @@ class BaseConvLayer(OdinFunction):
         return outshape
 
     def __call__(self, training=False, **kwargs):
-        inputs = self.get_inputs(training)
+        inputs = self.get_input(training, **kwargs)
         outputs = []
         for i in inputs:
             conved = self.convolve(i, **kwargs)

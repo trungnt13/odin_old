@@ -405,7 +405,7 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         raise NotImplementedError
 
     def get_optimization(self, objective, optimizer=None,
@@ -472,7 +472,7 @@ class OdinFunction(OdinObject):
     @property
     def n_inputs(self):
         '''Return expected number of inputs will be returned by
-        get_inputs function
+        get_input function
         '''
         # only OdinFunction can return multiple outputs
         return sum(len(i.output_shape)
@@ -535,7 +535,7 @@ class OdinFunction(OdinObject):
                             name='out.%s.%s' % (shape_str, self.name)))
         return self._output_var
 
-    def get_inputs(self, training=True):
+    def get_input(self, training=True, **kwargs):
         '''
         Parameters
         ----------

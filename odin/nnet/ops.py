@@ -84,8 +84,8 @@ class Ops(OdinFunction):
         else:
             return self._shape
 
-    def __call__(self, training=False):
-        inputs = self.get_inputs(training)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
         if self.broadcast:
             outputs = [self.ops(i) for i in inputs]
         else:
@@ -126,8 +126,8 @@ class Get(OdinFunction):
     def output_shape(self):
         return [self.input_shape[i] for i in self.indices]
 
-    def __call__(self, training=False):
-        inputs = self.get_inputs(training)
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
         outputs = [inputs[i] for i in self.indices]
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)

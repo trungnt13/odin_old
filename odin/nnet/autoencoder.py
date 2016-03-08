@@ -47,14 +47,14 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         else:
             return self.encoder.output_shape
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         # ====== Only get hidden states ====== #
         if not self._reconstruction_mode:
-            inputs = self.get_inputs(training)
+            inputs = self.get_input(training, **kwargs)
             outputs = inputs
         # ====== Get reconstructed inputs from disconnected graph ====== #
         elif not self._connected_encoder_decoder:
-            inputs = self.get_inputs(training)
+            inputs = self.get_input(training, **kwargs)
             # intercept the inputs of decoder
             for i in self.decoder.get_roots():
                 i.set_intermediate_inputs(inputs)
@@ -216,13 +216,13 @@ class AutoEncoder(OdinUnsupervisedFunction):
             return self.input_shape
         return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         if training and self._reconstruction_mode:
             self.log('In training mode, the autoencoder does not reshape '
                 'to match input_shape when enabling reconstruction mode.', 30)
         # ====== inputs ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
-            for x in self.get_inputs(training)]
+            for x in self.get_input(training, **kwargs)]
         outputs = []
         J = T.castX(0.) # jacobian regularization
         for x, shape in zip(X, self.output_shape):
@@ -252,7 +252,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
-            for x in self.get_inputs(training)]
+            for x in self.get_input(training, **kwargs)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
         self.set_intermediate_inputs(x_corrupted) # dirty hack modify inputs
 
@@ -385,7 +385,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             outshape.append((i[0], self.num_units))
         return outshape
 
-    def __call__(self, training=False):
+    def __call__(self, training=False, **kwargs):
         '''
         Returns
         -------
@@ -396,7 +396,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             self.log('Training mode always return hidden activations')
         # ====== check inputs (only 2D) ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
-             for x in self.get_inputs(training)]
+             for x in self.get_input(training, **kwargs)]
         # ====== calculate hidden activation ====== #
         outputs = []
         self._last_mean_sigma = []
