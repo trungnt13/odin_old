@@ -995,3 +995,37 @@ def as_index_map(keys, values):
             seen[v] = len(ret_values) - 1
         keys_to_index[k] = seen[v]
     return ret_values, keys_to_index
+
+
+# ===========================================================================
+# Misc
+# ===========================================================================
+def play_audio(data, fs, volumn=1, speed=1):
+    ''' Play audio from numpy array.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+            signal data
+    fs : int
+            sample rate
+    volumn: float
+            between 0 and 1
+    speed: float
+            > 1 mean faster, < 1 mean slower
+    '''
+    import soundfile as sf
+    import numpy as np
+    import os
+
+    data = np.asarray(data)
+    if data.ndim == 1:
+        channels = 1
+    else:
+        channels = data.shape[1]
+    with sf.SoundFile('/tmp/tmp_play.wav', 'w', fs, channels,
+                   subtype=None, endian=None, format=None, closefd=None) as f:
+        f.write(data)
+    os.system('afplay -v %f -q 1 -r %f /tmp/tmp_play.wav &' % (volumn, speed))
+    raw_input('<enter> to stop audio.')
+    os.system("kill -9 `ps aux | grep -v 'grep' | grep afplay | awk '{print $2}'`")

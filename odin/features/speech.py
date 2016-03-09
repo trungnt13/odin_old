@@ -93,9 +93,8 @@ def timit_phonemes(phn, map39=False, blank=False):
             rphn.append(timit.index(timit_map[p]) if p in timit_map else timit.index(p))
     return rphn
 
+
 # ==================== Speech Signal Processing ==================== #
-
-
 def read(f, pcm = False):
     '''
     Return
@@ -121,9 +120,8 @@ def preprocess(signal, add_noise=False):
 
 def logmel(signal, fs, n_filters=40, n_ceps=13,
         win=0.025, shift=0.01,
-        delta1=True, delta2=True, energy=True,
-        normalize=True, clean=True,
-        vad=True, returnVAD=False):
+        delta1=True, delta2=True, energy=False,
+        normalize=True, clean=True):
     import sidekit
 
     if len(signal.shape) > 1:
@@ -158,27 +156,23 @@ def logmel(signal, fs, n_filters=40, n_ceps=13,
     if energy:
         logmel = np.concatenate((logmel, logenergy.reshape(-1, 1)), axis=1)
     # 5. VAD and normalize.
-    if vad:
-        nwin = int(fs * win)
-        idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
-        if not returnVAD:
-            logmel = logmel[idx, :]
+    nwin = int(fs * win)
+    idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
+    # if not returnVAD:
+        # logmel = logmel[idx, :]
     # Normalize
     if normalize:
         mean = np.mean(logmel, axis = 0)
         var = np.var(logmel, axis = 0)
         logmel = (logmel - mean) / np.sqrt(var)
     # return
-    if returnVAD and vad:
-        return logmel, idx
-    return logmel
+    return logmel, idx
 
 
 def mfcc(signal, fs, n_ceps, n_filters=40,
         win=0.025, shift=0.01,
-        delta1=True, delta2=True, energy=True,
-        normalize=True, clean=True,
-        vad=True, returnVAD=False):
+        delta1=True, delta2=True, energy=False,
+        normalize=True, clean=True):
     import sidekit
 
     # 1. Const.
@@ -198,8 +192,6 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
                     get_spec=False, get_mspec=False)
     logenergy = mfcc[1]
     mfcc = mfcc[0].astype(np.float32)
-    if energy:
-        mfcc = np.concatenate((mfcc, logenergy.reshape(-1, 1)), axis=1)
     # 4. Add more information.
     tmp = [mfcc]
     if delta1 or delta2:
@@ -210,28 +202,27 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
         if delta1: tmp.append(d1)
         if delta2: tmp.append(d2)
     mfcc = np.concatenate(tmp, 1)
+    if energy:
+        mfcc = np.concatenate((mfcc, logenergy.reshape(-1, 1)), axis=1)
     # 5. Vad and normalize.
     # VAD
-    if vad:
-        nwin = int(fs * win)
-        idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
-        if not returnVAD:
-            mfcc = mfcc[idx, :]
+    nwin = int(fs * win)
+    idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
+    # if not returnVAD:
+        # mfcc = mfcc[idx, :]
     # Normalize
     if normalize:
         mean = np.mean(mfcc, axis = 0)
         var = np.var(mfcc, axis = 0)
         mfcc = (mfcc - mean) / np.sqrt(var)
     # return
-    if returnVAD and vad:
-        return mfcc, idx
-    return mfcc
+    return mfcc, idx
 
 
 def spectrogram(signal, fs, n_ceps=13, n_filters=40,
         win=0.025, shift=0.01,
-        normalize=False, clean=True,
-        vad=True, returnVAD=False):
+        delta1=True, delta2=True, energy=False,
+        normalize=False, clean=True):
     import sidekit
 
     # 1. Const.
@@ -248,21 +239,32 @@ def spectrogram(signal, fs, n_ceps=13, n_filters=40,
                     fs=fs, nceps=n_ceps, midfreq=1000,
                     nwin=win, shift=shift,
                     get_spec=True, get_mspec=False)
-    spt = spt[2]
-    spt = spt.astype(np.float32)
+    logenergy = spt[1]
+    spt = spt[2].astype(np.float32)
+    # 4. Add more information.
+    tmp = [spt]
+    if delta1 or delta2:
+        d1 = sidekit.frontend.features.compute_delta(spt,
+                        win=3, method='filter')
+        d2 = sidekit.frontend.features.compute_delta(d1,
+                        win=3, method='filter')
+        if delta1: tmp.append(d1)
+        if delta2: tmp.append(d2)
+    spt = np.concatenate(tmp, 1)
+    if energy:
+        spt = np.concatenate((spt, logenergy.reshape(-1, 1)), axis=1)
+
     # 5. Vad and normalize.
     # VAD
-    if vad:
-        nwin = int(fs * win)
-        idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
-        if not returnVAD:
-            spt = spt[idx, :]
+    nwin = int(fs * win)
+    idx = sidekit.frontend.vad.vad_snr(signal, 30,
+        fs=fs, shift=shift, nwin=nwin)
+    # if not returnVAD:
+        # spt = spt[idx, :]
     # Normalize
     if normalize:
         mean = np.mean(spt, axis = 0)
         var = np.var(spt, axis = 0)
         spt = (spt - mean) / np.sqrt(var)
     # return
-    if returnVAD and vad:
-        return spt, idx
-    return spt
+    return spt, idx

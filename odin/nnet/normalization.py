@@ -8,14 +8,10 @@ from __future__ import print_function, division
 
 from six.moves import zip_longest, zip, range
 import numpy as np
-from collections import defaultdict
 
 from .. import config
 from .. import tensor as T
 from ..base import OdinFunction
-from ..utils import as_tuple, as_index_map
-from .dense import Dense
-from .ops import Ops
 
 __all__ = [
     "BatchNormalization",

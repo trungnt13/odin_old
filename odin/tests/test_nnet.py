@@ -29,6 +29,24 @@ class FunctionsTest(unittest.TestCase):
     def tearDown(self):
         logger.set_enable(True)
 
+    def test_batch_norm(self):
+        np.random.seed(12)
+        X1 = np.random.rand(10, 8)
+        X2 = np.random.rand(10, 8)
+
+        b = nnet.BatchNormalization([(None, 8)])
+
+        f_train = T.function(b.input_var, outputs=b(True))
+        mean1 = b.get_params_value(True)[2]
+        for i in xrange(30):
+            f_train(X1)
+            f_train(X2)
+        mean2 = b.get_params_value(True)[2]
+        diff = mean1 - mean2
+        val = np.asarray([-0.41652647, -0.54181147, -0.48397034, -0.53209579,
+            -0.5128513, -0.63138282, -0.45040295, -0.3329283])
+        self.assertLessEqual(np.sum(np.abs(diff - val)), 0.00005)
+
     def test_cnn(self):
         np.random.seed(13)
         f = nnet.Conv2D((None, 3, 28, 28),

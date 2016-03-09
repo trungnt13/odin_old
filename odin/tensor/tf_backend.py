@@ -561,8 +561,7 @@ class Function(object):
             self.updates = [tf.assign(p, new_p) for (p, new_p) in updates]
         # ====== add global_update ====== #
         self.global_update = [tf.assign(p, new_p) for (p, new_p) in _GLOBALS_UPDATES.items()]
-        global _GLOBALS_UPDATES
-        _GLOBALS_UPDATES = OrderedDict()
+        reset_global_updates()
 
     def __call__(self, *inputs):
         assert type(inputs) in {list, tuple}

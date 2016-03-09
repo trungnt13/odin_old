@@ -13,6 +13,7 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from theano.tensor.signal import pool
 from theano.tensor.nnet import conv3d2d
 import numpy as np
+from collections import OrderedDict
 
 from .. import config
 from .numpy_backend import get_random_magic_seed, get_random_magic_seed
@@ -488,9 +489,29 @@ def set_subtensor(x, y):
 # ===========================================================================
 # GRAPH MANIPULATION
 # ===========================================================================
+_GLOBALS_UPDATES = OrderedDict()
+
+
+def add_global_updates(variable, value):
+    '''trick to update tensorflow variables anywhere
+    This dictionary will be reseted after each time you create a function
+    '''
+    _GLOBALS_UPDATES[variable] = value
+
+
+def reset_global_updates():
+    global _GLOBALS_UPDATES
+    _GLOBALS_UPDATES = OrderedDict()
+
+
 class Function(object):
 
     def __init__(self, inputs, outputs, updates=[], **kwargs):
+        if isinstance(updates, OrderedDict):
+            updates = updates.items()
+        # ====== add and reset global update ====== #
+        updates += _GLOBALS_UPDATES.items()
+        reset_global_updates()
         self.function = theano.function(
             inputs, outputs,
             updates=updates,
