@@ -239,7 +239,8 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(f.output_shape,
             [(None, 12), (None, 12)])
         print('Params:          ', f.get_params(True))
-        self.assertEqual(len(f.get_params(True)), 47)
+        self.assertEqual(len(f.get_params(True)), 43)
+        self.assertEqual(len(f.get_params(True, trainable=True)), 40)
         pred_shape = [i.shape for i in f_pred(X, Xmask, X1)]
         print('Prediction shape:', pred_shape)
         self.assertEqual(pred_shape, [(128, 12), (256, 12)])

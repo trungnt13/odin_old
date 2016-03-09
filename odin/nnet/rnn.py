@@ -564,6 +564,7 @@ class GRUCell(Cell):
     def __init__(self, hid_shape, input_dims,
                  nonlinearity=T.linear,
                  algorithm=gru_algorithm,
+                 batch_norm=False, learnable_norm=False,
                  **kwargs):
         if isinstance(hid_shape, (int, float, long)):
             hid_shape = (None, int(hid_shape))
@@ -577,7 +578,8 @@ class GRUCell(Cell):
         super(GRUCell, self).__init__(hid_shape, input_dims,
                  learnable=False, nonlinearity=nonlinearity,
                  algorithm=algorithm, memory=False,
-                 **kwargs)
+                 batch_norm=batch_norm, learnable_norm=learnable_norm,
+                 ** kwargs)
 
 
 # ===========================================================================
@@ -1352,6 +1354,7 @@ class GRU(Recurrent):
                  updategate=Gate(),
                  hidden_update=Gate(nonlinearity=T.tanh),
                  hidden_init=T.np_constant, learn_init=False,
+                 batch_norm=False, learnable_norm=False,
                  backwards=False,
                  unroll_scan=False,
                  only_return_final=False,
@@ -1370,7 +1373,8 @@ class GRU(Recurrent):
         # ====== create cell ====== #
         cell = GRUCell(hid_shape=(None, num_units), input_dims=self.input_dims,
                        nonlinearity=T.linear,
-                       algorithm=gru_algorithm)
+                       algorithm=gru_algorithm,
+                       batch_norm=batch_norm, learnable_norm=learnable_norm)
         cell.add_gate(W_in=updategate.W_in, W_hid=updategate.W_hid,
                       b=updategate.b, nonlinearity=updategate.nonlinearity,
                       name='update_gate')
@@ -1392,8 +1396,8 @@ class LSTM(Recurrent):
                  forgetgate=Gate(),
                  cell=Gate(W_cell=None, nonlinearity=T.tanh),
                  outgate=Gate(),
-                 cell_init=T.np_constant, hidden_init=T.np_constant,
-                 learn_init=False,
+                 cell_init=T.np_constant, hidden_init=T.np_constant, learn_init=False,
+                 batch_norm=False, learnable_norm = False,
                  nonlinearity=T.tanh,
                  backwards=False,
                  unroll_scan=False,
@@ -1418,7 +1422,8 @@ class LSTM(Recurrent):
         # ====== create cell ====== #
         c = Cell(cell_init=cell_init, input_dims=self.input_dims,
             learnable=learn_init, nonlinearity=nonlinearity,
-            algorithm=lstm_algorithm, memory=True)
+            algorithm=lstm_algorithm, memory=True,
+            batch_norm=batch_norm, learnable_norm=learnable_norm)
         c.add_gate(W_in=ingate.W_in, W_hid=ingate.W_hid,
                    W_cell=ingate.W_cell, b=ingate.b,
                    nonlinearity=ingate.nonlinearity,
