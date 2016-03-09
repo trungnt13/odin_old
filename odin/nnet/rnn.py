@@ -363,21 +363,22 @@ class Cell(OdinFunction):
             return
 
         if self.batch_norm:
+            # only re-new if number of gates changed
             if n_norm_gates != n_gates:
                 self.log('Number of gates changed from {} to {}, hence, we '
                          'recreate BatchNormalization function for {} gates'
                          '.'.format(n_norm_gates, n_gates, n_gates), 30)
-            self.batch_norm_cell = n_gates
-            # check if gamma and beta are learnable
-            if self.learnable_norm:
-                beta, gamma = T.np_constant, lambda x: T.np_constant(x, 1.)
-            else:
-                beta, gamma = None, None
-            # normalize over all batch and time dimension
-            self.batch_norm = BatchNormalization(
-                (None, None, self.num_units * self.batch_norm_cell),
-                axes=(0, 1),
-                beta=beta, gamma=gamma)
+                self.batch_norm_cell = n_gates
+                # check if gamma and beta are learnable
+                if self.learnable_norm:
+                    beta, gamma = T.np_constant, lambda x: T.np_constant(x, 1.)
+                else:
+                    beta, gamma = None, None
+                # normalize over all batch and time dimension
+                self.batch_norm = BatchNormalization(
+                    (None, None, self.num_units * self.batch_norm_cell),
+                    axes=(0, 1),
+                    beta=beta, gamma=gamma)
         else:
             self.batch_norm = None
 
@@ -523,7 +524,9 @@ class Cell(OdinFunction):
                     if T.is_variable(i):
                         params += self.params[i.name].as_variables(
                             globals, trainable, regularizable)
-        self._check_batch_norm()
+        # no safe check here, because the BatchNormalization used for
+        # precompute can be different from the BatchNormalization from
+        # get_params
         if isinstance(self.batch_norm, OdinFunction):
             params += self.batch_norm.get_params(
                 globals, trainable, regularizable)
