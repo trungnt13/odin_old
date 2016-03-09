@@ -515,7 +515,7 @@ class Function(object):
         self.function = theano.function(
             inputs, outputs,
             updates=updates,
-            # on_unused_input='ignore', # TODO: remove this when stop testing
+            on_unused_input='ignore', # TODO: remove this when stop testing
             allow_input_downcast=True, **kwargs)
 
     def __call__(self, *inputs):

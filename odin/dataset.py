@@ -19,11 +19,10 @@ __all__ = [
     'dataset'
 ]
 
+
 # ===========================================================================
 # Helper function
 # ===========================================================================
-
-
 def _auto_batch_size(shape):
     # This method calculate based on reference to imagenet size
     batch = 256

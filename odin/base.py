@@ -409,9 +409,18 @@ class OdinFunction(OdinObject):
         if optimizer is not None and not hasattr(optimizer, '__call__'):
             raise ValueError('optimizer must be a function!')
 
-    def _validate_nD_input(self, n):
+    def _validate_nD_input(self, n, strict=False):
         '''All inputs which > n-dimension will be flatten and must have the
         same shape
+
+        Parameters
+        ----------
+        n : int
+            number of dimension that input must have
+        strict : bool
+            if strict=True, all input has > n dimension or < n dimension will
+            raise Exception
+
         Returns
         -------
         full input shape after flattened
@@ -419,6 +428,8 @@ class OdinFunction(OdinObject):
         shape = self.input_shape[0]
         i = tuple(shape[:(n - 1)]) + (np.prod(shape[(n - 1):]),)
         for j in self.input_shape:
+            if strict and len(i) != n:
+                self.raise_arguments('Input shape must be %d-D tensor' % n)
             if i != tuple(j[:(n - 1)]) + (np.prod(j[(n - 1):]),):
                 self.raise_arguments('All incoming inputs must be flatten to %d'
                                      ' dimension and have the same shape, but'
@@ -702,8 +713,8 @@ class OdinFunction(OdinObject):
         # ====== create and return params ====== #
         params = OdinParams(name, spec, shape, trainable, regularizable)
         if params.name in self.params:
-            self.raise_arguments("Parameters' name already exist, choose other "
-                                 "name for your parameters.")
+            self.raise_arguments("Parameters' name={} already exist, choose other "
+                                 "name for your parameters.".format(params.name))
         self.params[params.name] = params
         # return actual variable or expression
         return spec

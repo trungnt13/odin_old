@@ -180,7 +180,8 @@ class FunctionsTest(unittest.TestCase):
         cell2 = nnet.Cell(
             cell_init=T.zeros_var(shape=(1, 5)),
             input_dims=5,
-            algorithm=nnet.lstm_algorithm)
+            algorithm=nnet.lstm_algorithm,
+            batch_norm=True, learnable_norm=True)
         cell2.add_gate(name='forget')
         cell2.add_gate(name='input')
         cell2.add_gate(name='cell_update')
@@ -238,7 +239,7 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(f.output_shape,
             [(None, 12), (None, 12)])
         print('Params:          ', f.get_params(True))
-        self.assertEqual(len(f.get_params(True)), 43)
+        self.assertEqual(len(f.get_params(True)), 47)
         pred_shape = [i.shape for i in f_pred(X, Xmask, X1)]
         print('Prediction shape:', pred_shape)
         self.assertEqual(pred_shape, [(128, 12), (256, 12)])
@@ -298,7 +299,7 @@ class FunctionsTest(unittest.TestCase):
 
         # n_steps x batch_size x n_features
         X = T.dimshuffle(X, (1, 0, 2))
-        X = c.precompute(X)
+        X = c.precompute(X, True)
         self.assertEqual(tuple(T.eval(T.shape(X))), (128, 256, 52))
 
         hidden_init = T.zeros_var(shape=(256, 13), name='hid_init')

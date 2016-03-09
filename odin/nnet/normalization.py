@@ -178,7 +178,7 @@ class BatchNormalization(OdinFunction):
         batch_norm_use_averages = kwargs.get('batch_norm_use_averages', not training)
         batch_norm_update_averages = kwargs.get('batch_norm_update_averages', training)
         inputs = self.get_input(training, **kwargs)
-
+        outputs = []
         for input in inputs:
             input_mean = T.mean(input, self.axes)
             input_inv_std = 1. / T.sqrt(T.var(input, self.axes) + self.epsilon)
@@ -224,11 +224,14 @@ class BatchNormalization(OdinFunction):
                        for input_axis in range(T.ndim(input))]
 
             # apply dimshuffle pattern to all parameters
-            beta = 0 if self.beta is None else T.dimshuffle(self.beta, pattern)
-            gamma = 1 if self.gamma is None else T.dimshuffle(self.gamma, pattern)
+            beta = 0. if self.beta is None else T.dimshuffle(self.beta, pattern)
+            gamma = 1. if self.gamma is None else T.dimshuffle(self.gamma, pattern)
             mean = T.dimshuffle(mean, pattern)
             inv_std = T.dimshuffle(inv_std, pattern)
 
             # normalize
             normalized = (input - mean) * (gamma * inv_std) + beta
-        return normalized
+            outputs.append(normalized)
+        # ====== foot_print ====== #
+        self._log_footprint(training, inputs, outputs)
+        return outputs

@@ -15,6 +15,7 @@ from ..base import OdinFunction
 from ..utils import as_tuple, as_index_map
 from .dense import Dense
 from .ops import Ops
+from .normalization import BatchNormalization
 
 __all__ = [
     "Gate",
@@ -283,6 +284,10 @@ class Gate(object):
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
+    cell_init : shape tuple, int (num_units), variable, expression, `OdinFunction`
+        the shape of cell_init must match the shape of internal hidden state of
+        Recurrent function, it must has the shape (1, trailing_dims) or
+        (batch_size, trailing_dims)
     input_dims : shape tuple, int
         Input shape to cell cannot contain None dimension, it must contain
         input_dims excluded `batch_size` and `seq_len` dimension.
@@ -290,17 +295,22 @@ class Cell(OdinFunction):
         if True this cell has its own memory vector which is internal state of
         the recurrent algorithm, otherwise, it only uses hidden state and
         output state (if available) as its memory
+
+    Note
+    ----
+    Cell now only support 2D hidden states
     """
 
     def __init__(self, cell_init, input_dims, learnable=False,
                  nonlinearity=T.tanh,
                  algorithm=simple_algorithm,
+                 batch_norm=False, learnable_norm=False,
                  memory=True,
                  **kwargs):
         super(Cell, self).__init__(cell_init, unsupervised=False, **kwargs)
 
         # input shape and number of cell units
-        shape = self._validate_nD_input(2)
+        shape = self._validate_nD_input(2, strict=True)
         self.num_units = shape[-1]
 
         # ====== check input_dims ====== #
@@ -337,6 +347,39 @@ class Cell(OdinFunction):
         # store all gate informations
         self._gates = []
         self._gates_map = defaultdict(list) # store mapping name -> gate
+        # ====== batch_norm ====== #
+        self.batch_norm = batch_norm
+        self.batch_norm_cell = 0 # number of cell batch_norm handling
+        self.learnable_norm = learnable_norm
+
+    def _check_batch_norm(self):
+        '''BatchNormalization must be recreated if the number of gates changed,
+        because for each gate we need 1 BatchNormalization
+        '''
+        # recreate batch_norm
+        n_norm_gates = self.batch_norm_cell
+        n_gates = len(self._gates)
+        if n_gates == 0: # no gate no norm
+            return
+
+        if self.batch_norm:
+            if n_norm_gates != n_gates:
+                self.log('Number of gates changed from {} to {}, hence, we '
+                         'recreate BatchNormalization function for {} gates'
+                         '.'.format(n_norm_gates, n_gates, n_gates), 30)
+            self.batch_norm_cell = n_gates
+            # check if gamma and beta are learnable
+            if self.learnable_norm:
+                beta, gamma = T.np_constant, lambda x: T.np_constant(x, 1.)
+            else:
+                beta, gamma = None, None
+            # normalize over all batch and time dimension
+            self.batch_norm = BatchNormalization(
+                (None, None, self.num_units * self.batch_norm_cell),
+                axes=(0, 1),
+                beta=beta, gamma=gamma)
+        else:
+            self.batch_norm = None
 
     def add_gate(self, W_in=T.np_glorot_normal,
                  W_hid=T.np_glorot_normal,
@@ -364,7 +407,7 @@ class Cell(OdinFunction):
         else:
             W_cell = None
 
-        if b is None:
+        if self.batch_norm: # no bias if batch_norm
             b = None
         else:
             b = self.create_params(
@@ -391,7 +434,7 @@ class Cell(OdinFunction):
                                  'dimensions.')
         return W[:, n * self.num_units:(n + 1) * self.num_units]
 
-    def precompute(self, X):
+    def precompute(self, X, training, **kwargs):
         ''' We assume that the input X already preprocessed to have
         following dimension order: (n_time_steps, n_batch, n_features)
 
@@ -417,10 +460,6 @@ class Cell(OdinFunction):
         self.W_hid_stacked = T.concatenate(
             [i[1] for i in self._gates], axis=1)
 
-        # Stack biases into a (4*num_units) vector
-        self.b_stacked = T.concatenate(
-            [i[2] for i in self._gates], axis=0)
-
         # Treat all dimensions after the second as flattened feature dimensions
         if T.ndim(X) > 3:
             X = T.flatten(X, 3)
@@ -429,7 +468,16 @@ class Cell(OdinFunction):
         # precompute_input the inputs dot weight matrices before scanning.
         # W_in_stacked is (n_features, 4*num_units). input is then
         # (n_time_steps, n_batch, 4*num_units).
-        X = T.dot(X, self.W_in_stacked) + self.b_stacked
+        self._check_batch_norm()
+        if self.batch_norm: # apply batch normalization
+            self.batch_norm.set_intermediate_inputs(
+                T.dot(X, self.W_in_stacked), root=True)
+            X = self.batch_norm(training, **kwargs)[0]
+        else:
+            # Stack biases into a (4*num_units) vector
+            self.b_stacked = T.concatenate(
+                [i[2] for i in self._gates], axis=0)
+            X = T.dot(X, self.W_in_stacked) + self.b_stacked
         return X
 
     def step(self, in_precompute, hid_prev, out_prev, cell_prev):
@@ -465,14 +513,20 @@ class Cell(OdinFunction):
     # ==================== Override functions ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
         if self.memory: # if has memory return all parameters
-            return super(Cell, self).get_params(globals, trainable, regularizable)
-        # no memory, only return gates' parameters
-        params = []
-        for g in self._gates:
-            for i in g:
-                if T.is_variable(i):
-                    params += self.params[i.name].as_variables(
-                        globals, trainable, regularizable)
+            params = super(Cell, self).get_params(
+                globals, trainable, regularizable)
+        else:
+            # no memory, only return gates' parameters
+            params = []
+            for g in self._gates:
+                for i in g:
+                    if T.is_variable(i):
+                        params += self.params[i.name].as_variables(
+                            globals, trainable, regularizable)
+        self._check_batch_norm()
+        if isinstance(self.batch_norm, OdinFunction):
+            params += self.batch_norm.get_params(
+                globals, trainable, regularizable)
         return params
 
     @property
@@ -699,7 +753,9 @@ class Recurrent(OdinFunction):
                  hidden_to_hidden=None,
                  input_to_hidden=None,
                  hidden_to_output=None,
-                 hidden_init=T.np_constant, output_init=None, learn_init=False,
+                 hidden_init=T.np_constant,
+                 output_init=T.np_constant,
+                 learn_init=False,
                  nonlinearity=T.relu,
                  backwards=False,
                  unroll_scan=False,
@@ -975,8 +1031,9 @@ class Recurrent(OdinFunction):
             not _check_shape_match((None,) + cell.input_dims,
                                   (None,) + input_dims)):
             self.raise_arguments('Cell input_dims must match the input_dims '
-                                 'of this Recurrent or the output_shape of '
-                                 'input_to_hidden (if not None), but '
+                                 'of this Recurrent, or in the case '
+                                 'input_to_hidden is not None, it must match '
+                                 'the output_shape of input_to_hidden, but '
                                  'cell.input_dims={} and '
                                  'self.input_dims={}'.format(
                                  cell.input_dims, input_dims))
@@ -1009,7 +1066,7 @@ class Recurrent(OdinFunction):
         n_hidden_to_hidden_inputs = sum(len([j for j in i.incoming
                                              if not isinstance(j, OdinFunction)])
                                         for i in self.hidden_to_hidden.get_roots())
-        # hidden init
+        ## hidden init
         if isinstance(self.hidden_init, OdinFunction):
             # don't need to check number of returned values equal to 1,
             # or n_incoming, we already checked at _validate_initialization
@@ -1019,7 +1076,7 @@ class Recurrent(OdinFunction):
         if len(hid_init) == 1:
             hid_init = hid_init * n_incoming
 
-        # output init
+        ## output init
         out_init = [None]
         if self.hidden_to_output is not None:
             if isinstance(self.output_init, OdinFunction):
@@ -1031,7 +1088,7 @@ class Recurrent(OdinFunction):
         if len(out_init) == 1:
             out_init = out_init * n_incoming
 
-        # cell init
+        ## cell init
         cell_init = []
         for i in self._cells:
             i = i(training)
@@ -1081,12 +1138,11 @@ class Recurrent(OdinFunction):
                 self.input_to_hidden.set_intermediate_inputs(X, root=True)
                 X = self.input_to_hidden(training)[0]
                 # Reshape back to (seq_len, batch_size, trailing dimensions...)
-                trailing_dims = tuple(T.shape(X)[n]
-                                      for n in range(1, T.ndim(X)))
+                trailing_dims = tuple(T.shape(X)[n] for n in range(1, T.ndim(X)))
                 X = T.reshape(X, (seq_len, num_batch) + trailing_dims)
             # calculate cell precompute_input
             if len(self._cells) > 0:
-                X = [i.precompute(X) for i in self._cells]
+                X = [i.precompute(X, training, **kwargs) for i in self._cells]
             else:
                 X = [X]
             # make sure no duplicate, and no None value
@@ -1293,7 +1349,6 @@ class GRU(Recurrent):
                  updategate=Gate(),
                  hidden_update=Gate(nonlinearity=T.tanh),
                  hidden_init=T.np_constant, learn_init=False,
-                 nonlinearity=T.linear,
                  backwards=False,
                  unroll_scan=False,
                  only_return_final=False,
@@ -1311,7 +1366,7 @@ class GRU(Recurrent):
             **kwargs)
         # ====== create cell ====== #
         cell = GRUCell(hid_shape=(None, num_units), input_dims=self.input_dims,
-                       nonlinearity=nonlinearity,
+                       nonlinearity=T.linear,
                        algorithm=gru_algorithm)
         cell.add_gate(W_in=updategate.W_in, W_hid=updategate.W_hid,
                       b=updategate.b, nonlinearity=updategate.nonlinearity,
