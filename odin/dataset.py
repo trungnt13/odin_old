@@ -103,7 +103,7 @@ class batch(object):
     - Fastest reading speed for batch_size=128 is chunk_size=128
     """
 
-    def __init__(self, key=None, hdf=None, arrays=None, chunk_size='auto'):
+    def __init__(self, key=None, hdf=None, arrays=None, chunk_size=16):
         super(batch, self).__init__()
         self._normalizer = lambda x: x
         self._chunk_size = chunk_size
@@ -559,7 +559,7 @@ class dataset(OdinObject):
                 dataset1_size=1000, dataset2_size=500 => ds1=341, ds2=170)
     '''
 
-    def __init__(self, path, mode='r'):
+    def __init__(self, path, mode='r', chunk_size=16):
         super(dataset, self).__init__()
         self._mode = mode
         if type(path) not in (list, tuple):
@@ -568,7 +568,7 @@ class dataset(OdinObject):
         self._hdf = [h5py.File(p, mode=mode) for p in path]
         self._write_mode = None
         self._isclose = False
-        self._chunk_size = 16
+        self.set_chunk_size(chunk_size)
 
         self._update_indexing()
 

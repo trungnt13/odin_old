@@ -17,6 +17,8 @@ import time
 # ======================================================================
 # Run batch test first
 # ======================================================================
+
+
 def generateData():
     f = h5py.File('tmp1.h5', 'w')
     f['X1'] = np.zeros((100, 1)) + 1
@@ -45,6 +47,7 @@ def generateData():
     f['b'] = 'bbb'
     f.close()
 
+
 def cleanUp():
     if os.path.exists('tmp1.h5'):
         os.remove('tmp1.h5')
@@ -65,6 +68,7 @@ def cleanUp():
         os.remove('test2.ds')
     if os.path.exists('test3.ds'):
         os.remove('test3.ds')
+
 
 class BatchTest(unittest.TestCase):
 
@@ -377,6 +381,7 @@ class BatchTest(unittest.TestCase):
             self.assertEqual(a, [0.] * len(a))
         os.remove('test1.h5')
         os.remove('test2.h5')
+
 
 class DatasetTest(unittest.TestCase):
 
