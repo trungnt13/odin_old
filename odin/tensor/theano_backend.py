@@ -101,7 +101,14 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
 
 
 def is_expression(v):
+    '''placeholder also is an expression'''
     return isinstance(v, theano.tensor.TensorVariable)
+
+
+def is_placeholder(v):
+    if is_expression(v) and v.name in _PLACEHOLDER_SHAPE:
+        return True
+    return False
 
 
 def eval(x):

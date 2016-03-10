@@ -197,6 +197,8 @@ class api(object):
                 X = [X]
         elif api == 'odin':
             X = model.input_var
+        else:
+            raise ValueError('Unsupport API={} for object={}'.format(api, model))
         return X
 
     @staticmethod
@@ -930,6 +932,18 @@ def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
                 ids.append(i[1])
     # remove duplicate py
     return ids
+
+
+def as_incoming_list(incoming):
+    '''Convert incoming into list of incoming.
+    Most important exception is given a shape tuple, convert it to a list
+    of shape tuple which is list of incoming.
+    '''
+    if (not isinstance(incoming, (tuple, list)) or
+        isinstance(incoming[-1], (int, long, float))
+        ):
+        incoming = [incoming]
+    return incoming
 
 
 def as_tuple(x, N, t=None):

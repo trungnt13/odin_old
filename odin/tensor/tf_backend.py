@@ -108,6 +108,7 @@ def is_variable(v):
     return isinstance(v, tf.python.Variable)
 
 _PLACEHOLDER_ID = 0
+_PLACEHOLDER_SHAPE = {}
 
 
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
@@ -123,11 +124,19 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
     if name is None:
         name = ''
     name = name_prefix + name
-    return tf.placeholder(dtype, shape=shape, name=name)
+    placeholder = tf.placeholder(dtype, shape=shape, name=name)
+    _PLACEHOLDER_SHAPE[placeholder.name] = shape
+    return placeholder
 
 
 def is_expression(v):
     return isinstance(v, tf.python.Tensor)
+
+
+def is_placeholder(v):
+    if is_expression(v) and v.name in _PLACEHOLDER_SHAPE:
+        return True
+    return False
 
 
 def eval(x):

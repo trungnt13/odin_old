@@ -13,6 +13,7 @@ from six.moves import zip, range
 from . import logger
 from . import tensor as T
 from .utils import api as API
+from .utils import as_incoming_list
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 # ===========================================================================
@@ -206,9 +207,7 @@ class OdinFunction(OdinObject):
         self._learnable_incoming = defaultdict(lambda: False)
         # ====== check if incoming contain list of acceptable info ====== #
         if incoming is not None:
-            if not isinstance(incoming, (tuple, list)) or \
-               isinstance(incoming[-1], (int, long, float)):
-                incoming = [incoming]
+            incoming = as_incoming_list(incoming)
             # ====== Parse incoming ====== #
             for i in incoming:
                 if T.is_ndarray(i): # if ndarray, create wrapper variable
@@ -228,13 +227,13 @@ class OdinFunction(OdinObject):
                         input_shape += outshape
                     else: # other framework only return 1 output shape
                         input_shape.append(outshape)
-                # variable or placeholder
+                # variable or placeholder or expression
                 elif T.is_variable(i) or T.is_expression(i):
-                    shape = T.eval(T.shape(i))
-                    if any(j is None for j in shape[1:]):
-                        self.raise_arguments('Only first dimension is allowed to'
-                                             ' be None, shape:%s does not satisfy'
-                                             ' the condition.' % str(shape))
+                    shape = tuple(T.eval(T.shape(i)))
+                    # if any(j is None for j in shape[1:]):
+                    #     self.raise_arguments('Only first dimension is allowed to'
+                    #                          ' be None, shape:%s does not satisfy'
+                    #                          ' the condition.' % str(shape))
                     input_shape.append(shape)
                     input_function.append(i)
                     # this variable cannot interact anything
@@ -243,6 +242,7 @@ class OdinFunction(OdinObject):
                 else:
                     self.raise_arguments(
                         'Unsupport incomming type: %s' % i.__class__)
+
         self._incoming = input_function
         self._input_shape = input_shape
 
@@ -552,10 +552,11 @@ class OdinFunction(OdinObject):
                         name='in.%s.%s' % (shape_str, self.name))
                     self._input_var.append(x)
                     self._local_input_var[idx] = x
-                elif T.is_expression(i): # placeholder
+                elif T.is_placeholder(i): # placeholder
                     self._input_var.append(i)
                     self._local_input_var[idx] = i
-                elif T.is_variable(i): # don't need to do anything with variable
+                elif T.is_variable(i) or T.is_expression(i):
+                    # don't need to do anything with variable and expression
                     pass
                 else: # input from API layers
                     api = API.get_object_api(i)
@@ -610,11 +611,11 @@ class OdinFunction(OdinObject):
         inputs = []
         self.input_var # make sure initialized all placeholder
         for idx, i in enumerate(self._incoming):
-            # this is expression or InputLayer
-            if i is None or T.is_expression(i):
+            # this is placeholder or InputLayer
+            if i is None or T.is_placeholder(i):
                 inputs.append(self._local_input_var[idx])
             # this is variable
-            elif T.is_variable(i):
+            elif T.is_variable(i) or T.is_expression(i):
                 inputs.append(i)
             # this is from API
             else:
