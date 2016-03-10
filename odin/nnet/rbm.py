@@ -72,7 +72,7 @@ class RBM(OdinUnsupervisedFunction):
                  W=T.np_glorot_uniform,
                  b=T.np_constant,
                  gibbs_steps=15, persistent=None,
-                 seed=None, **kwargs):
+                 **kwargs):
         # ====== super ====== #
         super(RBM, self).__init__(
             incoming, **kwargs)
@@ -107,7 +107,8 @@ class RBM(OdinUnsupervisedFunction):
         # ====== check input_shape ====== #
         self.n_visible = self._validate_nD_input(2)[1]
         self.num_units = num_units
-        self._rng = T.rng(seed)
+        if not hasattr(self, 'rng'):
+            self.rng = T.rng(None)
         # ====== create variables ====== #
         shape = (np.prod(self.input_shape[0][1:]), num_units)
         self.W = self.create_params(
@@ -308,7 +309,7 @@ class RBM(OdinUnsupervisedFunction):
         h1_mean = T.sigmoid(pre_sigmoid_h1)
 
         # get a sample of the hiddens given their activation
-        h1_sample = self._rng.binomial(T.shape(h1_mean), p=h1_mean)
+        h1_sample = self.rng.binomial(T.shape(h1_mean), p=h1_mean)
         return [pre_sigmoid_h1, h1_mean, h1_sample]
 
     def sample_v_given_h(self, h0_sample):
@@ -322,7 +323,7 @@ class RBM(OdinUnsupervisedFunction):
         pre_sigmoid_v1 = T.dot(h0_sample, self.Wprime) + self.vbias
         v1_mean = T.sigmoid(pre_sigmoid_v1)
         # get a sample of the visible given their activation
-        v1_sample = self._rng.binomial(T.shape(v1_mean), p=v1_mean)
+        v1_sample = self.rng.binomial(T.shape(v1_mean), p=v1_mean)
         return [pre_sigmoid_v1, v1_mean, v1_sample]
 
     def gibbs_hvh(self, h0_sample):

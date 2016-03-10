@@ -435,6 +435,9 @@ class Cell(OdinFunction):
                                  'dimensions.')
         return W[:, n * self.num_units:(n + 1) * self.num_units]
 
+    def get_constants(self, X, training, **kwargs):
+        return []
+
     def precompute(self, X, training, **kwargs):
         ''' We assume that the input X already preprocessed to have
         following dimension order: (n_time_steps, n_batch, n_features)
@@ -655,6 +658,8 @@ class Recurrent(OdinFunction):
     nonlinearity : callable or None
         Nonlinearity to apply when computing new state (:math:`\sigma`). If
         None is provided, no nonlinearity will be applied.
+    dropout : None, float(0.0-1.0), varialbe, expression
+        Fraction of the output to drop for after every recurrent connections.
     backwards : bool
         If True, process the sequence backwards and then reverse the
         output again such that the output from the layer is always
@@ -752,6 +757,9 @@ class Recurrent(OdinFunction):
     ----------
     .. [1] Graves, Alex: "Generating sequences with recurrent neural networks."
            arXiv preprint arXiv:1308.0850 (2013).
+    .. [2] A Theoretically Grounded Application of Dropout in Recurrent Neural Networks
+           (http://arxiv.org/abs/1512.05287)
+
     """
 
     def __init__(self, incoming, mask=None,
@@ -762,6 +770,7 @@ class Recurrent(OdinFunction):
                  output_init=T.np_constant,
                  learn_init=False,
                  nonlinearity=T.relu,
+                 dropout=None,
                  backwards=False,
                  unroll_scan=False,
                  only_return_final=False,
@@ -968,6 +977,12 @@ class Recurrent(OdinFunction):
         self.learn_init = learn_init
         # store all cell added to this Recurrent function
         self._cells = []
+        # ====== dropout ====== #
+        if dropout is not None and not T.is_variable(dropout):
+            dropout = T.variable(dropout, name=self.name + '_dropout')
+        self.dropout = dropout
+        if not hasattr(self, 'rng'):
+            self.rng = T.rng(None)
 
     # ==================== Override methods of OdinFunction ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
@@ -1191,6 +1206,13 @@ class Recurrent(OdinFunction):
             # NO duplicated and None
             Cinit, Cinit_map = as_index_map(self._cells, tmp)
 
+            # ====== create dropout mask ====== #
+            dropout_mask = None # shape: (batch_size, hidden_dims)
+            if self.dropout is not None:
+                # create dropout_mask and rescale it based on retain probability
+                dropout_mask = self.rng.binomial(T.shape(Hinit),
+                    p=self.dropout, dtype=Hinit.dtype) / (1 - self.dropout)
+
             # ====== check mask and form inputs to scan ====== #
             # only 1 input, 1 mask, 1 hidden, 1 output at a time
             # but cells can be multiple
@@ -1208,9 +1230,19 @@ class Recurrent(OdinFunction):
             outputs_info = [Hinit] if Oinit is None else [Hinit, Oinit]
             output_idx = hidden_idx + 1 if Oinit is not None else None
             # cell_idx
-            cell_idx = len(sequences) + len(outputs_info)
+            cell_idx = list(range(
+                len(sequences) + len(outputs_info),
+                len(sequences) + len(outputs_info) + len(Cinit)
+            ))
             outputs_info += Cinit
+            # non_sequences idx
+            non_sequences = []
+            dropout_idx = None
+            if dropout_mask is not None:
+                non_sequences.append(dropout_mask)
+                dropout_idx = cell_idx[-1] + 1
 
+            # print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx, dropout_idx)
             # ====== Create single recurrent computation step function ====== #
             def step(*args):
                 # preprocess arguments
@@ -1219,9 +1251,16 @@ class Recurrent(OdinFunction):
                 out_prev = None
                 if output_idx is not None:
                     out_prev = args[output_idx]
-                cell_prev = [i for i in args[cell_idx:]]
+                cell_prev = [args[i] for i in cell_idx]
                 cell_to_hid = []
                 cell_to_cell = []
+
+                # TODO: applying dropout, the dropout should be applied to
+                # each gate (with different dropout mask) or just to
+                # hidden states
+                if dropout_idx is not None:
+                    dropout = args[dropout_idx]
+                    hid_prev = hid_prev * dropout
 
                 # TODO: decide to do hidden_to_hidden transform first or
                 # calculating cell activation first
@@ -1305,6 +1344,7 @@ class Recurrent(OdinFunction):
                     step_fn=step,
                     sequences=sequences,
                     outputs_info=outputs_info,
+                    non_sequences=non_sequences,
                     go_backwards=self.backwards,
                     n_steps=n_steps)[0]
             else:
@@ -1314,6 +1354,7 @@ class Recurrent(OdinFunction):
                     step_fn=step,
                     sequences=sequences,
                     outputs_info=outputs_info,
+                    non_sequences=non_sequences,
                     go_backwards=self.backwards,
                     truncate_gradient=self.gradient_steps)[0]
 

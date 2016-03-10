@@ -162,7 +162,7 @@ class OdinFunction(OdinObject):
 
     """
 
-    def __init__(self, incoming, unsupervised, name=None, **kwargs):
+    def __init__(self, incoming, unsupervised, name=None, seed='none', **kwargs):
         super(OdinFunction, self).__init__()
         self._unsupervised = unsupervised
 
@@ -193,6 +193,9 @@ class OdinFunction(OdinObject):
 
         self._cache_updates_train = OrderedDict()
         self._cache_updates_pred = OrderedDict()
+
+        if seed != 'none':
+            self.rng = T.rng(seed)
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):

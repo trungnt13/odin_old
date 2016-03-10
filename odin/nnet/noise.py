@@ -75,10 +75,9 @@ class Dropout(OdinFunction):
                  rescale=True,
                  noise_dims=None,
                  consistent=False,
-                 seed=None, **kwargs):
+                 **kwargs):
         super(Dropout, self).__init__(
             incoming, unsupervised=False, **kwargs)
-        self._rng = T.rng(seed=seed)
         if p is not None and not T.is_variable(p):
             p = T.variable(p, name=self.name + '_p')
         self.p = p
@@ -87,6 +86,9 @@ class Dropout(OdinFunction):
             noise_dims = [noise_dims]
         self.noise_dims = noise_dims
         self.consistent = consistent
+
+        if not hasattr(self, 'rng'):
+            self.rng = T.rng(seed=None)
 
     @property
     def output_shape(self):
@@ -107,10 +109,10 @@ class Dropout(OdinFunction):
                 for x, shape in zip(inputs, noise_shape):
                     outputs.append(
                         T.dropout(x, self.p, rescale=self.rescale,
-                                  noise_shape=shape, rng=self._rng)
+                                  noise_shape=shape, rng=self.rng)
                     )
             else:
-                seed = self._rng.randint()
+                seed = self.rng.randint()
                 for x, shape in zip(inputs, noise_shape):
                     outputs.append(
                         T.dropout(x, self.p, rescale=self.rescale,
@@ -172,11 +174,9 @@ class FastDropout(OdinFunction):
     def __init__(self, incoming, p=0.5,
                  rescale=True,
                  noise_dims=None,
-                 consistent=False,
-                 seed=None, **kwargs):
+                 consistent=False, **kwargs):
         super(Dropout, self).__init__(
             incoming, unsupervised=False, **kwargs)
-        self._rng = T.rng(seed=seed)
         if p is not None and not T.is_variable(p):
             p = T.variable(p, name=self.name + '_p')
         self.p = p
@@ -185,6 +185,9 @@ class FastDropout(OdinFunction):
             noise_dims = [noise_dims]
         self.noise_dims = noise_dims
         self.consistent = consistent
+
+        if not hasattr(self, 'rng'):
+            self.rng = T.rng(seed=None)
 
     @property
     def output_shape(self):
@@ -205,10 +208,10 @@ class FastDropout(OdinFunction):
                 for x, shape in zip(inputs, noise_shape):
                     outputs.append(
                         T.dropout(x, self.p, rescale=self.rescale,
-                                  noise_shape=shape, rng=self._rng)
+                                  noise_shape=shape, rng=self.rng)
                     )
             else:
-                seed = self._rng.randint()
+                seed = self.rng.randint()
                 for x, shape in zip(inputs, noise_shape):
                     outputs.append(
                         T.dropout(x, self.p, rescale=self.rescale,
@@ -256,9 +259,8 @@ class Noise(OdinFunction):
     """
 
     def __init__(self, incoming, sigma=0.1, noise_dims=None,
-                 uniform=False, consistent=False, seed=None, **kwargs):
+                 uniform=False, consistent=False, **kwargs):
         super(Noise, self).__init__(incoming, unsupervised=False, **kwargs)
-        self._rng = T.rng(seed=seed)
         if sigma is not None and not T.is_variable(sigma):
             sigma = T.variable(sigma, name=self.name + '_p')
         self.sigma = sigma
@@ -267,6 +269,9 @@ class Noise(OdinFunction):
         self.noise_dims = noise_dims
         self.uniform = uniform
         self.consistent = consistent
+
+        if not hasattr(self, 'rng'):
+            self.rng = T.rng(seed=None)
 
     @property
     def output_shape(self):
@@ -283,15 +288,15 @@ class Noise(OdinFunction):
             # ====== create random function ====== #
             if not self.consistent:
                 if not self.uniform:
-                    randfunc = lambda x, shape: self._rng.normal(
+                    randfunc = lambda x, shape: self.rng.normal(
                         shape=shape, mean=0.0,
                         std=self.sigma, dtype=x.dtype)
                 else:
-                    randfunc = lambda x, shape: self._rng.uniform(
+                    randfunc = lambda x, shape: self.rng.uniform(
                         shape=shape, low=-self.sigma,
                         high=self.sigma, dtype=x.dtype)
             else:
-                seed = self._rng.randint()
+                seed = self.rng.randint()
                 if not self.uniform:
                     randfunc = lambda x, shape: T.random_normal(
                         shape=shape, mean=0.0,
