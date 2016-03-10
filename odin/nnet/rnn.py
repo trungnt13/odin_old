@@ -320,15 +320,15 @@ class Cell(OdinFunction):
         if not hasattr(self, 'rng'):
             self.rng = T.rng(None)
 
-        if (dropoutW is not None and not T.is_variable(dropoutW) and
-            dropoutW > 0. and dropoutW < 1.):
+        if dropoutW is not None and not T.is_variable(dropoutW) and \
+           dropoutW > 0. and dropoutW < 1.:
             dropoutW = T.variable(dropoutW, name=self.name + '_dropoutW')
         else:
             dropoutW = None
         self.dropoutW = dropoutW
 
-        if (dropoutU is not None and not T.is_variable(dropoutU) and
-            dropoutU > 0. and dropoutU < 1.):
+        if dropoutU is not None and not T.is_variable(dropoutU) and \
+           dropoutU > 0. and dropoutU < 1.:
             dropoutU = T.variable(dropoutU, name=self.name + '_dropoutU')
         else:
             dropoutU = None
