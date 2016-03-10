@@ -51,12 +51,20 @@ def _check_shape_match(shape1, shape2):
     return True
 
 
+def _create_dropout_mask(rng, p, shape, dtype):
+    # ====== create dropout mask ====== #
+    dropout_mask = None # shape: (batch_size, hidden_dims)
+    if p is not None:
+        # create dropout_mask and rescale it based on retain probability
+        dropout_mask = rng.binomial(shape, p=p, dtype=dtype) / (1 - p)
+    return dropout_mask
+
 # ===========================================================================
 # Step algorithm for GRU, LSTM, and be creative:
 # Basic algorithm must have following arguments:
 # hid_prev : tensor
 #   previous hidden step, shape = (1, num_units)
-# out_prev : tensor
+# out_prev : list of tensor
 #   previous output (if no hidden_to_output connection specified, None),
 #   shape = (1, output_dims)
 # cell_prev : tensor
@@ -76,6 +84,8 @@ def _check_shape_match(shape1, shape2):
 # slice_fn : function(W, n) -> W[n*size : (n+1)*size]
 #   slice function of cell to slice the precomputed values for each gate.
 # ===========================================================================
+
+
 def lstm_algorithm(hid_prev, out_prev, cell_prev,
                    in_precompute, hid_precompute,
                    gates_params, nonlinearity, slice_fn,
@@ -250,6 +260,9 @@ class Gate(object):
         else:
             self.nonlinearity = nonlinearity
 
+    def __str__(self):
+        return '<Gate:%s>' % self.name
+
 
 class Cell(OdinFunction):
 
@@ -307,20 +320,19 @@ class Cell(OdinFunction):
         if not hasattr(self, 'rng'):
             self.rng = T.rng(None)
 
-        if dropoutW is not None and not T.is_variable(dropoutW):
+        if (dropoutW is not None and not T.is_variable(dropoutW) and
+            dropoutW > 0. and dropoutW < 1.):
             dropoutW = T.variable(dropoutW, name=self.name + '_dropoutW')
+        else:
+            dropoutW = None
         self.dropoutW = dropoutW
 
-        if dropoutU is not None and not T.is_variable(dropoutU):
+        if (dropoutU is not None and not T.is_variable(dropoutU) and
+            dropoutU > 0. and dropoutU < 1.):
             dropoutU = T.variable(dropoutU, name=self.name + '_dropoutU')
+        else:
+            dropoutU = None
         self.dropoutU = dropoutU
-
-        # # ====== create dropout mask ====== #
-        # dropout_mask = None # shape: (batch_size, hidden_dims)
-        # if self.dropout is not None:
-        #     # create dropout_mask and rescale it based on retain probability
-        #     dropout_mask = self.rng.binomial(T.shape(Hinit),
-        #         p=self.dropout, dtype=Hinit.dtype) / (1 - self.dropout)
 
     # ==================== methods for preparing parameters ==================== #
     def _check_batch_norm(self, norm_dims):
@@ -352,7 +364,7 @@ class Cell(OdinFunction):
             self.batch_norm = None
 
     # ==================== Cell methods ==================== #
-    def get_constants(self, X, training, **kwargs):
+    def get_constants(self, X, Hinit, training, **kwargs):
         raise NotImplementedError
 
     def precompute(self, X, training, **kwargs):
@@ -516,7 +528,20 @@ class GatingCell(Cell):
         # store all gate informations
         self._gates = []
         # mapping: odin.nnet.rnn.Gate -> its compile params
-        self._gates_params = {}
+        self._gates_params = OrderedDict()
+
+    # ==================== Override functions ==================== #
+    def get_params(self, globals, trainable=None, regularizable=None):
+        params = super(GatingCell, self).get_params(
+            globals, trainable, regularizable)
+
+        # ====== add gate params ====== #
+        for g in self._gates_params.values():
+            for i in g:
+                if T.is_variable(i):
+                    params += self.params[i.name].as_variables(
+                        globals, trainable, regularizable)
+        return params
 
     # ==================== methods for preparing parameters ==================== #
     def _check_gates(self):
@@ -538,7 +563,6 @@ class GatingCell(Cell):
             all_params += [j for j in i if T.is_variable(j)]
         _ = OrderedDict()
         for i, j in self.params.iteritems():
-            print(i, j)
             if j._params in all_params: # ignore old gate params
                 continue
             _[i] = j
@@ -547,7 +571,7 @@ class GatingCell(Cell):
         # ====== create new params ====== #
         num_inputs = np.prod(self.input_dims)
         num_units = np.prod(self.hidden_dims)
-        self._gates_params = {}
+        self._gates_params = OrderedDict()
         for g in self._gates:
             name = g.name
             W_in = self.create_params(
@@ -596,8 +620,18 @@ class GatingCell(Cell):
             self.raise_arguments('Only slice weights with 2 dimensions.')
         return W[:, n * num_units:(n + 1) * num_units]
 
-    def get_constants(self, X, training, **kwargs):
-        return []
+    def get_constants(self, X, Hinit, training, **kwargs):
+        const = []
+        # dropU
+        shape = T.shape(Hinit)
+        if self.dropoutU is not None:
+            _ = []
+            for i in range(len(self._gates)):
+                _.append(
+                    _create_dropout_mask(
+                        self.rng, self.dropoutU, shape, Hinit.dtype))
+            const.append(T.concatenate(_, axis=1))
+        return const
 
     def precompute(self, X, training, **kwargs):
         ''' We assume that the input X already preprocessed to have
@@ -632,6 +666,12 @@ class GatingCell(Cell):
         # (num_batch * seq, trailing_dims) we only allow 2 dims.
         if T.ndim(X) > 3:
             X = T.flatten(X, 3)
+        # applying dropout input with the same mask over all time step
+        if self.dropoutW is not None:
+            mask = self.rng.binomial(shape=T.shape(X)[1:], p=self.dropoutW,
+                dtype=X.dtype)
+            mask = T.expand_dims(mask, dim=0) # shape=(1, n_batch, n_features)
+            X = X * mask # broadcast along time dimension
 
         # Because the input is given for all time steps, we can
         # precompute_input the inputs dot weight matrices before scanning.
@@ -677,28 +717,21 @@ class GatingCell(Cell):
         # Extract the pre-activation gate values
         hid_precompute = T.dot(hid_prev, self.W_hid_stacked)
 
+        if len(constant) > 0:
+            # applying dropout
+            dropU = constant[0]
+            hid_precompute = hid_precompute * dropU
+
         return self.algorithm(hid_prev, out_prev, cell_prev,
                               in_precompute, hid_precompute,
                               gates_params, self.nonlinearity, self._slice_w,
                               *constant)
 
-    # ==================== Override functions ==================== #
-    def get_params(self, globals, trainable=None, regularizable=None):
-        params = super(GatingCell, self).get_params(
-            globals, trainable, regularizable)
-
-        # ====== add gate params ====== #
-        for g in self._gates_params.values():
-            for i in g:
-                if T.is_variable(i):
-                    params += self.params[i.name].as_variables(
-                        globals, trainable, regularizable)
-        return params
-
-
 # ===========================================================================
 # Main Recurrent algorithm
 # ===========================================================================
+
+
 class Recurrent(OdinFunction):
 
     """ Adapted implementation from Lasagne for Odin with many improvement
@@ -1185,6 +1218,17 @@ class Recurrent(OdinFunction):
             # NO duplicated and None
             Cinit, Cinit_map = as_index_map(self._cells, tmp)
 
+            # ====== get const from cell ====== #
+            non_sequences = []
+            Cconst_map = {}
+            for c in self._cells:
+                const = [i
+                         for i in c.get_constants(X, Hinit, training, **kwargs)
+                         if i is not None]
+                Cconst_map[c] = range(
+                    len(non_sequences), len(non_sequences) + len(const))
+                non_sequences += const
+
             # ====== check mask and form inputs to scan ====== #
             # only 1 input, 1 mask, 1 hidden, 1 output at a time
             # but cells can be multiple
@@ -1201,18 +1245,17 @@ class Recurrent(OdinFunction):
             # output_idx
             outputs_info = [Hinit] + Oinit
             output_idx = list(range(
-                hidden_idx + 1, hidden_idx + 1 + len(Oinit)
-            ))
+                hidden_idx + 1, hidden_idx + 1 + len(Oinit)))
             # cell_idx
             cell_idx = list(range(
                 len(sequences) + len(outputs_info),
-                len(sequences) + len(outputs_info) + len(Cinit)
-            ))
+                len(sequences) + len(outputs_info) + len(Cinit)))
             outputs_info += Cinit
-            # non_sequences idx
-            non_sequences = []
-            # print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx)
+            const_idx = list(range(
+                len(sequences) + len(outputs_info),
+                len(sequences) + len(outputs_info) + len(non_sequences)))
 
+            # print(input_idx, mask_idx, hidden_idx, output_idx, cell_idx, const_idx)
             # ====== Create single recurrent computation step function ====== #
             def step(*args):
                 # preprocess arguments
@@ -1221,6 +1264,7 @@ class Recurrent(OdinFunction):
                 hid_prev = args[hidden_idx]
                 out_prev = [args[i] for i in output_idx]
                 cell_prev = [args[i] for i in cell_idx]
+                const = [args[i] for i in const_idx]
 
                 # variable for computation of each cell
                 cell_to_hid = []
@@ -1239,8 +1283,11 @@ class Recurrent(OdinFunction):
                     c_prev = Cinit_map[c]
                     if c_prev is not None:
                         c_prev = cell_prev[c_prev]
+                    # get constant value for cell
+                    c_const = Cconst_map[c]
+                    c_const = [const[i] for i in c_const]
                     # outputs are (hid_new, cell_new)
-                    c = c.step(c_in, hid_prev, out_prev, c_prev)
+                    c = c.step(c_in, hid_prev, out_prev, c_prev, *c_const)
                     cell_to_hid.append(c[0])
                     cell_to_cell.append(c[1])
                 # no None value in cell_to_cell
@@ -1340,10 +1387,11 @@ class GRU(Recurrent):
                  resetgate=Gate(),
                  updategate=Gate(),
                  hidden_update=Gate(nonlinearity=T.tanh),
-                 batch_norm=False, learnable_norm=False,
                  backwards=False,
                  unroll_scan=False,
                  only_return_final=False,
+                 batch_norm=False, learnable_norm=False,
+                 dropoutW=None, dropoutU=None,
                  **kwargs):
         if isinstance(hidden_info, (int, long, float)):
             hidden_info = (1, int(hidden_info))
@@ -1361,7 +1409,8 @@ class GRU(Recurrent):
         c = GatingCell((1,) + self.hidden_dims,
             nonlinearity=T.linear,
             algorithm=gru_algorithm, memory=False,
-            batch_norm=batch_norm, learnable_norm=learnable_norm)
+            batch_norm=batch_norm, learnable_norm=learnable_norm,
+            dropoutW=dropoutW, dropoutU=dropoutU)
         updategate.name = 'updategate'
         resetgate.name = 'resetgate'
         hidden_update.name = 'hidden_update'
@@ -1381,11 +1430,12 @@ class LSTM(Recurrent):
                  cell=Gate(W_cell=None, nonlinearity=T.tanh),
                  outgate=Gate(),
                  cell_init=T.np_constant,
-                 batch_norm=False, learnable_norm=False,
                  nonlinearity=T.tanh,
                  backwards=False,
                  unroll_scan=False,
                  only_return_final=False,
+                 batch_norm=False, learnable_norm=False,
+                 dropoutW=None, dropoutU=None,
                  **kwargs):
         if isinstance(hidden_info, (int, long, float)):
             hidden_info = (1, int(hidden_info))
@@ -1406,7 +1456,8 @@ class LSTM(Recurrent):
         c = GatingCell(cell_init,
             nonlinearity=nonlinearity,
             algorithm=lstm_algorithm, memory=True,
-            batch_norm=batch_norm, learnable_norm=learnable_norm)
+            batch_norm=batch_norm, learnable_norm=learnable_norm,
+            dropoutW=dropoutW, dropoutU=dropoutU)
         ingate.name = 'ingate'
         forgetgate.name = 'forgetgate'
         cell.name = 'cell'

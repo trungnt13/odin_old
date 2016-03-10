@@ -156,78 +156,6 @@ class FunctionsTest(unittest.TestCase):
     def test_rnn(self):
         return
 
-    def test_gru(self):
-        try:
-            import lasagne
-        except:
-            print('\n This test require lasagne.')
-            return
-        # ====== generate data and weights ====== #
-        np.random.seed(12082518)
-        X = np.random.rand(128, 28, 13)
-        hid_init = T.np_glorot_normal((1, 12))
-
-        W_in_update = T.np_glorot_normal((13, 12))
-        W_hid_update = T.np_glorot_normal((12, 12))
-        b_update = T.np_constant((12,))
-
-        W_in_reset = T.np_glorot_normal((13, 12))
-        W_hid_reset = T.np_glorot_normal((12, 12))
-        b_reset = T.np_constant((12,))
-
-        W_in_hidden = T.np_glorot_normal((13, 12))
-        W_hid_hidden = T.np_glorot_normal((12, 12))
-        b_hidden = T.np_constant((12,))
-
-        # ====== odin ====== #
-        resetgate = nnet.Gate(
-            W_in=W_in_reset, W_hid=W_hid_reset, b=b_reset,
-            nonlinearity=T.sigmoid)
-        updategate = nnet.Gate(
-            W_in=W_in_update, W_hid=W_hid_update, b=b_update,
-            nonlinearity=T.sigmoid)
-        hidden_update = nnet.Gate(
-            W_in=W_in_hidden, W_hid=W_hid_hidden, b=b_hidden,
-            nonlinearity=T.tanh)
-
-        g = nnet.GRU((None, 28, 13), hidden_info=hid_init,
-            resetgate=resetgate,
-            updategate=updategate,
-            hidden_update=hidden_update)
-        f1 = T.function(inputs=g.input_var,
-            outputs=g()[0])
-
-        # ====== lasagne ====== #
-        resetgate = lasagne.layers.Gate(
-            W_in=W_in_reset, W_hid=W_hid_reset, b=b_reset, W_cell=None,
-            nonlinearity=T.sigmoid)
-        updategate = lasagne.layers.Gate(
-            W_in=W_in_update, W_hid=W_hid_update, b=b_update, W_cell=None,
-            nonlinearity=T.sigmoid)
-        hidden_update = lasagne.layers.Gate(
-            W_in=W_in_hidden, W_hid=W_hid_hidden, b=b_hidden, W_cell=None,
-            nonlinearity=T.tanh)
-        l_in = lasagne.layers.InputLayer(shape=(None, 28, 13))
-        l = lasagne.layers.GRULayer(l_in, num_units=12,
-            resetgate=resetgate,
-            updategate=updategate,
-            hidden_update=hidden_update,
-            hid_init=hid_init, learn_init=False)
-        f2 = T.function(inputs=[l_in.input_var],
-            outputs=lasagne.layers.get_output(l))
-
-        self.assertLessEqual(np.sum(np.abs(f1(X) - f2(X))), 0.005)
-
-        print()
-        start = time.time()
-        for i in xrange(12):
-            f1(X)
-        print('Odin GRU speed:', (time.time() - start) / 12)
-        start = time.time()
-        for i in xrange(12):
-            f2(X)
-        print('Lasagne GRU speed:', (time.time() - start) / 12)
-
     def test_lstm(self):
         try:
             import lasagne
@@ -314,6 +242,72 @@ class FunctionsTest(unittest.TestCase):
         for i in xrange(12):
             f2(X)
         print('Lasagne LSTM speed:', (time.time() - start) / 12)
+
+    def test_gru_benchmark(self):
+        try:
+            import lasagne
+            from keras.layers.recurrent import GRU
+        except:
+            print('\n This test require lasagne and keras.')
+            return
+        np.random.seed(12082518)
+        X = np.random.rand(32, 12, 13)
+        g1 = nnet.GRU((None, 12, 13), hidden_info=8,
+            resetgate=nnet.Gate(),
+            updategate=nnet.Gate(),
+            hidden_update=nnet.Gate(nonlinearity=T.tanh),
+            batch_norm=False,
+            dropoutW=None, dropoutU=None)
+
+        f1 = T.function(g1.input_var, outputs=g1(True))
+        x1 = f1(X)[0]
+
+        g2 = GRU(output_dim=8, input_shape=(12, 13),
+                activation=T.tanh, inner_activation=T.sigmoid,
+                dropout_W=None, dropout_U=None,
+                return_sequences=True)
+        g2.set_weights(g1.get_params_value(True, True))
+        f2 = T.function([g2.get_input(True)],
+            outputs=g2.get_output(True))
+        x2 = f2(X)
+
+        l_in = lasagne.layers.InputLayer(shape=(None, 12, 13))
+        l = lasagne.layers.GRULayer(l_in, num_units=8)
+        lasagne.layers.set_all_param_values(l,
+            g1.get_params_value(True, True) + [T.np_constant((1, 8))])
+        f3 = T.function([l_in.input_var],
+            outputs=lasagne.layers.get_output(l, deterministic=False))
+        x3 = f3(X)
+
+        print('Odin - Keras:   ', np.sum(np.abs(x1 - x2)))
+        print('Odin - Lasagne: ', np.sum(np.abs(x1 - x3)))
+        print('Keras - Lasagne:', np.sum(np.abs(x2 - x3)))
+        self.assertAlmostEqual(np.sum(np.abs(x1 - x3)), 0.)
+        # print(g1.get_params(True, True))
+        # p1 = g1.get_params_value(True, True)
+        # print(g2.get_params()[0])
+        # p2 = [T.get_value(i) for i in g2.get_params()[0]]
+        # print([np.sum(np.abs(i - j)) for i, j in zip(p1, p2)])
+
+        print()
+        time.sleep(1)
+        start = time.time()
+        for i in xrange(12):
+            f1(X)
+        print('Odin GRU speed:', (time.time() - start) / 12)
+        time.sleep(1)
+
+        start = time.time()
+        for i in xrange(12):
+            f3(X)
+        print('Lasagne GRU speed:', (time.time() - start) / 12)
+        time.sleep(1)
+
+        start = time.time()
+        for i in xrange(12):
+            f2(X)
+        print('Keras GRU speed:', (time.time() - start) / 12)
+
 # ===========================================================================
 # Main
 # ===========================================================================
