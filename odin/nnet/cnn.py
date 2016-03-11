@@ -478,13 +478,6 @@ class BaseConvLayer(OdinFunction):
         The nonlinearity that is applied to the layer activations. If None
         is provided, the layer will be linear.
 
-    flip_filters : bool (default: True)
-        Whether to flip the filters before sliding them over the input,
-        performing a convolution (this is the default), or not to flip them and
-        perform a correlation. Note that for some other convolutional layers in
-        Lasagne, flipping incurs an overhead and is disabled by default --
-        check the documentation when using learned weights from another layer.
-
     n : int or None
         The dimensionality of the convolution (i.e., the number of spatial
         dimensions of each feature map and each convolutional filter). If
@@ -500,6 +493,16 @@ class BaseConvLayer(OdinFunction):
 
     b : Theano shared variable or expression
         Variable or expression representing the biases.
+
+    Note
+    ----
+    flip_filters : bool (default: False) (NO more support in odin)
+        Whether to flip the filters and perform a convolution, or not to flip
+        them and perform a correlation. Flipping adds a bit of overhead, so it
+        is disabled by default. In most cases this does not make a difference
+        anyway because the filters are learnt. However, ``flip_filters`` should
+        be set to ``True`` if weights are loaded into it that were learnt using
+        a regular :class:`lasagne.layers.Conv2DLayer`, for example.
     """
 
     def __init__(self, incoming, num_filters, filter_size, stride=1, pad=0,
@@ -635,14 +638,7 @@ class BaseConvLayer(OdinFunction):
 
 class Conv2D(BaseConvLayer):
 
-    """
-    lasagne.layers.Conv2DDNNLayer(incoming, num_filters, filter_size,
-    stride=(1, 1), pad=0, untie_biases=False,
-    W=lasagne.init.GlorotUniform(), b=lasagne.init.Constant(0.),
-    nonlinearity=lasagne.nonlinearities.rectify, flip_filters=False,
-    **kwargs)
-
-    2D convolutional layer
+    """ 2D convolutional layer
 
     Performs a 2D convolution on its input and optionally adds a bias and
     applies an elementwise nonlinearity.  This is an alternative implementation
@@ -715,14 +711,6 @@ class Conv2D(BaseConvLayer):
     nonlinearity : callable or None
         The nonlinearity that is applied to the layer activations. If None
         is provided, the layer will be linear.
-
-    flip_filters : bool (default: False) (NO more support in odin)
-        Whether to flip the filters and perform a convolution, or not to flip
-        them and perform a correlation. Flipping adds a bit of overhead, so it
-        is disabled by default. In most cases this does not make a difference
-        anyway because the filters are learnt. However, ``flip_filters`` should
-        be set to ``True`` if weights are loaded into it that were learnt using
-        a regular :class:`lasagne.layers.Conv2DLayer`, for example.
 
     **kwargs
         Any additional keyword arguments are passed to the `Layer` superclass.

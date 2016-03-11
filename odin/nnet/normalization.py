@@ -128,6 +128,7 @@ class BatchNormalization(OdinFunction):
     def __init__(self, incoming, axes='auto', epsilon=1e-4, alpha=0.1,
                  beta=T.np_constant, gamma =lambda x: T.np_constant(x, 1.),
                  mean=T.np_constant, inv_std=lambda x: T.np_constant(x, 1.),
+                 nonlinearity=T.linear,
                  **kwargs):
         super(BatchNormalization, self).__init__(
             incoming, unsupervised=False, **kwargs)
@@ -168,6 +169,10 @@ class BatchNormalization(OdinFunction):
                                    trainable=False, regularizable=False)
         self.inv_std = self.create_params(inv_std, shape, 'inv_std',
                                       trainable=False, regularizable=False)
+
+        if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
+            nonlinearity = T.linear
+        self.nonlinearity = nonlinearity
 
     # ==================== abstract methods ==================== #
     @property
@@ -231,7 +236,7 @@ class BatchNormalization(OdinFunction):
 
             # normalize
             normalized = (input - mean) * (gamma * inv_std) + beta
-            outputs.append(normalized)
+            outputs.append(self.nonlinearity(normalized))
         # ====== foot_print ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
