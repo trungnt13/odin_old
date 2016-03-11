@@ -623,14 +623,15 @@ class GatingCell(Cell):
     def get_constants(self, X, Hinit, training, **kwargs):
         const = []
         # dropU
-        shape = T.shape(Hinit)
-        if self.dropoutU is not None:
-            _ = []
-            for i in range(len(self._gates)):
-                _.append(
-                    _create_dropout_mask(
-                        self.rng, self.dropoutU, shape, Hinit.dtype))
-            const.append(T.concatenate(_, axis=1))
+        if training:
+            shape = T.shape(Hinit)
+            if self.dropoutU is not None:
+                _ = []
+                for i in range(len(self._gates)):
+                    _.append(
+                        _create_dropout_mask(
+                            self.rng, self.dropoutU, shape, Hinit.dtype))
+                const.append(T.concatenate(_, axis=1))
         return const
 
     def precompute(self, X, training, **kwargs):
@@ -667,7 +668,7 @@ class GatingCell(Cell):
         if T.ndim(X) > 3:
             X = T.flatten(X, 3)
         # applying dropout input with the same mask over all time step
-        if self.dropoutW is not None:
+        if training and self.dropoutW is not None:
             mask = self.rng.binomial(shape=T.shape(X)[1:], p=self.dropoutW,
                 dtype=X.dtype)
             mask = T.expand_dims(mask, dim=0) # shape=(1, n_batch, n_features)

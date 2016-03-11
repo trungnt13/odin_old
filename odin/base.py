@@ -632,33 +632,60 @@ class OdinFunction(OdinObject):
 
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
+        # ====== Incoming variables ====== #
+        for i in self._incoming:
+            # variables that learnable
+            if T.is_variable(i):
+                learnable = self._learnable_incoming[i]
+                if learnable and \
+                   (learnable[0] == trainable or trainable is None) and \
+                   (learnable[1] == regularizable or regularizable is None):
+                    params.append(i)
+
         # ====== Get all params from nested functions if globals mode on ====== #
         if globals:
             for i in self._incoming:
                 if i is not None:
-                    # variables that learnable
-                    if T.is_variable(i):
-                        learnable = self._learnable_incoming[i]
-                        if learnable and \
-                           (learnable[0] == trainable or trainable is None) and \
-                           (learnable[1] == regularizable or regularizable is None):
-                            params.append(i)
                     # other api
-                    else:
-                        api = API.get_object_api(i)
-                        if api is not None:
-                            params += API.get_params(
-                                i, api, globals, trainable, regularizable)
+                    api = API.get_object_api(i)
+                    if api is not None:
+                        params += API.get_params(
+                            i, api, globals, trainable, regularizable)
 
         # ====== Params from this layers ====== #
         local_params = []
         for i, j in self.params.iteritems():
             local_params += j.as_variables(globals, trainable, regularizable)
-        return params + local_params
+        return T.np_ordered_set(params + local_params).tolist()
 
     def get_params_value(self, globals, trainable=None, regularizable=None):
         return [T.get_value(x) for x in
         self.get_params(globals, trainable, regularizable)]
+
+    def set_params(self, params_values, strict=True):
+        children = [i.get_params(globals=False) for i in self.get_children()]
+        children = [i for i in children if len(i) > 0]
+
+        params_values = [i for i in params_values if len(i) > 0]
+
+        if len(children) != len(params_values):
+            self.raise_runtime('Number of parameters set must equal to '
+                               'number of children, but n_set={} != '
+                               'n_children={}.'.format(
+                                   len(params_values), len(children)))
+        for child_params, params in zip(children, params_values):
+            if len(child_params) != len(params) and strict:
+                self.raise_runtime('Need {} parameters but provided only {} '
+                                   'parameters.'.format(
+                                       len(child_params), len(params)))
+            for p, v in zip(child_params, params):
+                try:
+                    T.set_value(p, v)
+                except Exception, e:
+                    self.raise_runtime('Error setting value for parameters: {}.'
+                                       ' params.shape={} but given values has '
+                                       'shape={}'.format(
+                                           str(e), T.eval(T.shape(p)), v.shape))
 
     def create_params(self, spec, shape, name, regularizable, trainable):
         if T.is_variable(spec):
@@ -722,6 +749,16 @@ class OdinFunction(OdinObject):
         self.params[params.name] = params
         # return actual variable or expression
         return spec
+
+    def get_config(self):
+        config = super(OdinFunction, self).get_config()
+        params = []
+        for i in self.get_children():
+            p = i.get_params_value(globals=False)
+            if len(p) > 0:
+                params.append(p)
+        config['params'] = params
+        return config
 
 
 class OdinUnsupervisedFunction(OdinFunction):

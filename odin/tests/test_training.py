@@ -14,6 +14,8 @@ from collections import defaultdict
 
 import numpy as np
 import h5py
+
+
 # ===========================================================================
 # Main Tests
 # ===========================================================================
@@ -24,6 +26,7 @@ def model_func():
     l = lasagne.layers.DenseLayer(l, num_units=3,
         nonlinearity=lasagne.nonlinearities.linear)
     return l
+
 
 class ModelTest(unittest.TestCase):
 
@@ -172,7 +175,7 @@ class ModelTest(unittest.TestCase):
 
         ds = dataset('tmp.h5', 'r')
         cost1 = f_cost(ds['X_train'].value, ds['y_train'].value).mean()
-        w1 = m.get_weights()
+        w1 = m.get_params()
 
         train.set_callback(batch_end=batch_end, epoch_end=epoch_end)
         train.add_task('realtrain', f_update, ['X_train', 'y_train'], 'tmp.h5',
@@ -182,7 +185,7 @@ class ModelTest(unittest.TestCase):
         train.add_task('realtest2', f_cost, 'test', 'tmp.h5', epoch=1, seed=13)
         self.assertEqual(train.run(), True)
 
-        w2 = m.get_weights()
+        w2 = m.get_params()
         cost2 = f_cost(ds['X_train'].value, ds['y_train'].value).mean()
         for i, j in zip(w1, w2):
             self.assertNotEqual(i.tolist(), j.tolist())

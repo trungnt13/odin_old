@@ -17,6 +17,8 @@ from six.moves import zip, range
 # ===========================================================================
 # Main Test
 # ===========================================================================
+
+
 def _test(dim):
     import lasagne
     l = lasagne.layers.InputLayer(shape=(None, dim))
@@ -24,6 +26,7 @@ def _test(dim):
     l = lasagne.layers.DenseLayer(l, num_units=3,
         nonlinearity=lasagne.nonlinearities.softmax)
     return l
+
 
 def _test_keras(dim):
     from keras.models import Sequential
@@ -34,6 +37,7 @@ def _test_keras(dim):
     model.add(Dense(3))
     model.add(Activation('softmax'))
     return model
+
 
 class ModelTest(unittest.TestCase):
 
@@ -108,7 +112,7 @@ class ModelTest(unittest.TestCase):
         m2.set_model(_test_keras, dim=10)
         m2.create_cost(tensor.categorical_crossentropy)
 
-        m2.set_weights(m1.get_weights(), 'lasagne')
+        m2.set_weights(m1.get_params(), 'lasagne')
         self.assertEqual(m1.pred(X).tolist(), m2.pred(X).tolist())
         self.assertEqual(m1.cost(X, y).tolist(),
                          m2.cost(X, y).tolist())
@@ -125,7 +129,7 @@ class ModelTest(unittest.TestCase):
         m2.set_model(_test_keras, dim=10)
         m2.create_cost(tensor.categorical_crossentropy)
 
-        m1.set_weights(m2.get_weights(), 'keras')
+        m1.set_weights(m2.get_params(), 'keras')
         self.assertEqual(np.round(m1.pred(X), 6).tolist(),
                          np.round(m2.pred(X), 6).tolist())
         self.assertEqual(m1.cost(X, y).tolist(),
@@ -138,7 +142,7 @@ class ModelTest(unittest.TestCase):
         m1 = model()
         m1.set_model(_test, dim=10)
         m1.create_cost(tensor.categorical_crossentropy)
-        w1 = m1.get_weights()
+        w1 = m1.get_params()
 
         m2 = model()
         m2.set_model(_test_keras, dim=10)

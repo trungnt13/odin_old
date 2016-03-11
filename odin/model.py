@@ -243,20 +243,21 @@ class model(OdinObject):
             for w in weights:
                 self._weights.append(w)
 
-    def get_weights(self):
+    def get_params(self):
         ''' if set_model is called, and your AI is created, always return the
         newest weights from AI
         '''
         # create model to have weights
         self.get_model()
         # always update the newest weights of model
-        self._weights = API.get_params_value(self._model, self._api)
+        self._weights = API.get_params_value(self._model, self._api,
+            globals=True, trainable=True, regularizable=True)
         return self._weights
 
-    def get_nweights(self):
+    def get_nparams(self):
         ''' Return number of weights '''
         n = 0
-        weights = self.get_weights()
+        weights = self.get_params()
         for W in weights:
             if type(W) not in (tuple, list):
                 W = [W]
@@ -332,7 +333,7 @@ class model(OdinObject):
                     import traceback; traceback.print_exc()
             # ====== fetch new weights into model, create checkpoints ====== #
             else:
-                weights = self.get_weights()
+                weights = self.get_params()
                 if self._save_path is not None and checkpoint:
                     f = h5py.File(self._save_path, mode='a')
                     try:
@@ -500,7 +501,7 @@ class model(OdinObject):
         s += '======== Weights ========\n'
         nb_params = 0
         # it is critical to get_weights here to fetch weight from created model
-        for w in self.get_weights():
+        for w in self.get_params():
             s += ' - shape:%s' % str(w.shape) + '\n'
             nb_params += np.prod(w.shape)
         s += ' => Total: %d (parameters)' % nb_params + '\n'
@@ -534,7 +535,7 @@ class model(OdinObject):
             f['api'] = self._api
         # ====== save weights ====== #
         # check weights, always fetch newest weights from model
-        weights = self.get_weights()
+        weights = self.get_params()
         API.save_weights(f, self._api, weights)
 
         f.close()
