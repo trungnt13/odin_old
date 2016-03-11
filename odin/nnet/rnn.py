@@ -782,15 +782,6 @@ class Recurrent(OdinFunction):
         :class:`OdinFunction` is given, the output_shape can be one
         initialization for all sample in batch (as given above) or
         `(batch_size,) + hidden_to_hidden.output_shape[1:]`
-    learn_init : bool
-        If True, initial hidden values are learned, which also means if
-        `hidden_init` is an `OdinFunction`, all its parameters will be
-        returned for training
-    nonlinearity : callable or None
-        Nonlinearity to apply when computing new state (:math:`\sigma`). If
-        None is provided, no nonlinearity will be applied.
-    dropout : None, float(0.0-1.0), varialbe, expression
-        Fraction of the output to drop for after every recurrent connections.
     backwards : bool
         If True, process the sequence backwards and then reverse the
         output again such that the output from the layer is always
@@ -1419,6 +1410,9 @@ class GRU(Recurrent):
         c.add_gate(resetgate)
         c.add_gate(hidden_update)
         self.add_cell(c)
+        # initialize gate right after add it
+        c._check_gates()
+        c._check_batch_norm(np.prod(self.hidden_dims) * 3)
 
 
 class LSTM(Recurrent):
@@ -1468,3 +1462,6 @@ class LSTM(Recurrent):
         c.add_gate(cell)
         c.add_gate(outgate)
         self.add_cell(c)
+        # initialize gate right after add it
+        c._check_gates()
+        c._check_batch_norm(np.prod(self.hidden_dims) * 4)

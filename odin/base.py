@@ -663,9 +663,9 @@ class OdinFunction(OdinObject):
         self.get_params(globals, trainable, regularizable)]
 
     def set_params(self, params_values, strict=True):
-        children = [i.get_params(globals=False) for i in self.get_children()]
+        children = [i.get_params(globals=False)
+                    for i in self.get_children() + [self]]
         children = [i for i in children if len(i) > 0]
-
         params_values = [i for i in params_values if len(i) > 0]
 
         if len(children) != len(params_values):
@@ -675,7 +675,7 @@ class OdinFunction(OdinObject):
                                    len(params_values), len(children)))
         for child_params, params in zip(children, params_values):
             if len(child_params) != len(params) and strict:
-                self.raise_runtime('Need {} parameters but provided only {} '
+                self.raise_runtime('Need {} parameters but provided {} '
                                    'parameters.'.format(
                                        len(child_params), len(params)))
             for p, v in zip(child_params, params):
@@ -757,6 +757,10 @@ class OdinFunction(OdinObject):
             p = i.get_params_value(globals=False)
             if len(p) > 0:
                 params.append(p)
+        # add local params also
+        local_params = self.get_params_value(globals=False)
+        if len(local_params) > 0:
+            params.append(local_params)
         config['params'] = params
         return config
 

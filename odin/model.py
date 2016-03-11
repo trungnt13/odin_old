@@ -250,8 +250,7 @@ class model(OdinObject):
         # create model to have weights
         self.get_model()
         # always update the newest weights of model
-        self._weights = API.get_params_value(self._model, self._api,
-            globals=True, trainable=True, regularizable=True)
+        self._weights = API.get_params_for_saving(self._model, self._api)
         return self._weights
 
     def get_nparams(self):

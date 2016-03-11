@@ -52,14 +52,13 @@ class api(object):
             if api == 'lasagne':
                 for i in range(hdf5['nb_weights'].value):
                     weights.append(hdf5['weight_%d' % i].value)
-            elif api == 'keras':
+            # odin has the same scheme with keras
+            elif api == 'keras' or api == 'odin':
                 for i in range(hdf5['nb_weights'].value):
                     w = []
                     for j in range(hdf5['nb_layers_%d' % i].value):
                         w.append(hdf5['weight_%d_%d' % (i, j)].value)
                     weights.append(w)
-            elif api == 'odin':
-                pass
             else:
                 raise ValueError('Currently not support API: %s' % api)
         return weights
@@ -70,14 +69,12 @@ class api(object):
             _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
             for i, w in enumerate(weights):
                 _hdf5_save_overwrite(hdf5, 'weight_%d' % i, w)
-        elif api == 'keras':
+        elif api == 'keras' or api == 'odin':
             _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
             for i, W in enumerate(weights):
                 _hdf5_save_overwrite(hdf5, 'nb_layers_%d' % i, len(W))
                 for j, w in enumerate(W):
                     _hdf5_save_overwrite(hdf5, 'weight_%d_%d' % (i, j), w)
-        elif api == 'odin':
-            pass
         else:
             raise ValueError('Currently not support API: %s' % api)
 
@@ -90,7 +87,7 @@ class api(object):
             for l, w in zip(model.layers, weights):
                 l.set_weights(w)
         elif api == 'odin':
-            pass
+            model.set_params(weights, strict=True)
         else:
             raise ValueError('Currently not support API: %s' % api)
 
@@ -120,51 +117,35 @@ class api(object):
             raise ValueError('Currently not support API')
 
     @staticmethod
-    def get_params_value(model, api_, globals=True, trainable=None, regularizable=None):
+    def get_params_for_saving(model, api_):
         if api_ == 'lasagne':
             import lasagne
-            tags = {}
-            if trainable is not None:
-                tags['trainable'] = trainable
-            if regularizable is not None:
-                tags['regularizable'] = regularizable
-            return lasagne.layers.get_all_param_values(model, **tags)
+            return lasagne.layers.get_all_param_values(model)
         elif api_ == 'keras':
             weights = []
             for l in model.layers:
-                if trainable is None:
-                    w = l.trainable_weights + l.non_trainable_weights
-                elif trainable is True:
-                    w = l.trainable_weights
-                else:
-                    w = l.non_trainable_weights
+                w = l.trainable_weights + l.non_trainable_weights
                 weights.append([T.get_value(i) for i in w])
             return weights
         elif api_ == 'odin':
-            return model.get_params_value(globals, trainable, regularizable)
+            return model.get_config()['params']
         else:
             raise ValueError('Currently not support API')
 
     @staticmethod
     def convert_weights(model, weights, original_api, target_api):
         W = []
-        if original_api == 'keras' and target_api == 'lasagne':
+        if (original_api == 'keras' or original_api == 'odin') and \
+            target_api == 'lasagne':
             for w in weights:
                 W += w
-        elif original_api == 'lasagne' and target_api == 'keras':
+        elif original_api == 'lasagne' and \
+        (original_api == 'keras' or original_api == 'odin'):
             count = 0
             for l in model.layers:
                 n = len(l.trainable_weights + l.non_trainable_weights)
                 W.append([weights[i] for i in range(count, count + n)])
                 count += n
-        elif original_api == 'odin' and target_api == 'lasagne':
-            pass
-        elif original_api == 'odin' and target_api == 'keras':
-            pass
-        elif original_api == 'lasagne' and target_api == 'odin':
-            pass
-        elif original_api == 'keras' and target_api == 'odin':
-            pass
         else:
             raise ValueError('Currently not support API')
         return W
@@ -182,7 +163,8 @@ class api(object):
                     count += 1
             return count
         elif api == 'odin':
-            return len(model.get_children())
+            return len([i for i in model.get_children()
+                        if len(i.get_params(False)) > 0])
         else:
             raise ValueError('Currently not support API: %s' % api)
 
