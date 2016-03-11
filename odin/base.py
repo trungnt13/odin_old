@@ -648,7 +648,7 @@ class OdinFunction(OdinObject):
                         api = API.get_object_api(i)
                         if api is not None:
                             params += API.get_params(
-                                i, globals, trainable, regularizable)
+                                i, api, globals, trainable, regularizable)
 
         # ====== Params from this layers ====== #
         local_params = []

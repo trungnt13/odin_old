@@ -14,21 +14,19 @@ __all__ = [
     'model'
 ]
 
+
 # ===========================================================================
 # Helper
 # ===========================================================================
-
-
 def _hdf5_save_overwrite(hdf5, key, value):
     if key in hdf5:
         del hdf5[key]
     hdf5[key] = value
 
+
 # ===========================================================================
 # Eearly stopping
 # ===========================================================================
-
-
 def _check_gs(validation):
     ''' Generalization sensitive:
     validation is list of cost values (assumpt: lower is better)
@@ -124,11 +122,10 @@ def _check_hope_and_hop(validation):
         shouldSave = -1
     return shouldSave, shouldStop
 
+
 # ===========================================================================
 # Model
 # ===========================================================================
-
-
 class model(OdinObject):
 
     """Supported API:
@@ -149,7 +146,6 @@ class model(OdinObject):
         self._need_update_model = False
         self._model = None
         self._model_func = None
-        self._model_var = {} # variable for input, output of model
         self._api = ''
 
         # ====== functions ====== #
@@ -238,7 +234,7 @@ class model(OdinObject):
                         self._model, weights, api, self._api)
                 else:
                     self._weights = weights
-                API.set_weights(self._model, self._weights, self._api)
+                API.set_weights(self._model, self._api, self._weights)
             elif api is not None:
                 raise ValueError('Cannot convert weights when model haven\'t created!')
         # ====== fetch new weights directly ====== #
@@ -254,7 +250,7 @@ class model(OdinObject):
         # create model to have weights
         self.get_model()
         # always update the newest weights of model
-        self._weights = API.get_params_value(self._model)
+        self._weights = API.get_params_value(self._model, self._api)
         return self._weights
 
     def get_nweights(self):
@@ -273,10 +269,6 @@ class model(OdinObject):
         self.get_model()
         return API.get_nlayers(self._model, self._api)
 
-    def get_vars(self):
-        self.get_model()
-        return self._model_var
-
     # ==================== Model ==================== #
     def set_model(self, model, *args, **kwargs):
         ''' Save a function that create your model.
@@ -286,14 +278,15 @@ class model(OdinObject):
         model : __call__ object
             main function that create your model
         api : str
-            support: lasagne | keras | blocks
+            support: lasagne | keras | odin
         args : *
             any arguments for your model creatation function
         kwargs : **
             any arguments for your model creatation function
         '''
         if not hasattr(model, '__call__'):
-            raise NotImplementedError('Model must be a function return computational graph')
+            raise NotImplementedError('Model must be a function return '
+                                      'computational graph.')
         func = function(model, *args, **kwargs)
         if self._model_func and self._model_func != func:
             self._need_update_model = True
@@ -331,7 +324,7 @@ class model(OdinObject):
             # ====== load old weight ====== #
             if len(self._weights) > 0:
                 try:
-                    API.set_weights(self._model, self._weights, self._api)
+                    API.set_weights(self._model, self._api, self._weights)
                     self.log('*** Successfully load old weights ***', 20)
                 except Exception, e:
                     self.log('*** Cannot load old weights ***', 50)
@@ -349,8 +342,6 @@ class model(OdinObject):
                         self.log('Error Creating checkpoint: %s' % str(e), 40)
                         raise e
                     f.close()
-            # ====== store model's variables ====== #
-            self._model_var = API.get_variables(self._model, self._api)
         return self._model
 
     # ==================== Network function ==================== #
@@ -359,82 +350,15 @@ class model(OdinObject):
         self.get_model()
         # ====== Create prediction function ====== #
         if not self._pred_func:
-            var = self._model_var
-            updates = API.get_states_updates(self._model, self._api,
-                training=False)
+            input_var = API.get_input_variables(self._model, self._api)
+            output_var = API.get_outputs(self._model, self._api, False)
             # create prediction function
             self._pred_func = tensor.function(
-                inputs=var['X_pred'],
-                outputs=var['y_pred'],
-                updates=updates)
+                inputs=input_var,
+                outputs=output_var)
             self.log(
                 '*** Successfully create [%s] prediction function ***' % self._api, 20)
         return self._pred_func
-
-    def create_cost(self, cost_func):
-        ''' Create cost funciton
-        Parameters
-        ----------
-        cost_func: callable object
-            cost funciton is a function(y_pred, y_true,...)
-        args, kwargs: arguments, keyword arguments
-            for given cost function
-        '''
-        if not cost_func or not hasattr(cost_func, '__call__'):
-            raise ValueError(
-                'Cost funciton must be callable and has at least 2 arguments')
-        self.get_model()
-        # ====== Create prediction function ====== #
-        if not self._cost_func or \
-           self._cost_func_old != cost_func:
-            self._cost_func_old = cost_func
-            var = self._model_var
-            updates = API.get_states_updates(self._model, self._api,
-                training=False)
-            # create cost function
-            cost = cost_func(var['y_pred'], var['y_true'])
-            self._cost_func = tensor.function(
-                inputs=var['X_pred'] + [var['y_true']],
-                outputs=cost,
-                updates=updates)
-            self.log(
-                '*** Successfully create [%s] cost function ***' % self._api, 20)
-        return self._cost_func
-
-    def create_updates(self, objective_func, updates_func):
-        ''' Create updates funciton
-        Parameters
-        ----------
-        objective_func: callable object
-            objective funciton is a function(loss, params)
-        updates_func: callable object
-            update funciton is a function(loss_or_grads, params,...)
-        args, kwargs: arguments, keyword arguments
-            for given cost function
-        '''
-        if not updates_func or not hasattr(updates_func, '__call__'):
-            raise ValueError(
-                'Updates funciton must be callable and has at least 2 arguments')
-        self.get_model()
-        # ====== Create updates function ====== #
-        if not self._updates_func or \
-           self._updates_func_old != updates_func or \
-           self._objective_func_old != objective_func:
-            self._updates_func_old = updates_func
-            self._objective_func_old = objective_func
-            var = self._model_var
-            # always take mean
-            obj = tensor.mean(objective_func(var['y_pred'], var['y_true']))
-            params = API.get_params(self._model, trainable=True)
-            # create updates function
-            updates = updates_func(obj, params)
-            self._updates_func = tensor.function(
-                inputs=var['X_train'] + [var['y_true']],
-                outputs=obj,
-                updates=updates)
-            self.log(
-                '*** Successfully create [%s] updates function ***' % self._api, 20)
-        return self._updates_func
 
     # ==================== network actions ==================== #
     def pred(self, *X):
@@ -445,17 +369,6 @@ class model(OdinObject):
         # ====== make prediction ====== #
         prediction = self._pred_func(*X)
         return prediction
-
-    def cost(self, *X):
-        if not self._cost_func:
-            raise ValueError('Haven\'t created cost function')
-        # ====== caluclate cost ====== #
-        return self._cost_func(*X)
-
-    def updates(self, *X):
-        if not self._updates_func:
-            raise ValueError('Haven\'t created cost function')
-        return self._updates_func(*X)
 
     def rollback(self):
         ''' Roll-back weights and history of model from last checkpoints
@@ -470,7 +383,7 @@ class model(OdinObject):
             if len(weights) > 0:
                 self._weights = weights
                 if self._model is not None:
-                    API.set_weights(self._model, self._weights, self._api)
+                    API.set_weights(self._model, self._api, self._weights)
                     self.log(' *** Weights rolled-back! ***', 20)
 
             # rollback history
@@ -532,13 +445,6 @@ class model(OdinObject):
             self._history.append(frame())
         self._history[-1].record(values, *tags)
         self._history_updated = True
-
-    # def update(self, tags, new, after=None, before=None, n=None, absolute=False):
-    #     if len(self._history) == 0:
-    #         self._history.append(frame())
-    #     self._history[-1].update(self, tags, new,
-    #         after, before, n, absolute)
-    #     self._history_updated = True
 
     def select(self, tags, default=None, after=None, before=None,
         filter_value=None, absolute=False, newest=False, return_time=False):

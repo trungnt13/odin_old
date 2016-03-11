@@ -58,6 +58,8 @@ class api(object):
                     for j in range(hdf5['nb_layers_%d' % i].value):
                         w.append(hdf5['weight_%d_%d' % (i, j)].value)
                     weights.append(w)
+            elif api == 'odin':
+                pass
             else:
                 raise ValueError('Currently not support API: %s' % api)
         return weights
@@ -74,23 +76,26 @@ class api(object):
                 _hdf5_save_overwrite(hdf5, 'nb_layers_%d' % i, len(W))
                 for j, w in enumerate(W):
                     _hdf5_save_overwrite(hdf5, 'weight_%d_%d' % (i, j), w)
+        elif api == 'odin':
+            pass
         else:
             raise ValueError('Currently not support API: %s' % api)
 
     @staticmethod
-    def set_weights(model, weights, api):
+    def set_weights(model, api, weights):
         if api == 'lasagne':
             import lasagne
             lasagne.layers.set_all_param_values(model, weights)
         elif api == 'keras':
             for l, w in zip(model.layers, weights):
                 l.set_weights(w)
+        elif api == 'odin':
+            pass
         else:
             raise ValueError('Currently not support API: %s' % api)
 
     @staticmethod
-    def get_params(model, globals=True, trainable=None, regularizable=None):
-        api_ = api.get_object_api(model)
+    def get_params(model, api_, globals=True, trainable=None, regularizable=None):
         if api_ == 'lasagne':
             import lasagne
             tags = {}
@@ -115,8 +120,8 @@ class api(object):
             raise ValueError('Currently not support API')
 
     @staticmethod
-    def get_params_value(model, globals=True, trainable=None, regularizable=None):
-        if 'lasagne' in str(model.__class__):
+    def get_params_value(model, api_, globals=True, trainable=None, regularizable=None):
+        if api_ == 'lasagne':
             import lasagne
             tags = {}
             if trainable is not None:
@@ -124,7 +129,7 @@ class api(object):
             if regularizable is not None:
                 tags['regularizable'] = regularizable
             return lasagne.layers.get_all_param_values(model, **tags)
-        elif 'keras' in str(model.__class__):
+        elif api_ == 'keras':
             weights = []
             for l in model.layers:
                 if trainable is None:
@@ -135,6 +140,8 @@ class api(object):
                     w = l.non_trainable_weights
                 weights.append([T.get_value(i) for i in w])
             return weights
+        elif api_ == 'odin':
+            return model.get_params_value(globals, trainable, regularizable)
         else:
             raise ValueError('Currently not support API')
 
@@ -150,39 +157,34 @@ class api(object):
                 n = len(l.trainable_weights + l.non_trainable_weights)
                 W.append([weights[i] for i in range(count, count + n)])
                 count += n
+        elif original_api == 'odin' and target_api == 'lasagne':
+            pass
+        elif original_api == 'odin' and target_api == 'keras':
+            pass
+        elif original_api == 'lasagne' and target_api == 'odin':
+            pass
+        elif original_api == 'keras' and target_api == 'odin':
+            pass
         else:
             raise ValueError('Currently not support API')
         return W
 
     @staticmethod
-    def get_variables(model, api):
-        '''For lasagne, X_train and X_pred is the same'''
+    def get_nlayers(model, api):
         if api == 'lasagne':
             import lasagne
-            X_train = [l.input_var for l in lasagne.layers.find_layers(
-                model, types=lasagne.layers.InputLayer)]
-            X_pred = [l.input_var for l in lasagne.layers.find_layers(
-                model, types=lasagne.layers.InputLayer)]
-            y_pred = lasagne.layers.get_output(model, deterministic=True)
-            y_train = lasagne.layers.get_output(model, deterministic=False)
+            return len([i for i in lasagne.layers.get_all_layers(model)
+                        if len(i.get_params(trainable=True)) > 0])
         elif api == 'keras':
-            X_train = model.get_input(train=True)
-            if type(X_train) not in (list, tuple):
-                X_train = [X_train]
-            X_pred = model.get_input(train=False)
-            if type(X_pred) not in (list, tuple):
-                X_pred = [X_pred]
-            y_pred = model.get_output(train=False)
-            y_train = model.get_output(train=True)
-
-        y_true = T.placeholder(ndim=T.ndim(y_pred))
-        var = {}
-        var['X_train'] = X_train
-        var['X_pred'] = X_pred
-        var['y_true'] = y_true
-        var['y_pred'] = y_pred
-        var['y_train'] = y_train
-        return var
+            count = 0
+            for l in model.layers:
+                if len(l.trainable_weights) > 0:
+                    count += 1
+            return count
+        elif api == 'odin':
+            return len(model.get_children())
+        else:
+            raise ValueError('Currently not support API: %s' % api)
 
     @staticmethod
     def get_input_variables(model, api):
@@ -200,34 +202,6 @@ class api(object):
         else:
             raise ValueError('Unsupport API={} for object={}'.format(api, model))
         return X
-
-    @staticmethod
-    def get_nlayers(model, api):
-        if api == 'lasagne':
-            import lasagne
-            return len([i for i in lasagne.layers.get_all_layers(model)
-                        if len(i.get_params(trainable=True)) > 0])
-        elif api == 'keras':
-            count = 0
-            for l in model.layers:
-                if len(l.trainable_weights) > 0:
-                    count += 1
-            return count
-        else:
-            raise ValueError('Currently not support API: %s' % api)
-
-    @staticmethod
-    def get_states_updates(model, api, training):
-        ''' Return an OrderDict '''
-        if api == 'lasagne':
-            updates = []
-        elif api == 'keras':
-            updates = OrderedDict(model.state_updates)
-        elif api == 'odin':
-            updates = model.get_updates(training)
-        else:
-            raise ValueError('Currently not support API: %s' % api)
-        return updates
 
     @staticmethod
     def get_outputs(model, api, training, **kwargs):
