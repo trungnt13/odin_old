@@ -662,30 +662,23 @@ class OdinFunction(OdinObject):
         return [T.get_value(x) for x in
         self.get_params(globals, trainable, regularizable)]
 
-    def set_params(self, params_values, strict=True):
-        children = [i.get_params(globals=False)
-                    for i in self.get_children() + [self]]
-        children = [i for i in children if len(i) > 0]
-        params_values = [i for i in params_values if len(i) > 0]
+    def set_params(self, params_values):
+        params = self.get_params(globals=True)
+        params_values = list(params_values)
 
-        if len(children) != len(params_values):
-            self.raise_runtime('Number of parameters set must equal to '
-                               'number of children, but n_set={} != '
-                               'n_children={}.'.format(
-                                   len(params_values), len(children)))
-        for child_params, params in zip(children, params_values):
-            if len(child_params) != len(params) and strict:
-                self.raise_runtime('Need {} parameters but provided {} '
-                                   'parameters.'.format(
-                                       len(child_params), len(params)))
-            for p, v in zip(child_params, params):
-                try:
-                    T.set_value(p, v)
-                except Exception, e:
-                    self.raise_runtime('Error setting value for parameters: {}.'
-                                       ' params.shape={} but given values has '
-                                       'shape={}'.format(
-                                           str(e), T.eval(T.shape(p)), v.shape))
+        if len(params) != len(params_values):
+            self.raise_runtime('This fucntion has {} parameters but only '
+                               'provided {} parameters.'.format(
+                                   len(params), len(params_values)))
+        for p, v in zip(params, params_values):
+            try:
+                T.set_value(p, v)
+            except:
+                self.raise_runtime('Error setting value for parameters: .'
+                                   ' params.shape={} but given values has '
+                                   'shape={}'.format(
+                                       str(p), T.eval(T.shape(p)), v.shape))
+        return self
 
     def create_params(self, spec, shape, name, regularizable, trainable):
         if T.is_variable(spec):
@@ -752,16 +745,6 @@ class OdinFunction(OdinObject):
 
     def get_config(self):
         config = super(OdinFunction, self).get_config()
-        params = []
-        for i in self.get_children():
-            p = i.get_params_value(globals=False)
-            if len(p) > 0:
-                params.append(p)
-        # add local params also
-        local_params = self.get_params_value(globals=False)
-        if len(local_params) > 0:
-            params.append(local_params)
-        config['params'] = params
         return config
 
 

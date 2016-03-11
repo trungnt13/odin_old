@@ -49,11 +49,11 @@ class api(object):
     def load_weights(hdf5, api):
         weights = []
         if 'nb_weights' in hdf5:
-            if api == 'lasagne':
+            # odin has the same scheme with Lasagne
+            if api == 'lasagne' or api == 'odin':
                 for i in range(hdf5['nb_weights'].value):
                     weights.append(hdf5['weight_%d' % i].value)
-            # odin has the same scheme with keras
-            elif api == 'keras' or api == 'odin':
+            elif api == 'keras':
                 for i in range(hdf5['nb_weights'].value):
                     w = []
                     for j in range(hdf5['nb_layers_%d' % i].value):
@@ -65,11 +65,11 @@ class api(object):
 
     @staticmethod
     def save_weights(hdf5, api, weights):
-        if api == 'lasagne':
+        if api == 'lasagne' or api == 'odin':
             _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
             for i, w in enumerate(weights):
                 _hdf5_save_overwrite(hdf5, 'weight_%d' % i, w)
-        elif api == 'keras' or api == 'odin':
+        elif api == 'keras':
             _hdf5_save_overwrite(hdf5, 'nb_weights', len(weights))
             for i, W in enumerate(weights):
                 _hdf5_save_overwrite(hdf5, 'nb_layers_%d' % i, len(W))
@@ -87,7 +87,7 @@ class api(object):
             for l, w in zip(model.layers, weights):
                 l.set_weights(w)
         elif api == 'odin':
-            model.set_params(weights, strict=True)
+            model.set_params(weights)
         else:
             raise ValueError('Currently not support API: %s' % api)
 
@@ -128,7 +128,7 @@ class api(object):
                 weights.append([T.get_value(i) for i in w])
             return weights
         elif api_ == 'odin':
-            return model.get_config()['params']
+            return model.get_params_value(globals=True)
         else:
             raise ValueError('Currently not support API')
 
