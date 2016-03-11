@@ -631,9 +631,13 @@ def create_batch(n_samples, batch_size,
     else:
         return upsample_jobs
 
+
 # ===========================================================================
 # Python utilities
 # ===========================================================================
+primitives = (bool, int, float, str,
+             tuple, list, dict, type, types.ModuleType,
+             type(None))
 
 
 def serialize_sandbox(environment):
@@ -644,13 +648,11 @@ def serialize_sandbox(environment):
     '''
     import re
     sys_module = re.compile('__\w+__')
-    primitive = (bool, int, float, str,
-                 tuple, list, dict, type, types.ModuleType)
     ignore_key = ['__name__', '__file__']
     sandbox = {}
     for k, v in environment.iteritems():
         if k in ignore_key: continue
-        if type(v) in primitive and sys_module.match(k) is None:
+        if type(v) in primitives and sys_module.match(k) is None:
             if isinstance(v, types.ModuleType):
                 v = {'name': v.__name__, '__module': True}
             sandbox[k] = v
@@ -667,11 +669,9 @@ def deserialize_sandbox(sandbox):
         raise ValueError(
             '[environment] must be dictionary created by serialize_sandbox')
     import importlib
-    primitive = (bool, int, float, str,
-                 tuple, list, dict, type, types.ModuleType)
     environment = {}
     for k, v in sandbox.iteritems():
-        if type(v) in primitive:
+        if type(v) in primitives:
             if isinstance(v, dict) and '__module' in v:
                 v = importlib.import_module(v['name'])
             environment[k] = v
