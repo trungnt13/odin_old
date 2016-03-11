@@ -135,12 +135,12 @@ class api(object):
     @staticmethod
     def convert_weights(model, weights, original_api, target_api):
         W = []
-        if (original_api == 'keras' or original_api == 'odin') and \
-            target_api == 'lasagne':
+        if original_api == 'keras' and \
+            (target_api == 'lasagne' or original_api == 'odin'):
             for w in weights:
                 W += w
-        elif original_api == 'lasagne' and \
-        (original_api == 'keras' or original_api == 'odin'):
+        elif (original_api == 'lasagne'or original_api == 'odin') and \
+            target_api == 'keras':
             count = 0
             for l in model.layers:
                 n = len(l.trainable_weights + l.non_trainable_weights)

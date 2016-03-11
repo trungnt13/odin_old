@@ -8,6 +8,9 @@ from ..trainer import _data, _task, trainer
 from ..dataset import dataset
 from ..model import model
 from .. import tensor
+from ..utils import api as API
+from ..objectives import mean_squared_loss
+from ..optimizers import rmsprop
 import unittest
 import os
 from collections import defaultdict
@@ -97,16 +100,22 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(niter, 1000)
 
     def test_training(self):
-        import lasagne
         # ====== create model ====== #
         m = model()
         m.set_model(model_func)
-
-        f_cost = m.create_cost(
-            lambda y_pred, y_true: tensor.mean(tensor.square(y_pred - y_true), axis=-1))
-        f_update = m.create_updates(
-            lambda y_pred, y_true: tensor.mean(tensor.square(y_pred - y_true), axis=-1),
-            lasagne.updates.rmsprop)
+        y = tensor.placeholder(ndim=2)
+        cost = mean_squared_loss(
+            API.get_outputs(m.get_model(), m.get_api(), True),
+            y)
+        updates = rmsprop(cost,
+            API.get_params(m.get_model(), m.get_api(), trainable=True))
+        f_cost = tensor.function(
+            inputs=API.get_input_variables(m.get_model(), m.get_api()) + [y],
+            outputs=cost)
+        f_update = tensor.function(
+            inputs=API.get_input_variables(m.get_model(), m.get_api()) + [y],
+            outputs=cost,
+            updates=updates)
 
         # ====== create trainer ====== #
         global i, j, k

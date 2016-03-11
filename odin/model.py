@@ -292,6 +292,10 @@ class model(OdinObject):
             self._need_update_model = True
         self._model_func = func
 
+    def get_api(self):
+        self.get_model()
+        return self._api
+
     def get_model(self, checkpoint=True):
         '''
         Parameters
@@ -364,6 +368,9 @@ class model(OdinObject):
     def pred(self, *X):
         '''
         Order of input will be keep in the same order when you create network
+        Returns
+        -------
+        list of results
         '''
         self.create_pred()
         # ====== make prediction ====== #

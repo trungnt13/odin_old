@@ -15,11 +15,11 @@ from six.moves import range, zip
 __all__ = [
     'trainer'
 ]
+
+
 # ===========================================================================
 # Helper
 # ===========================================================================
-
-
 class _iterator_wrapper(object):
 
     '''Fake class with iter function like dnntoolkit.batch'''
@@ -44,41 +44,6 @@ class _iterator_wrapper(object):
 
 def _callback(trainer):
     pass
-
-
-def _parse_data_config(task, data):
-    '''return train,valid,test'''
-    train = None
-    test = None
-    valid = None
-    if type(data) in (tuple, list):
-        # only specified train data
-        if type(data[0]) not in (tuple, list):
-            if 'train' in task: train = data
-            elif 'test' in task: test = data
-            elif 'valid' in task: valid = data
-        else: # also specified train and valid
-            if len(data) == 1:
-                if 'train' in task: train = data[0]
-                elif 'test' in task: test = data[0]
-                elif 'valid' in task: valid = data[0]
-            if len(data) == 2:
-                if 'train' in task: train = data[0]; valid = data[1]
-                elif 'test' in task: test = data[0]
-                elif 'valid' in task: valid = data[0]
-            elif len(data) == 3:
-                train = data[0]
-                test = data[1]
-                valid = data[2]
-    elif type(data) == dict:
-        if 'train' in data: train = data['train']
-        if 'test' in data: test = data['test']
-        if 'valid' in data: valid = data['valid']
-    elif data is not None:
-        if 'train' in task: train = [data]
-        if 'test' in task: test = [data]
-        if 'valid' in task: valid = [data]
-    return train, valid, test
 
 # ===========================================================================
 # Task
@@ -294,24 +259,42 @@ class trainer(OdinObject):
 
     """
     TODO:
-     - custom data (not instance of dataset),
-     - cross training 2 dataset,
-     - custom action trigger under certain condition
      - layers configuration: ['dropout':0.5, 'noise':'0.075']
      - default ArgumentsParser
      - Add iter_mode, start, end to set_strategy
      - Add prediction task
     Value can be queried on callback:
-     - idx(int): current run idx in the strategies, start from 0
+     - idx: (int) current run idx in the strategies, start from 0
      - output: current training, testing, validating output
-     - iter(int): number of iteration, start from 0
+     - iter: (int) number of iteration, start from 0
      - data: current data (batch_start)
-     - epoch(int): current epoch, start from 0
-     - task(str): current task 'train', 'test', 'valid'
+     - epoch: (int) current epoch, start from 0
+     - task: (str) current task name:'train', 'test', 'valid'
     Command can be triggered when running:
      - stop()
      - valid()
      - restart()
+
+    Example
+    -------
+    >>> from odin import trainer
+    ...
+    >>> train = trainer()
+    >>> train.set_callback(
+    ...     batch_start=batch_start, task_start=task_start_end,
+    ...     task_end=task_start_end)
+    ... # add data alias
+    >>> train.add_data('valid', ['X_valid', 'y_valid'])
+    >>> train.add_data('test', ['X_test', 'y_test'])
+    ...
+    ... # add task
+    >>> train.add_task('train', train_func, ['X_train', 'y_train'], 'tmp.h5',
+    >>>     epoch=2, seed=13)
+    >>> train.add_subtask(valid_func, 'valid', freq=0.58)
+    >>> train.add_subtask(test_func, 'test', single_run=True, epoch=-1, p=0.1)
+    ...
+    >>> train.add_task('test', test_func, 'test')
+
     """
 
     def __init__(self):
