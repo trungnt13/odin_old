@@ -854,8 +854,8 @@ def get_from_module(module, identifier, environment=None):
     return None
 
 
-def search_pyid(identifier, prefix='', suffix='', path='.', exclude='',
-              prefer_compiled=False):
+def get_from_path(identifier, prefix='', suffix='', path='.', exclude='',
+                  prefer_compiled=False):
     ''' Algorithms:
      - Search all files in the `path` matched `prefix` and `suffix`
      - Exclude all files contain any str in `exclude`

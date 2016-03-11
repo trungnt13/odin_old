@@ -266,6 +266,10 @@ def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, reduction_indices=axis, keep_dims=keepdims)
 
 
+def mul(x, y):
+    return tf.mul(x, y)
+
+
 def prod(x, axis=None, keepdims=False):
     '''Multiply the values in a tensor, alongside the specified axis.
     '''
@@ -399,6 +403,9 @@ def concatenate(tensors, axis=-1):
 
 
 def reshape(x, shape):
+    shape = [i.value
+             if isinstance(i, tf.python.framework.tensor_shape.Dimension) else i
+             for i in shape]
     return tf.reshape(x, shape)
 
 

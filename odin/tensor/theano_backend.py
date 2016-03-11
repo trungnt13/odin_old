@@ -241,6 +241,10 @@ def sum(x, axis=None, keepdims=False):
     return T.sum(x, axis=axis, keepdims=keepdims)
 
 
+def mul(x, y):
+    return T.mul(x, y)
+
+
 def prod(x, axis=None, keepdims=False):
     '''Multiply the values in a tensor, alongside the specified axis.
     '''
