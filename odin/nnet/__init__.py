@@ -7,3 +7,4 @@ from noise import *
 from ops import *
 from rnn import *
 from normalization import *
+from pool import *

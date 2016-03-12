@@ -450,6 +450,9 @@ def repeat_elements(x, rep, axis):
     If x has shape (s1, s2, s3) and axis=1, the output
     will have shape (s1, s2 * rep, s3)
     '''
+    if axis < 0:
+        axis = axis % len(x.get_shape())
+
     x_shape = x.get_shape().as_list()
     # slices along the repeat axis
     splits = tf.split(axis, x_shape[axis], x)
