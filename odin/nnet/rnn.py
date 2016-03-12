@@ -20,6 +20,7 @@ from .normalization import BatchNormalization
 __all__ = [
     "Gate",
     "Cell",
+    "SimpleCell",
     "GatingCell",
     "Recurrent",
     "lstm_algorithm",
@@ -339,14 +340,16 @@ class Cell(OdinFunction):
             dropoutU = None
         self.dropoutU = dropoutU
 
+    @property
+    def norm_dims(self):
+        raise NotImplementedError
+
     # ==================== methods for preparing parameters ==================== #
-    def _check_batch_norm(self, norm_dims):
+    def _check_batch_norm(self):
         '''BatchNormalization must be recreated if the number of gates changed,
         because for each gate we need 1 BatchNormalization
         '''
-        if isinstance(norm_dims, (int, float, long)):
-            norm_dims = (norm_dims,)
-
+        norm_dims = self.norm_dims
         # recreate batch_norm
         if self.batch_norm:
             # only re-new if number of gates changed
@@ -388,7 +391,8 @@ class Cell(OdinFunction):
         '''
         raise NotImplementedError
 
-    def step(self, in_precompute, hid_prev, out_prev, cell_prev, *constant):
+    def step(self, training, in_precompute, hid_prev, out_prev, cell_prev,
+            *constant):
         '''
         Parameters
         ----------
@@ -453,11 +457,37 @@ class Cell(OdinFunction):
 
 class SimpleCell(Cell):
 
-    """docstring for SimpleCell"""
+    """SimpleCell
+    Parameters
+    ----------
+    hidden_to_hidden : int, :class:`OdinFunction`
+        Function which transform the previous hidden state to the new state
+        (:math:`f_h`). This layer may be connected to a chain of layers. If
+        an integer is given, it is the number of hidden unit and a
+        :class:`odin.nnet.Dense` is created as default. Note: we only consider
+        the first output from given :class:`OdinFunction`.
+    input_to_hidden : :class:`OdinFunction`, 'auto', None
+        :class:`OdinFunction` instance which transform input to the
+        hidden state (:math:`f_i`).  This layer may be connected to a chain of
+        layers, which has same input shape as `incoming`, except for the first
+        dimension must be ``incoming.output_shape[0]*incoming.output_shape[1]``
+        or ``None``. Note: we only consider the first output from given
+        :class:`OdinFunction`.
+        If 'auto' is given, this layer automatically create a Dense layer to
+        transform the input to the same dimension as hidden state
+
+    Notes
+    -----
+    In short, following rules must be applied:
+        input_to_hidden.output_shape == hidden_to_hidden.input_shape
+        hidden_to_hidden.input_shape == hidden_to_hidden.output_shape
+        hidden_to_output.input_shape == hidden_to_hidden.output_shape
+    """
 
     def __init__(self, incoming, input_dims,
+                 input_to_hidden=None,
+                 hidden_to_hidden=None,
                  nonlinearity=T.tanh,
-                 algorithm=simple_algorithm,
                  batch_norm=False, learnable_norm=False,
                  dropoutW=None, dropoutU=None,
                  **kwargs):
@@ -468,25 +498,148 @@ class SimpleCell(Cell):
                  dropoutW=dropoutW, dropoutU=dropoutU,
                  **kwargs)
 
+        # ====== check hidden_to_hidden ====== #
+        if not isinstance(hidden_to_hidden, OdinFunction):
+            self.raise_arguments('hidden_to_hidden connection cannot be None, '
+                                 'and must be int represent number of hidden '
+                                 'units or a OdinFunction which transform '
+                                 'hidden states at each step.')
+        # hidden_to_hidden must only return 1 output
+        if len(hidden_to_hidden.output_shape) > 1:
+            self.raise_arguments('hidden_to_hidden connection should return '
+                                 'only 1 output ')
+        # must get input_shape from the roots
+        hidden_to_hidden_input_shape = []
+        for i in hidden_to_hidden.get_roots():
+            hidden_to_hidden_input_shape += i.input_shape
+        # Check that hidden_to_hidden's output shape is the same as
+        # hidden_to_hidden's input shape but don't check a dimension if it's
+        # None for either shape
+        output_shape = hidden_to_hidden.output_shape[0]
+        for input_shape in hidden_to_hidden_input_shape:
+            if not _check_shape_match(input_shape, output_shape):
+                raise ValueError("The output shape for hidden_to_hidden "
+                                 "must be equal to the input shape of "
+                                 "hidden_to_hidden after the first dimension, "
+                                 "but hidden_to_hidden.output_shape={} and "
+                                 "hidden_to_hidden.input_shape={}".format(
+                                     output_shape, input_shape))
+
+        # ====== check input_to_hidden ====== #
+        if input_to_hidden == 'auto':
+            input_to_hidden = Dense((None,) + self.input_dims,
+                                    num_units=np.prod(self.hidden_dims),
+                                    nonlinearity=T.linear)
+            if len(self.hidden_dims) > 1:
+                input_to_hidden = Ops(input_to_hidden,
+                    ops=lambda x: T.reshape(x, (-1,) + self.hidden_dims))
+        elif isinstance(input_to_hidden, OdinFunction):
+            pass
+        elif input_to_hidden is None:
+            pass
+        else:
+            self.raise_arguments('input_to_hidden connection only can be None, '
+                                 'or an OdinFunction which transform inputs at '
+                                 'each step')
+        # validate the shape info of input_to_hidden
+        if input_to_hidden is not None:
+            # input_to_hidden must only return 1 output
+            if len(input_to_hidden.output_shape) > 1:
+                self.raise_arguments('input_to_hidden connection should return '
+                                     'only 1 output ')
+
+            # Check that input_to_hidden and hidden_to_hidden output shapes match,
+            # but don't check a dimension if it's None for either shape
+            if not _check_shape_match(input_to_hidden.output_shape[0],
+                                      hidden_to_hidden.output_shape[0]):
+                self.log("The output shape for input_to_hidden and "
+                         "hidden_to_hidden must be equal after the first "
+                         "dimension, but input_to_hidden.output_shape={} "
+                         "and hidden_to_hidden.output_shape={}. Note:You might "
+                         "use cell to transform the block input back to "
+                         "hidden dimensions!".format(
+                             input_to_hidden.output_shape,
+                             hidden_to_hidden.output_shape), 30)
+
+        self.input_to_hidden = input_to_hidden
+        self.hidden_to_hidden = hidden_to_hidden
+
+    # ==================== Override functions ==================== #
+    def get_params(self, globals, trainable=None, regularizable=None):
+        params = super(GatingCell, self).get_params(
+            globals, trainable, regularizable)
+
+        # ====== add gate params ====== #
+        params += self.hidden_to_hidden.get_params(
+            globals, trainable, regularizable)
+        if self.input_to_hidden is not None:
+            params += self.input_to_hidden.get_params(
+            globals, trainable, regularizable)
+        return params
+
+    # ====== Cell methods ====== #
+    @property
+    def norm_dims(self):
+        return self.hidden_dims
+
+    def get_constants(self, X, Hinit, training, **kwargs):
+        const = []
+        # dropU
+        if training and self.dropoutU is not None:
+            shape = T.shape(Hinit)
+            mask = _create_dropout_mask(
+                self.rng, self.dropoutU, shape, Hinit.dtype)
+            const.append(mask)
+        return const
+
     def precompute(self, X, training, **kwargs):
-        # Because the input is given for all time steps, we can precompute
-        # the inputs to hidden before scanning. First we need to reshape
-        # from (seq_len, batch_size, trailing dimensions...) to
-        # (seq_len*batch_size, trailing dimensions...)
-        # This strange use of a generator in a tuple was because
-        # input.shape[2:] was raising a Theano error
-        # trailing_dims is features dimension
-        seq_len, num_batch = T.shape(X)[0], T.shape(X)[1]
+        if self.input_to_hidden is not None:
+            # Because the input is given for all time steps, we can precompute
+            # the inputs to hidden before scanning. First we need to reshape
+            # from (seq_len, batch_size, trailing dimensions...) to
+            # (seq_len*batch_size, trailing dimensions...)
+            # This strange use of a generator in a tuple was because
+            # input.shape[2:] was raising a Theano error
+            # trailing_dims is features dimension
+            seq_len, num_batch = T.shape(X)[0], T.shape(X)[1]
 
-        trailing_dims = tuple(T.shape(X)[n] for n in range(2, T.ndim(X)))
-        X = T.reshape(X, (seq_len * num_batch,) + trailing_dims)
+            trailing_dims = tuple(T.shape(X)[n] for n in range(2, T.ndim(X)))
+            X = T.reshape(X, (seq_len * num_batch,) + trailing_dims)
 
-        # Reshape back to (seq_len, batch_size, trailing dimensions...)
-        _ = []
-        for x in X:
-            trailing_dims = tuple(T.shape(x)[n] for n in range(1, T.ndim(x)))
-            _.append(T.reshape(x, (seq_len, num_batch) + trailing_dims))
+            self.input_to_hidden.set_intermediate_inputs(X, root=True)
+            X = self.input_to_hidden(training, **kwargs)[0]
+
+            # Reshape back to (seq_len, batch_size, trailing dimensions...)
+            trailing_dims = tuple(T.shape(X)[n] for n in range(1, T.ndim(X)))
+            X = T.reshape(X, (seq_len, num_batch) + trailing_dims)
+
+        # applying dropout input with the same mask over all time step
+        if training and self.dropoutW is not None:
+            mask = self.rng.binomial(shape=T.shape(X)[1:], p=self.dropoutW,
+                dtype=X.dtype)
+            mask = T.expand_dims(mask, dim=0) # shape=(1, n_batch, n_features)
+            X = X * mask # broadcast along time dimension
+
+        # apply batch normalization
+        self._check_batch_norm()
+        if self.batch_norm:
+            self.batch_norm.set_intermediate_inputs(X, root=True)
+            X = self.batch_norm(training, **kwargs)[0]
         return X
+
+    def step(self, training, in_precompute, hid_prev, out_prev, cell_prev,
+             *constant):
+        # Compute the hidden-to-hidden activation, we must go to the
+        # roots and set the intermediate inputs
+        self.hidden_to_hidden.set_intermediate_inputs(hid_prev, root=True)
+        hid = self.hidden_to_hidden(training)[0]
+        if training and len(constant) > 0:
+            # applying dropout
+            dropU = constant[0]
+            hid = hid * dropU
+        hid = hid + in_precompute
+        hid = self.nonlinearity(hid)
+        return hid, None
 
 
 class GatingCell(Cell):
@@ -522,6 +675,10 @@ class GatingCell(Cell):
         self._gates = []
         # mapping: odin.nnet.rnn.Gate -> its compile params
         self._gates_params = OrderedDict()
+
+    @property
+    def norm_dims(self):
+        return (np.prod(self.hidden_dims) * len(self._gates),)
 
     # ==================== Override functions ==================== #
     def get_params(self, globals, trainable=None, regularizable=None):
@@ -595,15 +752,14 @@ class GatingCell(Cell):
     def get_constants(self, X, Hinit, training, **kwargs):
         const = []
         # dropU
-        if training:
+        if training and self.dropoutU is not None:
             shape = T.shape(Hinit)
-            if self.dropoutU is not None:
-                _ = []
-                for i in range(len(self._gates)):
-                    _.append(
-                        _create_dropout_mask(
-                            self.rng, self.dropoutU, shape, Hinit.dtype))
-                const.append(T.concatenate(_, axis=1))
+            _ = []
+            for i in range(len(self._gates)):
+                _.append(
+                    _create_dropout_mask(
+                        self.rng, self.dropoutU, shape, Hinit.dtype))
+            const.append(T.concatenate(_, axis=1))
         return const
 
     def precompute(self, X, training, **kwargs):
@@ -648,7 +804,7 @@ class GatingCell(Cell):
         # precompute_input the inputs dot weight matrices before scanning.
         # W_in_stacked is (n_features, 4*num_units). input is then
         # (n_time_steps, n_batch, 4*num_units).
-        self._check_batch_norm(np.prod(self.hidden_dims) * len(self._gates))
+        self._check_batch_norm()
         if self.batch_norm: # apply batch normalization
             self.batch_norm.set_intermediate_inputs(
                 T.dot(X, self.W_in_stacked), root=True)
@@ -661,7 +817,8 @@ class GatingCell(Cell):
 
         return X
 
-    def step(self, in_precompute, hid_prev, out_prev, cell_prev, *constant):
+    def step(self, training, in_precompute, hid_prev, out_prev, cell_prev,
+        *constant):
         '''
         Parameters
         ----------
@@ -688,7 +845,7 @@ class GatingCell(Cell):
         # Extract the pre-activation gate values
         hid_precompute = T.dot(hid_prev, self.W_hid_stacked)
 
-        if len(constant) > 0:
+        if training and len(constant) > 0:
             # applying dropout
             dropU = constant[0]
             hid_precompute = hid_precompute * dropU
@@ -829,25 +986,32 @@ class Recurrent(OdinFunction):
 
     >>> import numpy as np
     >>> import odin
+    >>> from odin import tensor as T
+    ...
     >>> n_batch, n_steps, n_channels, width, height = (13, 3, 4, 5, 6)
     >>> n_out_filters = 7
     >>> filter_shape = (3, 3)
-    ...
     >>> X = np.random.rand(n_batch, n_steps, n_channels, width, height)
-    ...
     >>> in_to_hid = odin.nnet.Conv2D(
     ...     incoming=(None, n_channels, width, height),
     ...     num_filters=n_out_filters, filter_size=filter_shape, pad='same')
     >>> hid_to_hid = odin.nnet.Conv2D(
     ...     incoming = in_to_hid.output_shape,
     ...     num_filters=n_out_filters, filter_size=filter_shape, pad='same')
+    >>> cell = odin.nnet.SimpleCell((1, n_out_filters, width, height),
+    ...     input_dims=(n_channels, width, height),
+    ...     hidden_to_hidden=hid_to_hid,
+    ...     input_to_hidden=in_to_hid,
+    ...     batch_norm=False,
+    ...     dropoutW=0.5, dropoutU=0.5)
     >>> f = odin.nnet.Recurrent(
     ...     incoming=(n_batch, n_steps, n_channels, width, height),
-    ...     input_to_hidden=in_to_hid,
-    ...     hidden_to_hidden=hid_to_hid)
+    ...     hidden_info=T.zeros_var((1, n_out_filters, width, height),
+    ...     name='hid_init'))
+    >>> f.add_cell(cell)
     >>> f_pred = T.function(
     ...     inputs=f.input_var,
-    ...     outputs=f())
+    ...     outputs=f(True))
     >>> print('Prediction shape:', [i.shape for i in f_pred(X)])
     ... # Prediction shape: [(13, 3, 7, 5, 6)]
 
@@ -1261,7 +1425,8 @@ class Recurrent(OdinFunction):
                     c_const = Cconst_map[c]
                     c_const = [const[i] for i in c_const]
                     # outputs are (hid_new, cell_new)
-                    c = c.step(c_in, hid_prev, out_prev, c_prev, *c_const)
+                    c = c.step(training, c_in, hid_prev, out_prev, c_prev,
+                        *c_const)
                     cell_to_hid.append(c[0])
                     cell_to_cell.append(c[1])
                 # no None value in cell_to_cell
@@ -1393,7 +1558,7 @@ class GRU(Recurrent):
         c.add_gate(hidden_update)
         self.add_cell(c)
         # initialize gate right after add it
-        c._check_batch_norm(np.prod(self.hidden_dims) * 3)
+        c._check_batch_norm()
 
 
 class LSTM(Recurrent):
@@ -1444,4 +1609,4 @@ class LSTM(Recurrent):
         c.add_gate(outgate)
         self.add_cell(c)
         # initialize gate right after add it
-        c._check_batch_norm(np.prod(self.hidden_dims) * 4)
+        c._check_batch_norm()
