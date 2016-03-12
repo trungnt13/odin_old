@@ -63,6 +63,8 @@ class Ops(OdinFunction):
            isinstance(output_shape[-1], (int, float, long)):
             output_shape = [output_shape]
         self._shape = output_shape
+        # calculate output_shape now
+        self.output_shape
 
     @property
     def output_shape(self):
@@ -76,7 +78,7 @@ class Ops(OdinFunction):
                 inputs.append(T.ones(shape))
             if self.broadcast:
                 for i in inputs:
-                    output_shape = T.eval(T.shape(self.ops(i)))
+                    output_shape = T.eval(self.ops(i)).shape
                     outshape.append(tuple(s if s else None for s in output_shape))
             else: # merge operator
                 output_shape = T.eval(T.shape(self.ops(inputs)))

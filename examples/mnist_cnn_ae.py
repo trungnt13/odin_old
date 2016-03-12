@@ -68,7 +68,7 @@ f1_de = f1.get_inv(f2_de)
 # ====== The AutoEncoderDecoder ====== #
 print('Encoder input_shape:', f1.input_shape)
 print('Dencoder output_shape:', f1_de.output_shape)
-ae = odin.nnet.VariationalEncoderDecoder(encoder=f5, decoder=f1_de)
+ae = odin.nnet.AutoEncoderDecoder(encoder=f5, decoder=f1_de)
 
 # ====== create cost and updates based on given objectives and optimizers ====== #
 print('\nBuilding training functions ...')
@@ -120,7 +120,7 @@ trainer.add_data('valid', [ds['X_valid']])
 
 trainer.add_task('train', f_train, data='train', epoch=nb_epoch,
     bs=batch_size, shuffle=True, mode=1)
-trainer.add_subtask('valid', f_monitor, data='valid', single_run=False, freq=0.5,
+trainer.add_subtask('valid', f_monitor, data='valid', single_run=False, freq=1.0,
     bs=batch_size, shuffle=False, mode=0)
 trainer.run(progress=True)
 

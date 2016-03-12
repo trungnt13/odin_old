@@ -349,6 +349,7 @@ def concatenate(tensors, axis=-1):
 
 
 def reshape(x, shape):
+    shape = tuple([-1 if i is None else i for i in shape])
     return T.reshape(x, shape)
 
 

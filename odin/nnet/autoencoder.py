@@ -72,7 +72,8 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         tmp = self._reconstruction_mode
         x_reconstructed = self.set_reconstruction_mode(True)(
             training=True, **kwargs)
-        self.set_reconstruction_mode(tmp) # reset the reconstruction mode
+        self._reconstruction_mode = tmp
+        # just check if is tuple or list
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
         # get original inputs from roots

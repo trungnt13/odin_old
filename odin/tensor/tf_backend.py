@@ -406,6 +406,7 @@ def reshape(x, shape):
     shape = [i.value
              if isinstance(i, tf.python.framework.tensor_shape.Dimension) else i
              for i in shape]
+    shape = tuple([-1 if i is None else i for i in shape])
     return tf.reshape(x, shape)
 
 

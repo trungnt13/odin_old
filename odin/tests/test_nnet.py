@@ -55,6 +55,21 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(f(np.random.rand(32, 3, 28, 28))[0].shape,
                         (32, 32, 28, 28))
 
+    def test_deconv(self):
+        f_conv = nnet.Conv2D((None, 3, 28, 28), num_filters=16,
+            b=None,
+            filter_size=(2, 2),
+            stride=(1, 1),
+            pad='same',
+            nonlinearity=T.linear)
+
+        f_deconv = f_conv.get_inv(f_conv)
+        f = T.function(f_deconv.input_var, f_deconv(False))
+        np.random.seed(13)
+        X = np.random.rand(32, 3, 28, 28)
+        X_ = f(X)
+        self.assertEqual(X.shape, X_.shape)
+
     def test_dense_func(self):
         d3 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)
         f_pred = T.function(d3.input_var, d3())

@@ -695,6 +695,11 @@ class GatingCell(Cell):
 
     # ==================== methods for preparing parameters ==================== #
     def add_gate(self, gate):
+        '''
+        Note
+        ----
+        2 gates cannot have the same name
+        '''
         if not isinstance(gate, Gate):
             self.raise_arguments('gate must be instance of odin.nnet.rnn.Gate,'
                                  'but the given argument has type={}'
@@ -739,8 +744,12 @@ class GatingCell(Cell):
         return self
 
     def get_gate(self, name):
-        ''' Return a list of gate had given name '''
-        return [g for g in self._gates if g.name == name]
+        ''' Return a gate had given name '''
+        return [g for g in self._gates if g.name == name][0]
+
+    def get_gate_params(self, name):
+        ''' Return a gate had given name '''
+        return self._gates_params[[g for g in self._gates if g.name == name][0]]
 
     # ==================== Cell methods ==================== #
     def _slice_w(self, W, n):
@@ -1061,6 +1070,11 @@ class Recurrent(OdinFunction):
                                  'be: ndarray, variable, placeholder, '
                                  'OdinFunction. Anything that we can infer '
                                  'the shape for hidden_state from.')
+        # hidden_info cannot be only 1 shape
+        if isinstance(hidden_info, (tuple, list)) and len(hidden_info) == 1:
+            hidden_info = (1, hidden_info[0])
+        elif isinstance(hidden_info, np.ndarray) and hidden_info.ndim == 1:
+            hidden_info = hidden_info[None, :]
         incoming_list.append(hidden_info) # hidden_info is the last incoming
 
         # ====== output_init ====== #
@@ -1560,6 +1574,71 @@ class GRU(Recurrent):
         # initialize gate right after add it
         c._check_batch_norm()
 
+        # ====== store info for inv function ====== #
+        self._gate_info = {}
+        self._gate_info['resetgate'] = resetgate
+        self._gate_info['updategate'] = updategate
+        self._gate_info['hidden_update'] = hidden_update
+
+    def get_inv(self, incoming, **kwargs):
+        '''This fucntion only tied the W_in of encoder and decoder'''
+        if self.only_return_final:
+            self.raise_arguments('Cannot invert Recurrent function that only '
+                                 'return final time step.')
+        mask = kwargs.get('mask', None)
+
+        if incoming is None:
+            incoming = self.output_shape
+
+        cell = self._cells[0]
+        batch_norm = True if cell.batch_norm else False
+        learnable_norm = cell.learnable_norm
+        dropoutW = cell.dropoutW
+        dropoutU = cell.dropoutU
+
+        def copy_gate(name):
+            gate = cell.get_gate_params(name)
+            W_in = T.transpose(gate[0]) # W_in
+            W_hid = self._gate_info[name].W_hid
+            if not hasattr(W_hid, '__call__'):
+                W_hid = T.np_glorot_normal
+            b = None if gate[2] is None else T.np_constant # bias
+            nonlinearity = gate[3]
+            gate_new = kwargs.get(name, None)
+            if gate_new is None:
+                gate_new = Gate(W_in=W_in, W_hid=W_hid, W_cell=None, b=b,
+                    nonlinearity=nonlinearity, name=name)
+            else:
+                gate_new.W_in = W_in
+                gate_new.nonlinearity = nonlinearity
+                gate_new.name = name
+            return gate_new
+
+        updategate = copy_gate('updategate')
+        resetgate = copy_gate('resetgate')
+        hidden_update = copy_gate('hidden_update')
+
+        inv = GRU(incoming, hidden_info=self.input_dims, mask=mask,
+            updategate=updategate,
+            resetgate=resetgate,
+            hidden_update=hidden_update,
+            backwards=self.backwards,
+            unroll_scan=self.unroll_scan,
+            only_return_final=False,
+            batch_norm=batch_norm, learnable_norm=learnable_norm,
+            dropoutW=dropoutW, dropoutU=dropoutU)
+
+        for input_shape, output_shape in zip(inv._incoming_mask[::2],
+                                            self.output_shape):
+            input_shape = inv.input_shape[input_shape]
+            if input_shape[1:] != output_shape[1:]:
+                self.raise_arguments('Inverted function incoming must have '
+                                     'equal input_shape to output_shape of '
+                                     'this function, but input_shape={} != '
+                                     'output_shape={}'.format(
+                                         input_shape, output_shape))
+        return inv
+
 
 class LSTM(Recurrent):
 
@@ -1610,3 +1689,79 @@ class LSTM(Recurrent):
         self.add_cell(c)
         # initialize gate right after add it
         c._check_batch_norm()
+
+        # ====== store info for inv function ====== #
+        self._gate_info = {}
+        self._gate_info['forgetgate'] = forgetgate
+        self._gate_info['ingate'] = ingate
+        self._gate_info['outgate'] = outgate
+        self._gate_info['cell'] = cell
+
+    def get_inv(self, incoming, **kwargs):
+        '''This fucntion only tied the W_in of encoder and decoder'''
+        if self.only_return_final:
+            self.raise_arguments('Cannot invert Recurrent function that only '
+                                 'return final time step.')
+        mask = kwargs.get('mask', None)
+        cell_init = kwargs.get('cell_init', T.np_constant)
+
+        if incoming is None:
+            incoming = self.output_shape
+
+        cell = self._cells[0]
+        batch_norm = True if cell.batch_norm else False
+        learnable_norm = cell.learnable_norm
+        dropoutW = cell.dropoutW
+        dropoutU = cell.dropoutU
+        nonlinearity = cell.nonlinearity
+
+        def copy_gate(name):
+            gate = cell.get_gate_params(name)
+            W_in = T.transpose(gate[0]) # W_in
+            W_hid = self._gate_info[name].W_hid
+            if not hasattr(W_hid, '__call__'):
+                W_hid = T.np_glorot_normal
+            W_cell = self._gate_info[name].W_cell
+            if W_cell is not None and not hasattr(W_cell, '__call__'):
+                W_cell = T.np_glorot_normal
+            b = None if gate[2] is None else T.np_constant # bias
+            nonlinearity = gate[3]
+            # copy gate
+            gate_new = kwargs.get(name, None)
+            if gate_new is None:
+                gate_new = Gate(W_in=W_in, W_hid=W_hid, W_cell=W_cell, b=b,
+                    nonlinearity=nonlinearity, name=name)
+            else:
+                gate_new.W_in = W_in
+                gate_new.nonlinearity = nonlinearity
+                gate_new.name = name
+            return gate_new
+
+        forgetgate = copy_gate('forgetgate')
+        ingate = copy_gate('ingate')
+        outgate = copy_gate('outgate')
+        cell = copy_gate('cell')
+
+        inv = LSTM(incoming, hidden_info=self.input_dims, mask=mask,
+            ingate=ingate,
+            forgetgate=forgetgate,
+            outgate=outgate,
+            cell=cell,
+            cell_init=cell_init,
+            nonlinearity=nonlinearity,
+            backwards=self.backwards,
+            unroll_scan=self.unroll_scan,
+            only_return_final=False,
+            batch_norm=batch_norm, learnable_norm=learnable_norm,
+            dropoutW=dropoutW, dropoutU=dropoutU)
+
+        for input_shape, output_shape in zip(inv._incoming_mask[::2],
+                                            self.output_shape):
+            input_shape = inv.input_shape[input_shape]
+            if input_shape[1:] != output_shape[1:]:
+                self.raise_arguments('Inverted function incoming must have '
+                                     'equal input_shape to output_shape of '
+                                     'this function, but input_shape={} != '
+                                     'output_shape={}'.format(
+                                         input_shape, output_shape))
+        return inv

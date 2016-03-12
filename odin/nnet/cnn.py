@@ -10,6 +10,7 @@ import numpy as np
 from .. import tensor as T
 from ..base import OdinFunction
 from ..utils import as_tuple
+from .pool import UpSampling2D
 
 __all__ = [
     "Pool2D",
@@ -744,6 +745,52 @@ class Conv2D(BaseConvLayer):
             border_mode=border_mode,
             dim_ordering='th')
         return conved
+
+    def get_inv(self, incoming, **kwargs):
+        # ====== transpose and reverse filter ====== #
+        W = T.dimshuffle(self.W, (1, 0, 2, 3))
+        # reverse filter: [:, :, ::-1, ::-1]
+        W = T.reverse(T.reverse(W, -1), axis=-2)
+        num_filters = self.input_shape[0][1]
+        # ====== pad ====== #
+        if self.pad == 'valid' or self.pad == (0, 0):
+            pad = 'full'
+        elif self.pad == 'full':
+            pad = 'valid'
+        elif self.pad == 'same':
+            pad = 'same'
+        else:
+            self.raise_runtime('Only support pad=valid, full, same, or (0,0).'
+                               ' No support for pad={}'.format(self.pad))
+        # ====== upsampling if stride > (1,1) ====== #
+        if any(i > 1 for i in self.stride):
+            incoming = UpSampling2D(incoming, scale_factor=self.stride)
+        stride = (1, 1)
+        # ====== deconv ====== #
+        b = None if self.b is None else T.np_constant
+        nonlinearity = kwargs.get('nonlinearity', self.nonlinearity)
+        deconv = Conv2D(incoming,
+            num_filters=num_filters, filter_size=self.filter_size,
+            stride=stride, pad=pad,
+            untie_biases=self.untie_biases,
+            W=W, b=b,
+            nonlinearity=nonlinearity, **kwargs)
+        # check number of channel match between deconv.input_shape and
+        # conv.output_shape
+        if deconv.input_shape[0][1] != self.output_shape[0][1]:
+            self.raise_runtime('The number of channels in deconvolution '
+                               'input_shape must equal to number of channels '
+                               'in convolution output_shape, but '
+                               'n_deconv_channels={} != n_conv_channels={}'
+                               '.'.format(deconv.input_shape[0][1],
+                                self.output_shape[0][1]))
+        if deconv.output_shape[0][2:] != self.input_shape[0][2:]:
+            self.raise_runtime('Deconvolution not work in this case, the '
+                               'output_shape of deconvolution is different '
+                               'from the input_shape of convolution, {} != '
+                               ' {}'.format(deconv.output_shape[0][2:],
+                                self.input_shape[0][2:]))
+        return deconv
 
 
 class Conv3D(BaseConvLayer):

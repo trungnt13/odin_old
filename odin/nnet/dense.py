@@ -28,8 +28,8 @@ class Dense(OdinFunction):
         super(Dense, self).__init__(
             incoming, unsupervised=False, **kwargs)
 
-        num_inputs = self._validate_nD_input(2)
-        shape = (num_inputs[1], num_units)
+        num_inputs = self._validate_nD_input(2)[1]
+        shape = (num_inputs, num_units)
 
         self.W = self.create_params(
             W, shape, 'W', regularizable=True, trainable=True)
@@ -40,6 +40,7 @@ class Dense(OdinFunction):
                 b, (num_units,), 'b', regularizable=False, trainable=True)
 
         self.num_units = num_units
+        self.num_inputs = num_inputs
         self.nonlinearity = nonlinearity
 
     @property
@@ -62,6 +63,23 @@ class Dense(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
+    def get_inv(self, incoming, **kwargs):
+        W = T.transpose(self.W)
+        b = None if self.b is None else T.np_constant
+        nonlinearity = kwargs.get('nonlinearity', self.nonlinearity)
+        # auto create incoming
+        if incoming is None:
+            incoming = self.output_shape
+        inv = Dense(incoming, num_units=self.num_inputs,
+            W=W, b=b, nonlinearity=nonlinearity)
+        if inv.num_inputs != self.num_units:
+            self.raise_runtime('num_inputs of inverted function must equal to '
+                               'num_units of this function, but '
+                               'num_inputs={} != num_units={}'.format(
+                                   inv.num_inputs, self.num_units
+                               ))
+        return inv
 
 
 class Embedding(OdinFunction):

@@ -450,6 +450,16 @@ class OdinFunction(OdinObject):
     def __call__(self, training=False, **kwargs):
         raise NotImplementedError
 
+    def get_inv(self, incomming, **kwargs):
+        ''' Get invert function of this function
+        For example, the deconvolution function of convolution function
+        Return
+        ------
+        OdinFunction: the function that give the output_shape equal to
+            input_shape of this function
+        '''
+        raise NotImplementedError
+
     def get_cost(self, objective, **kwargs):
         y_pred = self(training=False, **kwargs)
         y_true = self.output_var
@@ -777,3 +787,24 @@ class OdinUnsupervisedFunction(OdinFunction):
     def set_reconstruction_mode(self, reconstruct):
         self._reconstruction_mode = reconstruct
         return self
+
+    def get_cost(self, objective, **kwargs):
+        rescons_mode = self._reconstruction_mode
+        y_pred = self.set_reconstruction_mode(True)(training=False, **kwargs)
+        self._reconstruction_mode = rescons_mode
+        y_true = self.input_var
+        cost = T.castX(0.)
+        for yp, yt in zip(y_pred, y_true):
+            o = objective(yp, yt)
+            # if multiple-dimension cannot calculate gradients
+            # hence, we take mean of the objective
+            if T.ndim(o) > 0:
+                self.log('The return objective has > 1 dimension which '
+                         'cannot be used to calculate the gradients '
+                         'for optimization, hence, we take the mean of '
+                         'their values.', 30)
+                o = T.mean(o)
+            cost = cost + o
+        if len(y_pred) > 1:
+            cost = cost / len(y_pred)
+        return cost
