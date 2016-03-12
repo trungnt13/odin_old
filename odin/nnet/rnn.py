@@ -59,6 +59,7 @@ def _create_dropout_mask(rng, p, shape, dtype):
         dropout_mask = rng.binomial(shape, p=p, dtype=dtype) / (1 - p)
     return dropout_mask
 
+
 # ===========================================================================
 # Step algorithm for GRU, LSTM, and be creative:
 # Basic algorithm must have following arguments:
@@ -84,8 +85,6 @@ def _create_dropout_mask(rng, p, shape, dtype):
 # slice_fn : function(W, n) -> W[n*size : (n+1)*size]
 #   slice function of cell to slice the precomputed values for each gate.
 # ===========================================================================
-
-
 def lstm_algorithm(hid_prev, out_prev, cell_prev,
                    in_precompute, hid_precompute,
                    gates_params, nonlinearity, slice_fn,
@@ -267,7 +266,7 @@ class Gate(object):
 class Cell(OdinFunction):
 
     """ Cell is a core memory with a collection of gates
-    cell_init : shape tuple, int (num_units), variable, expression, `OdinFunction`
+    incoming : shape tuple, int (num_units), variable, expression, `OdinFunction`
         the shape of cell_init must match the shape of internal hidden state of
         Recurrent function, it must has the shape (1, trailing_dims) or
         (batch_size, trailing_dims)
@@ -280,7 +279,7 @@ class Cell(OdinFunction):
         output state (if available) as its memory
     """
 
-    def __init__(self, incoming,
+    def __init__(self, incoming, input_dims,
                  nonlinearity=T.tanh,
                  memory=True,
                  batch_norm=False, learnable_norm=False,
@@ -297,7 +296,13 @@ class Cell(OdinFunction):
                                      '.'.format(shape, self.hidden_dims))
 
         # only setted when you stick this to Recurrent function
-        self.input_dims = None
+        if isinstance(input_dims, (int, float, long)):
+            input_dims = (input_dims,)
+        self.input_dims = input_dims
+        if any(i is None for i in input_dims):
+            self.raise_arguments('input_dims cannot contain None, it is the '
+                                 'dimensions of input features excluded n_batch'
+                                 ' and time dimension.')
 
         # ====== check input_dims ====== #
         for i in self.incoming:
@@ -450,9 +455,18 @@ class SimpleCell(Cell):
 
     """docstring for SimpleCell"""
 
-    def __init__(self, arg):
-        super(SimpleCell, self).__init__()
-        self.arg = arg
+    def __init__(self, incoming, input_dims,
+                 nonlinearity=T.tanh,
+                 algorithm=simple_algorithm,
+                 batch_norm=False, learnable_norm=False,
+                 dropoutW=None, dropoutU=None,
+                 **kwargs):
+        super(SimpleCell, self).__init__(incoming, input_dims=input_dims,
+                 nonlinearity=nonlinearity,
+                 memory=False,
+                 batch_norm=batch_norm, learnable_norm=learnable_norm,
+                 dropoutW=dropoutW, dropoutU=dropoutU,
+                 **kwargs)
 
     def precompute(self, X, training, **kwargs):
         # Because the input is given for all time steps, we can precompute
@@ -477,40 +491,19 @@ class SimpleCell(Cell):
 
 class GatingCell(Cell):
 
-    """ Cell is a core memory with a collection of gates
-    cell_init : shape tuple, int (num_units), variable, expression, `OdinFunction`
-        the shape of cell_init must match the shape of internal hidden state of
-        Recurrent function, it must has the shape (1, trailing_dims) or
-        (batch_size, trailing_dims)
-    input_dims : shape tuple, int
-        Input shape to cell cannot contain None dimension, it must contain
-        input_dims excluded `batch_size` and `seq_len` dimension.
-    memory : bool
-        if True this cell has its own memory vector which is internal state of
-        the recurrent algorithm, otherwise, it only uses hidden state and
-        output state (if available) as its memory
-
-    Note
-    ----
-    GatingCell now only support 2D hidden states
-    """
-
-    def __init__(self, incoming,
+    def __init__(self, incoming, input_dims,
                  nonlinearity=T.tanh,
                  algorithm=simple_algorithm,
                  memory=True,
                  batch_norm=False, learnable_norm=False,
                  dropoutW=None, dropoutU=None,
                  **kwargs):
-        super(GatingCell, self).__init__(incoming,
+        super(GatingCell, self).__init__(incoming, input_dims=input_dims,
                  nonlinearity=nonlinearity,
                  memory=memory,
                  batch_norm=batch_norm, learnable_norm=learnable_norm,
                  dropoutW=dropoutW, dropoutU=dropoutU,
                  **kwargs)
-
-        self.input_dims = None
-        self.last_input_dims = self.input_dims
 
         # ====== check algorithm ====== #
         if algorithm is None:
@@ -544,68 +537,47 @@ class GatingCell(Cell):
         return params
 
     # ==================== methods for preparing parameters ==================== #
-    def _check_gates(self):
-        # name contain the ID of gate within the cells
-        # name = str(len(self._gates)) if len(name) == 0 \
-        #     else name + '_' + str(len(self._gates))
-        if self.input_dims is None:
-            self.raise_arguments('You must add this Cell to an '
-                                 'odin.nnet.rnn.Recurrent function to infer '
-                                 'the input_dims before doing any computation.')
-        if set(self._gates) == set(self._gates_params.keys()) and \
-           self.last_input_dims == self.input_dims:
-            return
-        self.last_input_dims = self.input_dims
-
-        # ====== remove old params ====== #
-        all_params = []
-        for i in self._gates_params.values():
-            all_params += [j for j in i if T.is_variable(j)]
-        _ = OrderedDict()
-        for i, j in self.params.iteritems():
-            if j._params in all_params: # ignore old gate params
-                continue
-            _[i] = j
-        self.params = _
-
-        # ====== create new params ====== #
-        num_inputs = np.prod(self.input_dims)
-        num_units = np.prod(self.hidden_dims)
-        self._gates_params = OrderedDict()
-        for g in self._gates:
-            name = g.name
-            W_in = self.create_params(
-                g.W_in, (num_inputs, num_units), 'W_in_' + str(name),
-                regularizable=True, trainable=True)
-            W_hid = self.create_params(
-                g.W_hid, (num_units, num_units), 'W_hid_' + str(name),
-                regularizable=True, trainable=True)
-            # create cells
-            if self.memory and g.W_cell is not None:
-                W_cell = self.create_params(
-                    g.W_cell, (num_units,), 'W_cell_' + str(name),
-                    regularizable=True, trainable=True)
-            else:
-                W_cell = None
-
-            if self.batch_norm: # no bias if batch_norm
-                b = None
-            else:
-                b = self.create_params(
-                    g.b, (num_units,), 'b_' + str(name),
-                    regularizable=False, trainable=True)
-
-            nonlinearity = g.nonlinearity
-            if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
-                nonlinearity = T.linear
-            # gate contain: W_in, W_hid, b, nonlinearity, W_cell (optional)
-            self._gates_params[g] = [W_in, W_hid, b, nonlinearity, W_cell]
-
     def add_gate(self, gate):
         if not isinstance(gate, Gate):
             self.raise_arguments('gate must be instance of odin.nnet.rnn.Gate,'
                                  'but the given argument has type={}'
                                  '.'.format(type(gate)))
+        if self.input_dims is None:
+            self.raise_arguments('You must add this Cell to an '
+                                 'odin.nnet.rnn.Recurrent function to infer '
+                                 'the input_dims before doing any computation.')
+
+        # ====== create new params ====== #
+        num_inputs = np.prod(self.input_dims)
+        num_units = np.prod(self.hidden_dims)
+
+        name = gate.name
+        W_in = self.create_params(
+            gate.W_in, (num_inputs, num_units), 'W_in_' + str(name),
+            regularizable=True, trainable=True)
+        W_hid = self.create_params(
+            gate.W_hid, (num_units, num_units), 'W_hid_' + str(name),
+            regularizable=True, trainable=True)
+        # create cells
+        if self.memory and gate.W_cell is not None:
+            W_cell = self.create_params(
+                gate.W_cell, (num_units,), 'W_cell_' + str(name),
+                regularizable=True, trainable=True)
+        else:
+            W_cell = None
+        # no bias if batch_norm
+        if self.batch_norm:
+            b = None
+        else:
+            b = self.create_params(
+                gate.b, (num_units,), 'b_' + str(name),
+                regularizable=False, trainable=True)
+        nonlinearity = gate.nonlinearity
+        if nonlinearity is None or not hasattr(nonlinearity, '__call__'):
+            nonlinearity = T.linear
+        # ====== store gate information ====== #
+        # gate contain: W_in, W_hid, b, nonlinearity, W_cell (optional)
+        self._gates_params[gate] = [W_in, W_hid, b, nonlinearity, W_cell]
         self._gates.append(gate)
         return self
 
@@ -650,8 +622,6 @@ class GatingCell(Cell):
         '''
         if len(self._gates) == 0:
             return X
-        # initialization gate params
-        self._check_gates()
         gates_params = [self._gates_params[g] for g in self._gates]
         # Stack input weight matrices into a (num_inputs, 4*num_units)
         # matrix, which speeds up computation
@@ -1083,7 +1053,19 @@ class Recurrent(OdinFunction):
                                  ' of this Recurrent function, but cell_dims={}'
                                  ' != recurrent_dims={}'.format(
                                      cell.input_dims, self.input_dims))
-        cell.input_dims = self.input_dims
+        # check cell.input_dims is the same dimensions with self.input_dims
+        input_dims = self.input_dims
+        # np.prod because cell.input_dims can be flattened version
+        if (np.prod(input_dims) != np.prod(cell.input_dims) and
+            not _check_shape_match((None,) + cell.input_dims,
+                                  (None,) + input_dims)):
+            self.raise_arguments('Cell input_dims must match the input_dims '
+                                 'of this Recurrent, or in the case '
+                                 'input_to_hidden is not None, it must match '
+                                 'the output_shape of input_to_hidden, but '
+                                 'cell.input_dims={} and '
+                                 'self.input_dims={}'.format(
+                                 cell.input_dims, input_dims))
         # everything ok add the cell
         if cell in self._cells:
             self.raise_arguments('Cell cannot be duplicated in Recurrent function.')
@@ -1398,7 +1380,7 @@ class GRU(Recurrent):
             only_return_final=only_return_final,
             **kwargs)
         # ====== create cell ====== #
-        c = GatingCell((1,) + self.hidden_dims,
+        c = GatingCell((1,) + self.hidden_dims, input_dims=self.input_dims,
             nonlinearity=T.linear,
             algorithm=gru_algorithm, memory=False,
             batch_norm=batch_norm, learnable_norm=learnable_norm,
@@ -1411,7 +1393,6 @@ class GRU(Recurrent):
         c.add_gate(hidden_update)
         self.add_cell(c)
         # initialize gate right after add it
-        c._check_gates()
         c._check_batch_norm(np.prod(self.hidden_dims) * 3)
 
 
@@ -1448,7 +1429,7 @@ class LSTM(Recurrent):
         if hasattr(cell_init, '__call__') and \
            not isinstance(cell_init, OdinFunction):
             cell_init = cell_init(shape=(1,) + self.hidden_dims)
-        c = GatingCell(cell_init,
+        c = GatingCell(cell_init, input_dims=self.input_dims,
             nonlinearity=nonlinearity,
             algorithm=lstm_algorithm, memory=True,
             batch_norm=batch_norm, learnable_norm=learnable_norm,
@@ -1463,5 +1444,4 @@ class LSTM(Recurrent):
         c.add_gate(outgate)
         self.add_cell(c)
         # initialize gate right after add it
-        c._check_gates()
         c._check_batch_norm(np.prod(self.hidden_dims) * 4)
