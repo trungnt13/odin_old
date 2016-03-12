@@ -211,7 +211,7 @@ class RBM(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
+                         globals=True, **kwargs):
         """This functions implements one step of CD-k or PCD-k
 
         Returns
@@ -225,10 +225,7 @@ class RBM(OdinUnsupervisedFunction):
         if objective is not None:
             self.log("Ignored objective:%s because RBM uses contrastive divergence"
                      " as default" % str(objective), 30)
-        if training:
-            outputs = self(training)
-        else:
-            self.raise_arguments('Optimization only can be used while training')
+        outputs = self(training=True, **kwargs)
         X = self._last_inputs # get cached inputs
         # ====== calculating cost for each in-out pairs ====== #
         persistent_updates = T.castX(0.)

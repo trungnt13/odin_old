@@ -160,8 +160,8 @@ class ModelTest(unittest.TestCase):
 
         train.add_task('train', train_func, ['X_train', 'y_train'], 'tmp.h5',
             epoch=2, seed=13)
-        train.add_subtask(valid_func, 'valid', freq=0.58)
-        train.add_subtask(test_func, 'test', single_run=True, epoch=-1, p=0.1)
+        train.add_subtask('valid', valid_func, 'valid', freq=0.58)
+        train.add_subtask('test', test_func, 'test', single_run=True, epoch=-1, p=0.1)
 
         train.add_task('test', test_func, 'test')
         while not train.step(): pass
@@ -189,7 +189,7 @@ class ModelTest(unittest.TestCase):
         train.set_callback(batch_end=batch_end, epoch_end=epoch_end)
         train.add_task('realtrain', f_update, ['X_train', 'y_train'], 'tmp.h5',
             epoch=10, seed=13)
-        train.add_subtask(f_cost, 'valid', freq=0.6)
+        train.add_subtask('subtrain', f_cost, 'valid', freq=0.6)
         train.add_task('realtest1', f_cost, 'test', 'tmp.h5', epoch=1, seed=13)
         train.add_task('realtest2', f_cost, 'test', 'tmp.h5', epoch=1, seed=13)
         self.assertEqual(train.run(), True)

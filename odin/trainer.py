@@ -150,7 +150,8 @@ class _task(object):
     """
 
     def __init__(self, name, func, data,
-                 epoch=1, p=1., seed=None):
+                 epoch=1, p=1., seed=None,
+                 mode=1):
         super(_task, self).__init__()
         self.name = str(name)
         self._func = func
@@ -175,7 +176,7 @@ class _task(object):
         self._start = 0.0
         self._end = 1.0
         self._shuffle = True
-        self._mode = 1
+        self._mode = mode
 
         # ====== information for child tasks ====== #
         self.ds = data._ds # store ds, so the subtask can find parents' dataset
@@ -213,7 +214,8 @@ class _task(object):
             epoch_results = []
             self._epoch_start(self.name, i, it)
 
-            for dat in self._data.create_iter(self._batch, self._start, self._end,
+            for dat in self._data.create_iter(
+                self._batch, self._start, self._end,
                 self._shuffle, self._rand.randint(0, 10e8), self._mode):
                 if self._rand.rand() < self._p:
                     it += 1
@@ -289,11 +291,11 @@ class trainer(OdinObject):
     ...
     ... # add task
     >>> train.add_task('train', train_func, ['X_train', 'y_train'], 'tmp.h5',
-    >>>     epoch=2, seed=13)
-    >>> train.add_subtask(valid_func, 'valid', freq=0.58)
-    >>> train.add_subtask(test_func, 'test', single_run=True, epoch=-1, p=0.1)
+    >>>     epoch=2, seed=13, mode=1)
+    >>> train.add_subtask('subvalid', valid_func, 'valid', freq=0.58)
+    >>> train.add_subtask('subtest', test_func, 'test', single_run=True, epoch=-1, p=0.1)
     ...
-    >>> train.add_task('test', test_func, 'test')
+    >>> train.add_task('test', test_func, 'test', mode=0)
 
     """
 
@@ -469,7 +471,8 @@ class trainer(OdinObject):
     def add_task(self, name, func, data, ds=None,
                  epoch=1, p=1.,
                  bs=128, shuffle=True, seed=None,
-                 start=0., end=1.):
+                 start=0., end=1.,
+                 mode=1):
         ''' Set task for running.
         A task is a function operates on a list of ``odin.dataset.batch``, the
         batch return an iterator with add necessary data for the function.
@@ -504,6 +507,19 @@ class trainer(OdinObject):
             starting point within each ``odin.dataset.batch``
         end : int, float(0.-1.)
             ending point within each ``odin.dataset.batch``
+        mode : 0, 1, 2
+            0 - default, sequentially read each dataset
+            1 - parallel read: proportionately for each dataset (e.g.
+                batch_size=512, dataset1_size=1000, dataset2_size=500
+                => ds1=341, ds2=170)
+            2 - parallel read (upsampling): upsampling smaller dataset
+                (e.g. batch_size=512, there are 5 dataset => each dataset
+                102 samples) (only work if batch size <<
+                dataset size)
+            3 - parallel read (downsampling): downsampling larger dataset
+                (e.g. batch_size=512, there are 5 dataset => each dataset
+                102 samples) (only work if batch size <<
+                dataset size)
 
         Returns
         -------
@@ -515,7 +531,7 @@ class trainer(OdinObject):
             seed = get_magic_seed()
         data = self._validate_data(data, ds)
         # ====== create task ====== #
-        task = _task(name, func, data, epoch=epoch, p=p, seed=seed)
+        task = _task(name, func, data, epoch=epoch, p=p, seed=seed, mode=mode)
         task.set_iter(bs, start, end, shuffle, self._iter_mode)
         task.set_callback(self)
         # ====== store the task ====== #
@@ -523,11 +539,12 @@ class trainer(OdinObject):
         self._last_task = task # store last task for adding subtask
         return self
 
-    def add_subtask(self, func, data, ds=None,
+    def add_subtask(self, name, func, data, ds=None,
                  single_run=False, freq=0.,
                  epoch=1, p=1.,
                  bs=128, shuffle=True,
-                 start=0., end=1.):
+                 start=0., end=1.,
+                 mode=1):
         ''' Set task for running.
         A task is a function operates on a list of ``odin.dataset.batch``, the
         batch return an iterator with add necessary data for the function.
@@ -563,6 +580,19 @@ class trainer(OdinObject):
             starting point within each ``odin.dataset.batch``
         end : int, float(0.-1.)
             ending point within each ``odin.dataset.batch``
+        mode : 0, 1, 2
+            0 - default, sequentially read each dataset
+            1 - parallel read: proportionately for each dataset (e.g.
+                batch_size=512, dataset1_size=1000, dataset2_size=500
+                => ds1=341, ds2=170)
+            2 - parallel read (upsampling): upsampling smaller dataset
+                (e.g. batch_size=512, there are 5 dataset => each dataset
+                102 samples) (only work if batch size <<
+                dataset size)
+            3 - parallel read (downsampling): downsampling larger dataset
+                (e.g. batch_size=512, there are 5 dataset => each dataset
+                102 samples) (only work if batch size <<
+                dataset size)
 
         Returns
         -------
@@ -572,12 +602,12 @@ class trainer(OdinObject):
         '''
         if self._last_task is None:
             raise ValueError('Call add_task first to set parents task')
-        n = len(self._subtask_map[self._last_task])
-        name = self._last_task.name + '_' + 'subtask[%d]' % n
+        # n = len(self._subtask_map[self._last_task])
+        # name = self._last_task.name + '_' + 'subtask[%d]' % n
         data = self._validate_data(data, ds, self._last_task.ds)
         # ====== create task ====== #
         task = _task(name, func, data, epoch=epoch, p=p,
-            seed=self._last_task.seed)
+            seed=self._last_task.seed, mode=mode)
         task.set_iter(bs, start, end, shuffle, self._iter_mode)
         task.set_callback(self)
         # ====== add subtask ====== #

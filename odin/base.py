@@ -450,8 +450,26 @@ class OdinFunction(OdinObject):
     def __call__(self, training=False, **kwargs):
         raise NotImplementedError
 
-    def get_optimization(self, objective, optimizer=None,
-                         globals=True, training=True):
+    def get_cost(self, objective, **kwargs):
+        y_pred = self(training=False, **kwargs)
+        y_true = self.output_var
+        cost = T.castX(0.)
+        for yp, yt in zip(y_pred, y_true):
+            o = objective(yp, yt)
+            # if multiple-dimension cannot calculate gradients
+            # hence, we take mean of the objective
+            if T.ndim(o) > 0:
+                self.log('The return objective has > 1 dimension which '
+                         'cannot be used to calculate the gradients '
+                         'for optimization, hence, we take the mean of '
+                         'their values.', 30)
+                o = T.mean(o)
+            cost = cost + o
+        if len(y_pred) > 1:
+            cost = cost / len(y_pred)
+        return cost
+
+    def get_optimization(self, objective, optimizer=None, globals=True, **kwargs):
         '''
 
         Parameters
@@ -473,7 +491,7 @@ class OdinFunction(OdinObject):
             optimization
         '''
         self._validation_optimization_params(objective, optimizer)
-        y_pred = self(training=training)
+        y_pred = self(training=True, **kwargs)
         y_true = self.output_var
         # ====== caluclate objectives for each in-out pair ====== #
         obj = T.castX(0.)
@@ -489,7 +507,8 @@ class OdinFunction(OdinObject):
                          'their values.', 30)
                 o = T.mean(o)
             obj = obj + o
-        obj = obj / len(y_pred)
+        if len(y_pred) > 1:
+            obj = obj / len(y_pred)
         # ====== get optimizer ====== #
         if optimizer is None:
             opt = None
@@ -499,7 +518,7 @@ class OdinFunction(OdinObject):
                 grad = T.gradients(obj, params)
             else: # optimize only the params of this funtions
                 grad = T.gradients(obj, params,
-                    consider_constant=self.get_cache(training=training))
+                    consider_constant=self.get_cache(training=True))
             opt = optimizer(grad, params)
         return obj, opt
 

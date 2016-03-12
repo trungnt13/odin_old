@@ -69,8 +69,7 @@ class FunctionsTest(unittest.TestCase):
 
         # ====== only cost ====== #
         cost, _ = d3.get_optimization(
-            objective=objectives.squared_loss,
-            training=False)
+            objective=objectives.squared_loss)
         f_cost = T.function(d3.input_var + d3.output_var, cost)
 
         cost1 = np.round(np.mean(f_cost(x, y)), 6)
@@ -206,8 +205,7 @@ class FunctionsTest(unittest.TestCase):
         cost, updates = g.get_optimization(
             objective=objectives.mean_squared_loss,
             optimizer=optimizers.rmsprop,
-            globals=True,
-            training=True)
+            globals=True)
 
         forgetgate = lasagne.layers.Gate(W_in=W_in_forget, W_hid=W_hid_forget, b=b_forget,
             W_cell=W_cell_forget, nonlinearity=T.sigmoid)

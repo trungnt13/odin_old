@@ -5,6 +5,7 @@ import numpy as np
 from .. import tensor as T
 from ..base import OdinFunction
 
+
 class Summation(OdinFunction):
 
     def __init__(self, incoming, unsupervised=False, **kwargs):
@@ -21,8 +22,3 @@ class Summation(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
-
-    def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, training=True):
-        return self._deterministic_optimization_procedure(
-            objective, optimizer, globals, training)

@@ -66,18 +66,19 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, training=True):
+                         globals=True, **kwargs):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
         tmp = self._reconstruction_mode
-        x_reconstructed = self.set_reconstruction_mode(True)(training=training)
+        x_reconstructed = self.set_reconstruction_mode(True)(
+            training=True, **kwargs)
         self.set_reconstruction_mode(tmp) # reset the reconstruction mode
         if not isinstance(x_reconstructed, (tuple, list)):
             x_reconstructed = [x_reconstructed]
         # get original inputs from roots
         x_original = []
         for i in self.encoder.get_roots():
-            x_original += i.get_cache(training=training)
+            x_original += i.get_cache(training=True)
         # ====== Objectives is mean of all in-out pair ====== #
         obj = T.castX(0.)
         for i, j in zip(x_reconstructed, x_original):
@@ -247,16 +248,17 @@ class AutoEncoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, training=True):
+                         globals=True, **kwargs):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
-            for x in self.get_input(training, **kwargs)]
+            for x in self.get_input(training=True, **kwargs)]
         x_corrupted = [self._get_corrupted_input(x, self.denoising) for x in X]
         self.set_intermediate_inputs(x_corrupted) # dirty hack modify inputs
 
         tmp = self._reconstruction_mode
-        x_reconstructed = self.set_reconstruction_mode(True)(training)
+        x_reconstructed = self.set_reconstruction_mode(True)(
+            training=True, **kwargs)
         self.set_reconstruction_mode(tmp) # reset the mode
 
         # ====== Calculate the objectives ====== #
@@ -425,10 +427,10 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, training=True):
+                         globals=True, **kwargs):
         # ====== Get the outputs ====== #
         tmp = self._reconstruction_mode
-        outputs = self.set_reconstruction_mode(True)(training)
+        outputs = self.set_reconstruction_mode(True)(training=True, **kwargs)
         self.set_reconstruction_mode(tmp)
         inputs = []
         # make encoder input to be equal shape to decoder output

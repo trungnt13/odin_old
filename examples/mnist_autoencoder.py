@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 ds = odin.dataset.load_mnist()
 print(ds)
 
+
 def test_dA(): # AutoEncoder
     dA = odin.nnet.AutoEncoder((None, 28, 28),
         num_units=512, denoising=0.3, contractive=False,
@@ -52,6 +53,7 @@ def test_dA(): # AutoEncoder
         odin.visual.plot_images(X)
         odin.visual.plot_images(X_pred)
         odin.visual.plot_show()
+
 
 def test_aED(): #AutoEncoderDecoder
     Wa = T.variable(T.np_glorot_uniform(shape=(784, 256)), name='W')
@@ -118,6 +120,7 @@ def test_aED(): #AutoEncoderDecoder
     X = ds['X_test'][t:t + 16]
     print(f_pred(X)[0].shape)
 
+
 def test_vae():
     ds = odin.dataset.load_mnist()
 
@@ -152,7 +155,7 @@ def test_vae():
     cost, updates = vae.get_optimization(
         objective=odin.objectives.categorical_crossentropy,
         optimizer=lambda x, y: odin.optimizers.sgd(x, y, learning_rate=0.01),
-        globals=True, training=True)
+        globals=True)
 
     f = T.function(inputs=vae.input_var, outputs=cost, updates=updates)
     cost = []
