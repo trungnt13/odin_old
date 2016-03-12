@@ -569,9 +569,10 @@ class trainer(OdinObject):
         freq : int, float(0.-1.)
             after fixed amount of iteration, execute this subtask
         epoch : int
-            number of epoch to run this batch
+            number of epoch to run this batch if it is execute during main task.
+            The epoch will be reseted after each run if single_run = False
         p : float (0.-1.)
-            probability this task will be execute during its epoches
+            probability this task will be execute during execution of main task
         bs : int
             batch size, number of samples for each batch
         shuffle : boolean
@@ -631,6 +632,10 @@ class trainer(OdinObject):
 
     # ==================== Main workflow ==================== #
     def _run(self, iterate=False, progress=False):
+        ''' run_signal:
+        True if epoch ended, otherwise return False
+        at the end of iteration, run_signal = None
+        '''
         if self.idx < len(self._task_list):
             run_idx = range(self.idx, len(self._task_list))
             for i in run_idx:
@@ -648,18 +653,18 @@ class trainer(OdinObject):
                     # ====== run task ====== #
                     run_signal = task_it.next()
                     current_it = self.iter
-                    if run_signal: # update exact niter
+                    if run_signal: # update exact niter, True = finnished batch
                         niter = current_it / self.epoch
                     # ====== print progress ====== #
                     if progress:
                         logger.progress(current_it % niter, niter,
-                                        title=task.name + ', epoch:%d' % self.epoch)
+                                        title=task.name + ',output:%s' % str(self.output))
                     # ====== run subtasks ====== #
                     for i, j in sub_it.iteritems():
                         single_run = self._subtask_single_run[i]
                         freq = self._subtask_freq[i]
                         freq = freq if freq > 1 else int(max(1, round(freq * niter)))
-                        if current_it % freq == 0:
+                        if (current_it + 1) % freq == 0: # should not be zero
                             if single_run:
                                 j.next()
                             else:
