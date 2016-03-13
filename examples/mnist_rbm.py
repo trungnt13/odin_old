@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 ds = odin.dataset.load_mnist()
 print(ds)
 
+
 def test_rbm():
     batch_size = 32
     persistent_chain = T.variable(numpy.zeros((batch_size, 500)))
@@ -38,7 +39,7 @@ def test_rbm():
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])
     odin.visual.print_bar(cost, bincount=20)
 
-    vis_mfc = rbm.set_sampling_steps(1).set_reconstruction_mode(True)()
+    vis_mfc = rbm.set_sampling_steps(1)(reconstruction=True)
     print('Building functions...')
     sample_rbm = T.function(
         inputs=rbm.input_var,
@@ -56,6 +57,7 @@ def test_rbm():
         plt.show(block=False)
         raw_input('<Enter>')
         plt.close('all')
+
 
 def test_rbm_multiple():
     persistent_chain = T.variable(numpy.zeros((20, 500)))
@@ -83,7 +85,7 @@ def test_rbm_multiple():
         odin.logger.progress(i, niter, title='%.5f' % cost[-1])
     odin.visual.print_bar(cost, bincount=20)
 
-    vis_mfc = rbm.set_sampling_steps(1).set_reconstruction_mode(True)()
+    vis_mfc = rbm.set_sampling_steps(1)(reconstruction=True)
     print('Building functions...')
     sample_rbm = T.function(
         inputs=rbm.input_var,

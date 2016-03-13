@@ -232,8 +232,9 @@ class Reshape(OdinFunction):
     input, reshaping is cheap, for others it may require copying the data.
     """
 
-    def __init__(self, incoming, shape, **kwargs):
-        super(Reshape, self).__init__(incoming, unsupervised=False, **kwargs)
+    def __init__(self, incoming, shape, unsupervised=False, **kwargs):
+        super(Reshape, self).__init__(
+            incoming, unsupervised=unsupervised, **kwargs)
         shape = tuple(shape)
         for s in shape:
             if isinstance(s, int):
@@ -331,7 +332,7 @@ class Reshape(OdinFunction):
         if incoming is None:
             incoming = self.output_shape
         shape = [-1 if i is None else i for i in self.input_shape[0]]
-        inv = Reshape(incoming, shape=shape)
+        inv = Reshape(incoming, shape=shape, **kwargs)
         for i, j in zip(inv.input_shape, self.output_shape):
             if i[1:] != j[1:]:
                 self.raise_arguments('Inverted function incoming must have '
@@ -380,8 +381,8 @@ class Dimshuffle(OdinFunction):
     (2, 3, 5, 7)
     """
 
-    def __init__(self, incoming, pattern, **kwargs):
-        super(Dimshuffle, self).__init__(incoming, unsupervised=False, **kwargs)
+    def __init__(self, incoming, pattern, unsupervised=False, **kwargs):
+        super(Dimshuffle, self).__init__(incoming, unsupervised=unsupervised, **kwargs)
 
         # Sanity check the pattern
         used_dims = set()
@@ -449,9 +450,9 @@ class Dimshuffle(OdinFunction):
         if incoming is None:
             incoming = self.output_shape
 
-        orig_pattern = list(range(len(self.pattern)))
-        orig_pattern = tuple([orig_pattern[i] for i in self.pattern if i != 'x'])
-        inv = Dimshuffle(incoming, pattern=orig_pattern)
+        orig_pattern = tuple([i for i, j in enumerate(self.pattern) if j != 'x'])
+
+        inv = Dimshuffle(incoming, pattern=orig_pattern, **kwargs)
         for i, j in zip(inv.input_shape, self.output_shape):
             if i[1:] != j[1:]:
                 self.raise_arguments('Inverted function incoming must have '
@@ -566,14 +567,16 @@ class Inverse(OdinFunction):
     >>> l_u = InverseLayer(l2, l1)  # As Deconv2DLayer
     """
 
-    def __init__(self, incoming, function, **kwargs):
+    def __init__(self, incoming, function, unsupervised=None, **kwargs):
         if not isinstance(function, OdinFunction):
             self.raise_arguments('The function we want to take inverse must '
                                  'be OdinFunction, but its type is: {}'
                                  '.'.format(type(function)))
 
+        if unsupervised is None:
+            unsupervised = function.unsupervised
         super(Inverse, self).__init__(
-            incoming, unsupervised=function.unsupervised, ** kwargs)
+            incoming, unsupervised=unsupervised, ** kwargs)
         if len(incoming.input_shape) != len(function.output_shape):
             self.raise_arguments('The number of input and output of function '
                                  'we invert must equal to the inputs to this '

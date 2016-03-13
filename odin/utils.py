@@ -895,11 +895,35 @@ def as_incoming_list(incoming):
     Most important exception is given a shape tuple, convert it to a list
     of shape tuple which is list of incoming.
     '''
-    if (not isinstance(incoming, (tuple, list)) or
-        isinstance(incoming[-1], (int, long, float))
-        ):
+    if not isinstance(incoming, (tuple, list)) or \
+        isinstance(incoming[-1], (int, long, float)):
         incoming = [incoming]
     return incoming
+
+
+def get_incoming_shape(incoming):
+    '''Infer shape information from a list of incoming (variable, expression,
+    ndarray, shape tuple, any object has output_shape attribute).
+    '''
+    incoming = as_incoming_list(incoming)
+    shape = []
+    for i in incoming:
+        if hasattr(i, 'output_shape'):
+            i = i.output_shape
+            if isinstance(i[-1], (tuple, list)): # list of shape tuple
+                shape += i
+            else:
+                shape.append(i)
+        elif isinstance(i, (tuple, list)):
+            shape.append(i)
+        elif T.is_variable(i) or T.is_expression(i):
+            shape.append(tuple(T.eval(T.shape(i))))
+        elif hasattr(i, 'shape'):
+            shape.append(i.shape)
+        else:
+            raise ValueError('Cannot infer shape information from incoming '
+                             'type: {}'.format(type(i)))
+    return shape
 
 
 def as_tuple(x, N, t=None):

@@ -1626,7 +1626,7 @@ class GRU(Recurrent):
             unroll_scan=self.unroll_scan,
             only_return_final=False,
             batch_norm=batch_norm, learnable_norm=learnable_norm,
-            dropoutW=dropoutW, dropoutU=dropoutU)
+            dropoutW=dropoutW, dropoutU=dropoutU, **kwargs)
 
         for input_shape, output_shape in zip(inv._incoming_mask[::2],
                                             self.output_shape):
@@ -1753,7 +1753,7 @@ class LSTM(Recurrent):
             unroll_scan=self.unroll_scan,
             only_return_final=False,
             batch_norm=batch_norm, learnable_norm=learnable_norm,
-            dropoutW=dropoutW, dropoutU=dropoutU)
+            dropoutW=dropoutW, dropoutU=dropoutU, **kwargs)
 
         for input_shape, output_shape in zip(inv._incoming_mask[::2],
                                             self.output_shape):

@@ -3,12 +3,12 @@ from __future__ import print_function, division, absolute_import
 import numpy as np
 
 from .. import tensor as T
-from .. base import OdinUnsupervisedFunction
+from .. base import OdinFunction
 
 from six.moves import zip
 
 
-class RBM(OdinUnsupervisedFunction):
+class RBM(OdinFunction):
 
     """Restricted Boltzmann Machine (RBM)
     RBM constructor. Defines the parameters of the model along with
@@ -75,7 +75,7 @@ class RBM(OdinUnsupervisedFunction):
                  **kwargs):
         # ====== super ====== #
         super(RBM, self).__init__(
-            incoming, **kwargs)
+            incoming, unsupervised=True, **kwargs)
         # ====== persitent variable ====== #
         if persistent is None:
             persistent_params = None
@@ -126,6 +126,7 @@ class RBM(OdinUnsupervisedFunction):
 
         self.gibbs_steps = gibbs_steps
         self.sampling_steps = 1
+        self._reconstruction = True
 
     # ==================== Abstract methods ==================== #
     def set_sampling_steps(self, nsteps):
@@ -134,18 +135,19 @@ class RBM(OdinUnsupervisedFunction):
 
     @property
     def output_shape(self):
-        if self._reconstruction_mode:
+        if self._reconstruction:
             return self.input_shape
         # return hidden activations
         return [(i[0], self.num_units) for i in self.input_shape]
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training=False, reconstruction=True, **kwargs):
         ''' The sampling process was optimized using loop (unroll_scan) on
         theano which gives significantly speed up '''
         X = [T.flatten(i, 2) if T.ndim(i) > 2 else i
              for i in self.get_input(training, **kwargs)]
         self._last_inputs = X # must update last inputs because we reshape X
 
+        self._reconstruction = reconstruction
         # ====== create chain for each input ====== #
         outputs = []
         for x, shape in zip(X, self.output_shape):
@@ -203,7 +205,7 @@ class RBM(OdinUnsupervisedFunction):
                     outputs_info=[None, None, None, None, None, persistent_vis_chain],
                     n_steps=self.sampling_steps
                 )
-                if self._reconstruction_mode:
+                if self._reconstruction:
                     outputs.append(T.reshape(vis_mfs[-1], (-1,) + shape[1:]))
                 else:
                     outputs.append(hid_mfs[-1])

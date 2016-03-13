@@ -145,8 +145,8 @@ class OdinFunction(OdinObject):
     input_var : list
         list of placeholders for input of this functions
     output_var : list
-        list of placeholders for output of this functions, None if the function
-        is unsupervised function
+        list of placeholders for output of this functions, zero length list
+        if the function is unsupervised function
 
     Parameters
     ----------
@@ -227,7 +227,7 @@ class OdinFunction(OdinObject):
                     input_function.append(i)
                     outshape = i.output_shape
                     # OdinFunction always return list
-                    if isinstance(outshape[0], (tuple, list)):
+                    if isinstance(outshape[-1], (tuple, list)):
                         input_shape += outshape
                     else: # other framework only return 1 output shape
                         input_shape.append(outshape)
@@ -457,7 +457,10 @@ class OdinFunction(OdinObject):
 
     def get_cost(self, objective, **kwargs):
         y_pred = self(training=False, **kwargs)
-        y_true = self.output_var
+        if self.unsupervised:
+            y_true = self.input_var
+        else:
+            y_true = self.output_var
         cost = T.castX(0.)
         for yp, yt in zip(y_pred, y_true):
             o = objective(yp, yt)
@@ -497,7 +500,10 @@ class OdinFunction(OdinObject):
         '''
         self._validation_optimization_params(objective, optimizer)
         y_pred = self(training=True, **kwargs)
-        y_true = self.output_var
+        if self.unsupervised:
+            y_true = self.input_var
+        else:
+            y_true = self.output_var
         # ====== caluclate objectives for each in-out pair ====== #
         obj = T.castX(0.)
         # in case of multiple output, we take the mean of loss for each output
