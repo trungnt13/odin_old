@@ -450,7 +450,12 @@ class Dimshuffle(OdinFunction):
         if incoming is None:
             incoming = self.output_shape
 
-        orig_pattern = tuple([i for i, j in enumerate(self.pattern) if j != 'x'])
+        # remove the 'x'
+        pattern = [i for i in self.pattern if i != 'x']
+        # find the index of each element in pattern to revert the dimshuffle
+        orig_pattern = tuple([self.pattern.index(i)
+                              for i in range(len(pattern))])
+        print(orig_pattern)
 
         inv = Dimshuffle(incoming, pattern=orig_pattern, **kwargs)
         for i, j in zip(inv.input_shape, self.output_shape):
@@ -460,6 +465,10 @@ class Dimshuffle(OdinFunction):
                                      'this function, but input_shape={} != '
                                      'output_shape={}'.format(
                                          i, j))
+        for i, j in zip(inv.output_shape, self.input_shape):
+            if i[1:] != j[1:]:
+                self.raise_arguments('Invert dimshuffle will not work in '
+                                     'the case some dimension was removed.')
         return inv
 
 
