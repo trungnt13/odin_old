@@ -4,12 +4,64 @@ import numpy as np
 
 from .. import tensor as T
 from ..base import OdinFunction
+from ..utils import as_incoming_list
 
 __all__ = [
     'Ops',
     'Get',
-    'Reshape'
+    'Reshape',
+    'Dimshuffle',
+    'Pad',
+    'Inverse'
 ]
+
+
+def pad(x, width, val=0, batch_ndim=1):
+    """
+    Pad a tensor with a constant value.
+
+    Parameters
+    ----------
+    x : tensor
+
+    width : int, iterable of int, or iterable of tuple
+        Padding width. If an int, pads each axis symmetrically with the same
+        amount in the beginning and end. If an iterable of int, defines the
+        symmetric padding width separately for each axis. If an iterable of
+        tuples of two ints, defines a seperate padding width for each beginning
+        and end of each axis.
+
+    val : float
+        The constant value used for padding
+
+    batch_ndim : integer
+        Dimensions before the value will not be padded.
+
+    """
+    input_shape = x.shape
+    input_ndim = x.ndim
+
+    output_shape = list(input_shape)
+    indices = [slice(None) for _ in output_shape]
+
+    if isinstance(width, int):
+        widths = [width] * (input_ndim - batch_ndim)
+    else:
+        widths = width
+
+    for k, w in enumerate(widths):
+        try:
+            l, r = w
+        except TypeError:
+            l = r = w
+        output_shape[k + batch_ndim] += l + r
+        indices[k + batch_ndim] = slice(l, l + input_shape[k + batch_ndim])
+
+    if val:
+        out = T.ones(output_shape) * val
+    else:
+        out = T.zeros(output_shape)
+    return T.set_subtensor(out[tuple(indices)], x)
 
 
 class Ops(OdinFunction):
@@ -272,5 +324,294 @@ class Reshape(OdinFunction):
                     output_shape[dim] = T.shape(input)[o[0]]
             # Everything else is handled by Theano
             outputs.append(T.reshape(input, tuple(output_shape)))
+        self._log_footprint(training, inputs, outputs)
+        return outputs
+
+    def get_inv(self, incoming, **kwargs):
+        if incoming is None:
+            incoming = self.output_shape
+        shape = [-1 if i is None else i for i in self.input_shape[0]]
+        inv = Reshape(incoming, shape=shape)
+        for i, j in zip(inv.input_shape, self.output_shape):
+            if i[1:] != j[1:]:
+                self.raise_arguments('Inverted function incoming must have '
+                                     'equal input_shape to output_shape of '
+                                     'this function, but input_shape={} != '
+                                     'output_shape={}'.format(
+                                         i, j))
+        return inv
+
+
+class Dimshuffle(OdinFunction):
+
+    """
+    A layer that rearranges the dimension of its input tensor, maintaining
+    the same same total number of elements.
+
+    Parameters
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        the layer feeding into this layer, or the expected input shape
+
+    pattern : tuple
+        The new dimension order, with each element giving the index
+        of the dimension in the input tensor or `'x'` to broadcast it.
+        For example `(3,2,1,0)` will reverse the order of a 4-dimensional
+        tensor. Use `'x'` to broadcast, e.g. `(3,2,1,'x',0)` will
+        take a 4 tensor of shape `(2,3,5,7)` as input and produce a
+        tensor of shape `(7,5,3,1,2)` with the 4th dimension being
+        broadcast-able. In general, all dimensions in the input tensor
+        must be used to generate the output tensor. Omitting a dimension
+        attempts to collapse it; this can only be done to broadcast-able
+        dimensions, e.g. a 5-tensor of shape `(7,5,3,1,2)` with the 4th
+        being broadcast-able can be shuffled with the pattern `(4,2,1,0)`
+        collapsing the 4th dimension resulting in a tensor of shape
+        `(2,3,5,7)`.
+
+    Examples
+    --------
+    >>> from lasagne.layers import InputLayer, DimshuffleLayer
+    >>> l_in = InputLayer((2, 3, 5, 7))
+    >>> l1 = DimshuffleLayer(l_in, (3, 2, 1, 'x', 0))
+    >>> l1.output_shape
+    (7, 5, 3, 1, 2)
+    >>> l2 = DimshuffleLayer(l1, (4, 2, 1, 0))
+    >>> l2.output_shape
+    (2, 3, 5, 7)
+    """
+
+    def __init__(self, incoming, pattern, **kwargs):
+        super(Dimshuffle, self).__init__(incoming, unsupervised=False, **kwargs)
+
+        # Sanity check the pattern
+        used_dims = set()
+        for p in pattern:
+            if isinstance(p, int):
+                # Dimension p
+                if p in used_dims:
+                    raise ValueError("pattern contains dimension {0} more "
+                                     "than once".format(p))
+                used_dims.add(p)
+            elif p == 'x':
+                # Broadcast
+                pass
+            else:
+                raise ValueError("pattern should only contain dimension"
+                                 "indices or 'x', not {0}".format(p))
+
+        self.pattern = pattern
+
+        # try computing the output shape once as a sanity check
+        self.output_shape
+
+    @property
+    def output_shape(self):
+        # Build output shape while keeping track of the dimensions that we are
+        # attempting to collapse, so we can ensure that they are broadcastable
+        outshape = []
+        for input_shape in self.input_shape:
+            output_shape = []
+            dims_used = [False] * len(input_shape)
+            for p in self.pattern:
+                if isinstance(p, int):
+                    if p < 0 or p >= len(input_shape):
+                        raise ValueError("pattern contains {0}, but input shape "
+                                         "has {1} dimensions "
+                                         "only".format(p, len(input_shape)))
+                    # Dimension p
+                    o = input_shape[p]
+                    dims_used[p] = True
+                elif p == 'x':
+                    # Broadcast; will be of size 1
+                    o = 1
+                output_shape.append(o)
+
+            for i, (dim_size, used) in enumerate(zip(input_shape, dims_used)):
+                if not used and dim_size != 1 and dim_size is not None:
+                    raise ValueError(
+                        "pattern attempted to collapse dimension "
+                        "{0} of size {1}; dimensions with size != 1/None are not"
+                        "broadcastable and cannot be "
+                        "collapsed".format(i, dim_size))
+
+            outshape.append(tuple(output_shape))
+        return outshape
+
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        outputs = []
+        for input in inputs:
+            outputs.append(T.dimshuffle(input, self.pattern))
+        self._log_footprint(training, inputs, outputs)
+        return outputs
+
+    def get_inv(self, incoming, **kwargs):
+        if incoming is None:
+            incoming = self.output_shape
+
+        orig_pattern = list(range(len(self.pattern)))
+        orig_pattern = tuple([orig_pattern[i] for i in self.pattern if i != 'x'])
+        inv = Dimshuffle(incoming, pattern=orig_pattern)
+        for i, j in zip(inv.input_shape, self.output_shape):
+            if i[1:] != j[1:]:
+                self.raise_arguments('Inverted function incoming must have '
+                                     'equal input_shape to output_shape of '
+                                     'this function, but input_shape={} != '
+                                     'output_shape={}'.format(
+                                         i, j))
+        return inv
+
+
+class Pad(OdinFunction):
+
+    """
+    Pad all dimensions except the first ``batch_ndim`` with ``width``
+    zeros on both sides, or with another value specified in ``val``.
+    Individual padding for each dimension or edge can be specified
+    using a tuple or list of tuples for ``width``.
+
+    Parameters
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        The layer feeding into this layer, or the expected input shape
+
+    width : int, iterable of int, or iterable of tuple
+        Padding width. If an int, pads each axis symmetrically with the same
+        amount in the beginning and end. If an iterable of int, defines the
+        symmetric padding width separately for each axis. If an iterable of
+        tuples of two ints, defines a seperate padding width for each beginning
+        and end of each axis.
+
+    val : float
+        Value used for padding
+
+    batch_ndim : int
+        Dimensions up to this value are not padded. For padding convolutional
+        layers this should be set to 2 so the sample and filter dimensions are
+        not padded
+    """
+
+    def __init__(self, incoming, width, batch_ndim=2, val=0, **kwargs):
+        super(Pad, self).__init__(incoming, unsupervised=False, **kwargs)
+        self.width = width
+        self.val = val
+        self.batch_ndim = batch_ndim
+
+    @property
+    def output_shape(self):
+        outshape = []
+        for input_shape in self.input_shape:
+            output_shape = list(input_shape)
+
+            if isinstance(self.width, int):
+                widths = [self.width] * (len(input_shape) - self.batch_ndim)
+            else:
+                widths = self.width
+
+            for k, w in enumerate(widths):
+                if output_shape[k + self.batch_ndim] is None:
+                    continue
+                else:
+                    try:
+                        l, r = w
+                    except TypeError:
+                        l = r = w
+                    output_shape[k + self.batch_ndim] += l + r
+            outshape.append(tuple(output_shape))
+        return outshape
+
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        outputs = []
+        for input in inputs:
+            outputs.append(pad(input, self.width, self.val, self.batch_ndim))
+        self._log_footprint(training, inputs, outputs)
+        return outputs
+
+
+class Inverse(OdinFunction):
+
+    """
+    The :class:`InverseLayer` class performs inverse operations
+    for a single layer of a neural network by applying the
+    partial derivative of the layer to be inverted with
+    respect to its input: transposed layer
+    for a :class:`DenseLayer`, deconvolutional layer for
+    :class:`Conv2DLayer`, :class:`Conv1DLayer`; or
+    an unpooling layer for :class:`MaxPool2DLayer`.
+
+    It is specially useful for building (convolutional)
+    autoencoders with tied parameters.
+
+    Note that if the layer to be inverted contains a nonlinearity
+    and/or a bias, the :class:`InverseLayer` will include the derivative
+    of that in its computation.
+
+    Parameters
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        The layer feeding into this layer, or the expected input shape.
+    layer : a :class:`Layer` instance or a tuple
+        The layer with respect to which the instance of the
+        :class:`InverseLayer` is inverse to.
+
+    Examples
+    --------
+    >>> import lasagne
+    >>> from lasagne.layers import InputLayer, Conv2DLayer, DenseLayer
+    >>> from lasagne.layers import InverseLayer
+    >>> l_in = InputLayer((100, 3, 28, 28))
+    >>> l1 = Conv2DLayer(l_in, num_filters=16, filter_size=5)
+    >>> l2 = DenseLayer(l1, num_units=20)
+    >>> l_u = InverseLayer(l2, l1)  # As Deconv2DLayer
+    """
+
+    def __init__(self, incoming, function, **kwargs):
+        if not isinstance(function, OdinFunction):
+            self.raise_arguments('The function we want to take inverse must '
+                                 'be OdinFunction, but its type is: {}'
+                                 '.'.format(type(function)))
+
+        super(Inverse, self).__init__(
+            incoming, unsupervised=function.unsupervised, ** kwargs)
+        if len(incoming.input_shape) != len(function.output_shape):
+            self.raise_arguments('The number of input and output of function '
+                                 'we invert must equal to the inputs to this '
+                                 'Inverse function, but n_inverse={} != '
+                                 'n_incoming={}'.format(
+                                     len(function.output_shape),
+                                     len(incoming.input_shape)))
+        self.function = function
+
+    @property
+    def output_shape(self):
+        return self.function.input_shape
+
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        layer_out = self.function.get_cache_output(training)
+        if layer_out is None: # function is not activated yet, activate it
+            layer_out = self.function(training, **kwargs)
+        # cached input so no disconnected graph
+        layer_in = self.function.get_cache_input(training)
+        if len(layer_in) > len(layer_out): # merge layer, multiple inputs - 1 output
+            if len(layer_out) != 1:
+                self.raise_arguments('Only support merge function with multiple'
+                                     ' inputs and 1 outputs.')
+            layer_in = [layer_in]
+        elif len(layer_in) < len(layer_out): # 1 input multiple output
+            if len(layer_in) != 1:
+                self.raise_arguments('Only support multiplexer function with '
+                                     'multiple outputs and 1 inputs.')
+            layer_out = [layer_out]
+        # ====== start invert process ====== #
+        outputs = []
+        for input, out_func, in_func in zip(inputs, layer_out, layer_in):
+            if isinstance(out_func, (tuple, list)):
+                known_grads = {i: input for i in out_func}
+            else:
+                known_grads = {out_func: input}
+            outputs.append(
+                T.gradients(None, in_func, known_grads=known_grads))
         self._log_footprint(training, inputs, outputs)
         return outputs

@@ -623,7 +623,7 @@ def gradients(loss, variables, consider_constant=None, known_grads=None):
     >>>     print(g.eval())
     >>> # a_grad=0. b_grad=0. y_grad=6.614
     """
-    return T.grad(loss, variables,
+    return T.grad(loss, wrt=variables,
         consider_constant=consider_constant, known_grads=known_grads,
         disconnected_inputs='warn')
 

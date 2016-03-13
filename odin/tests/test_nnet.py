@@ -29,6 +29,19 @@ class FunctionsTest(unittest.TestCase):
     def tearDown(self):
         logger.set_enable(True)
 
+    def test_inv(self):
+        f0 = nnet.Dense([(None, 12), (None, 12)], num_units=8)
+        f1 = nnet.Dense([(None, 30), (None, 30)], num_units=8)
+        f2 = nnet.Dense([f0, f1], num_units=12)
+        f3 = nnet.Dense(f2, num_units=12)
+
+        f3_de = nnet.Inverse(f3, f2)
+        f = T.function(f3_de.input_var, f3_de())
+        x = f(np.random.rand(16, 12), np.random.rand(20, 12),
+              np.random.rand(24, 30), np.random.rand(28, 30))
+        for i in x:
+            self.assertEqual(i.shape[1], 8)
+
     def test_batch_norm(self):
         np.random.seed(12)
         X1 = np.random.rand(10, 8)
@@ -67,7 +80,7 @@ class FunctionsTest(unittest.TestCase):
         f = T.function(f_deconv.input_var, f_deconv(False))
         np.random.seed(13)
         X = np.random.rand(32, 3, 28, 28)
-        X_ = f(X)
+        X_ = f(X)[0]
         self.assertEqual(X.shape, X_.shape)
 
     def test_dense_func(self):
@@ -129,11 +142,10 @@ class FunctionsTest(unittest.TestCase):
         d1c = nnet.Dense(d1b, num_units=128, name='d1c')
         d1d = nnet.Summation([(None, 128), d1c], name='Summation')
 
-        self.assertEqual(d1d.incoming, [None, d1c])
         self.assertEqual(d1d.input_shape, [(None, 128), (None, 128)])
         self.assertEqual([T.ndim(i) for i in d1d.input_var], [2, 3])
         self.assertEqual(d1d.get_roots(), [d1d, d1a])
-        self.assertEqual(d1d.get_children(), [d1c, d1b, d1a])
+        self.assertEqual(d1d.get_children(include_self=False), [d1c, d1b, d1a])
 
     def test_noise(self):
         np.random.seed(12082518)

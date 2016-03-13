@@ -164,10 +164,10 @@ class OdinFunction(OdinObject):
     """
 
     def __init__(self, incoming, unsupervised, name=None, seed='none', **kwargs):
-        super(OdinFunction, self).__init__()
-        self._unsupervised = unsupervised
+        # unique identity number of a function during execution
+        self._function_id = OdinFunction._ID
+        OdinFunction._ID += 1
 
-        self.set_incoming(incoming)
         # ====== other properties ====== #
         if name is None:
             name = []
@@ -175,9 +175,10 @@ class OdinFunction(OdinObject):
             name = [name]
         self._name = name
 
-        # unique identity number of a function during execution
-        self._function_id = OdinFunction._ID
-        OdinFunction._ID += 1
+        super(OdinFunction, self).__init__()
+        self._unsupervised = unsupervised
+
+        self.set_incoming(incoming)
 
         # you can have 2 different version of parameters, for training and for
         # making prediction
@@ -192,8 +193,8 @@ class OdinFunction(OdinObject):
         self._cache_inputs_train = None
         self._cache_inputs_pred = None
 
-        self._cache_updates_train = OrderedDict()
-        self._cache_updates_pred = OrderedDict()
+        self._cache_outputs_train = None
+        self._cache_outputs_pred = None
 
         if seed != 'none':
             self.rng = T.rng(seed)
@@ -215,9 +216,12 @@ class OdinFunction(OdinObject):
 
                 # shape_tuple
                 if isinstance(i, (tuple, list)):
-                    input_function.append(None)
-                    input_shape.append(
-                        tuple([j if j is None else int(j) for j in i]))
+                    shape = tuple([j if j is None else int(j) for j in i])
+                    shape_str = '_'.join([str(k) for k in shape])
+                    placeholder = T.placeholder(shape=shape,
+                        name='in.%s.%s' % (shape_str, self.name))
+                    input_function.append(placeholder)
+                    input_shape.append(shape)
                 # output_shape(keras, odin, lasagne)
                 elif hasattr(i, 'output_shape'):
                     input_function.append(i)
@@ -247,9 +251,6 @@ class OdinFunction(OdinObject):
         self._input_shape = input_shape
 
         # store ALL placeholder necessary for inputs of this Function
-        self._input_var = None
-        #{index : placeholder}, store placeholder created by this Function
-        self._local_input_var = {}
         self._output_var = None
 
         return self
@@ -318,7 +319,7 @@ class OdinFunction(OdinObject):
         '''
         roots = []
         for i in self._incoming:
-            if i is None:
+            if T.is_placeholder(i):
                 roots.append(self)
             elif isinstance(i, OdinFunction):
                 roots += i.get_roots()
@@ -326,7 +327,7 @@ class OdinFunction(OdinObject):
             return [self]
         return T.np_ordered_set(roots).tolist()
 
-    def get_children(self):
+    def get_children(self, name=None, include_self=True):
         ''' Performing Depth First Search to return all the OdinFunction
         which act as inputs to this function
 
@@ -338,44 +339,33 @@ class OdinFunction(OdinObject):
         Note
         ----
         This function preseves order of inputs for multiple inputs function
+        Order is from this function down to root
 
         '''
         children = []
+        if include_self:
+            children.append(self)
+
         for i in self._incoming:
             if isinstance(i, OdinFunction):
                 children.append(i)
                 children += i.get_children()
-        return T.np_ordered_set(children).tolist()
+        children = T.np_ordered_set(children).tolist()
+        if name is not None:
+            children += [i for i in children if name in i._name]
+        return children
 
-    def set_updates(self, key, value, training):
-        if not T.is_variable(key):
-            self.raise_arguments('Updates must contain variable as key.')
-        if training is None:
-            self._cache_updates_train[key] = value
-            self._cache_updates_pred[key] = value
-        elif training:
-            self._cache_updates_train[key] = value
-        else:
-            self._cache_updates_pred[key] = value
-
-    def get_updates(self, training):
-        updates = OrderedDict()
-        if training:
-            updates.update(self._cache_updates_train)
-        else:
-            updates.update(self._cache_updates_pred)
-
-        for i in self._incoming:
-            if not T.is_variable(i) and not T.is_expression(i) and i is not None:
-                api = API.get_object_api(i)
-                updates.update(API.get_states_updates(i, api, training))
-        return updates
-
-    def get_cache(self, training):
+    def get_cache_input(self, training):
         '''Return last inputs returned by this funcitons'''
         if training:
             return self._cache_inputs_train
         return self._cache_inputs_pred
+
+    def get_cache_output(self, training):
+        '''Return last inputs returned by this funcitons'''
+        if training:
+            return self._cache_outputs_train
+        return self._cache_outputs_pred
 
     def reset_cache(self, globals):
         ''' Each time you call this function, its inputs are cached for reused
@@ -391,11 +381,11 @@ class OdinFunction(OdinObject):
         '''
         self._cache_inputs_pred = None
         self._cache_inputs_train = None
-        self._cache_updates_pred = None
-        self._cache_updates_train = None
+        self._cache_outputs_pred = None
+        self._cache_outputs_train = None
 
         if globals:
-            for i in self.get_children():
+            for i in self.get_children(include_self=False):
                 # a cycle graph may create infinite recursive, but who care
                 # we doesn't support cycle graph anyway
                 i.reset_cache(globals=globals)
@@ -405,6 +395,11 @@ class OdinFunction(OdinObject):
         self.log(_FOOT_PRINT %
             (self.name, training, self.input_shape,
             inputs, self.output_shape, outputs), 20)
+
+        if training:
+            self._cache_outputs_train = outputs
+        else:
+            self._cache_outputs_pred = outputs
 
     def _validation_optimization_params(self, objective, optimizer):
         if objective is None or not hasattr(objective, '__call__'):
@@ -528,7 +523,7 @@ class OdinFunction(OdinObject):
                 grad = T.gradients(obj, params)
             else: # optimize only the params of this funtions
                 grad = T.gradients(obj, params,
-                    consider_constant=self.get_cache(training=True))
+                    consider_constant=self.get_cache_input(training=True))
             opt = optimizer(grad, params)
         return obj, opt
 
@@ -572,27 +567,20 @@ class OdinFunction(OdinObject):
         just the placeholder to create T.function
         '''
 
-        if self._input_var is None:
-            self._input_var = []
-            for idx, (i, j) in enumerate(zip(self._incoming, self._input_shape)):
-                if i is None:
-                    shape_str = '_'.join([str(k) for k in j])
-                    x = T.placeholder(shape=j,
-                        name='in.%s.%s' % (shape_str, self.name))
-                    self._input_var.append(x)
-                    self._local_input_var[idx] = x
-                elif T.is_placeholder(i): # placeholder
-                    self._input_var.append(i)
-                    self._local_input_var[idx] = i
-                elif T.is_variable(i) or T.is_expression(i):
-                    # don't need to do anything with variable and expression
-                    pass
-                else: # input from API layers
-                    api = API.get_object_api(i)
-                    self._input_var += API.get_input_variables(i, api)
-            # not duplicate
-            self._input_var = T.np_ordered_set(self._input_var).tolist()
-        return self._input_var
+        input_var = []
+        for i, j in zip(self._incoming, self._input_shape):
+            if i is None:
+                self.raise_arguments('Incoming cannot be None.')
+            elif T.is_placeholder(i): # placeholder
+                input_var.append(i)
+            elif T.is_variable(i) or T.is_expression(i):
+                # don't need to do anything with variable and expression
+                pass
+            else: # input from API layers
+                api = API.get_object_api(i)
+                input_var += API.get_input_variables(i, api)
+        # not duplicate
+        return T.np_ordered_set(input_var).tolist()
 
     @property
     def output_var(self):
@@ -638,13 +626,12 @@ class OdinFunction(OdinObject):
             return self._cache_inputs_pred
         # ====== getting the inputs from nested functions ====== #
         inputs = []
-        self.input_var # make sure initialized all placeholder
-        for idx, i in enumerate(self._incoming):
+        for i in self._incoming:
             # this is placeholder or InputLayer
-            if i is None or T.is_placeholder(i):
-                inputs.append(self._local_input_var[idx])
-            # this is variable
-            elif T.is_variable(i) or T.is_expression(i):
+            if i is None:
+                self.raise_arguments("Incoming cannot be None.")
+            # this is variable, placeholder or expression
+            elif T.is_variable(i) or T.is_expression(i) or T.is_placeholder(i):
                 inputs.append(i)
             # this is from API
             else:

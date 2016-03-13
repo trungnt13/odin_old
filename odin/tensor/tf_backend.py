@@ -32,10 +32,10 @@ def get_session():
     global _SESSION
     if _SESSION is None:
         if not os.environ.get('OMP_NUM_THREADS'):
-            _SESSION = tf.Session('')
+            _SESSION = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
         else:
             nb_thread = int(os.environ.get('OMP_NUM_THREADS'))
-            _SESSION = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=nb_thread))
+            _SESSION = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=nb_thread, allow_soft_placement=True))
     return _SESSION
 
 
@@ -416,8 +416,8 @@ def dimshuffle(x, pattern):
         pattern: should be a tuple or list of
             dimension indices, e.g. [0, 2, 1].
     '''
-    if 'x' in pattern:
-        x = tf.transpose(x, perm=[i for i in pattern if i != 'x'])
+    # TODO: add squeeze broadcastable dimension
+    x = tf.transpose(x, perm=[i for i in pattern if i != 'x'])
     for i, p in enumerate(pattern):
         if p == 'x':
             x = tf.expand_dims(x, i)
@@ -924,6 +924,8 @@ def rnn(step_function, inputs, initial_states,
             mask = expand_dims(mask)
         mask = tf.cast(tf.transpose(mask, axes), tf.bool)
         mask_list = tf.unpack(mask)
+        if go_backwards:
+            mask_list.reverse()
 
         for input, mask_t in zip(input_list, mask_list):
             output, new_states = step_function(input, states + constants)
@@ -1230,6 +1232,7 @@ def pool2d(x, pool_size, strides=(1, 1),
         border_mode: one of "valid", "same".
         dim_ordering: one of "th", "tf".
     '''
+    # TODO: border_mode = 'same' give different result to theano
     if border_mode == 'same':
         padding = 'SAME'
     elif border_mode == 'valid':

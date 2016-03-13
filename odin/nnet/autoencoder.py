@@ -79,7 +79,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         # get original inputs from roots
         x_original = []
         for i in self.encoder.get_roots():
-            x_original += i.get_cache(training=True)
+            x_original += i.get_cache_input(training=True)
         # ====== Objectives is mean of all in-out pair ====== #
         obj = T.castX(0.)
         for i, j in zip(x_reconstructed, x_original):
@@ -470,7 +470,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             globals, trainable, regularizable)
         decoder_params = []
         if globals: # only add encoder and decoder params if globals is on.
-            for i in [self.decoder] + self.decoder.get_children():
+            for i in self.decoder.get_children(include_self=True):
                 decoder_params += i.get_params(
                     globals=False, trainable=trainable, regularizable=regularizable)
         params = params + decoder_params

@@ -11,6 +11,7 @@ import numpy as np
 
 from .. import tensor as T
 from ..base import OdinFunction
+from .ops import Reshape
 
 __all__ = [
     "Dense",
@@ -73,7 +74,12 @@ class Dense(OdinFunction):
             incoming = self.output_shape
         inv = Dense(incoming, num_units=self.num_inputs,
             W=W, b=b, nonlinearity=nonlinearity)
-        if inv.num_inputs != self.num_units:
+        # add reshape if Dense flatten the incoming
+        num_inputs = inv.num_inputs
+        if len(inv.output_shape[0]) != len(self.input_shape[0]):
+            shape = tuple([-1 if i is None else i for i in self.input_shape[0]])
+            inv = Reshape(inv, shape=shape)
+        if num_inputs != self.num_units:
             self.raise_runtime('num_inputs of inverted function must equal to '
                                'num_units of this function, but '
                                'num_inputs={} != num_units={}'.format(
