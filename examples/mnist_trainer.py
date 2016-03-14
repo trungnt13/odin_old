@@ -49,7 +49,7 @@ f = odin.nnet.Conv2D(f,
     nonlinearity=T.relu)
 f = odin.nnet.MaxPool2D(f,
     pool_size=(nb_pool, nb_pool))
-f = odin.nnet.Dropout(f, p=0.25, rescale=True)
+f = odin.nnet.Flatten(odin.nnet.Dropout(f, p=0.25, rescale=True), 2)
 
 # the output_shape from previous function is 3D, but no need to reshape
 f = odin.nnet.Dense(f,

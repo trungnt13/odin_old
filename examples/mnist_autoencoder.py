@@ -61,6 +61,7 @@ def test_aED(): #AutoEncoderDecoder
 
     d1a = odin.nnet.Dense((None, 28, 28), num_units=256, W=Wa, name='d1a',
         nonlinearity=T.sigmoid)
+    d1a = odin.nnet.Flatten(d1a, 2)
     d1b = odin.nnet.Dense(d1a, num_units=128, W=Wb, name='d1b',
         nonlinearity=T.sigmoid)
 
@@ -127,6 +128,7 @@ def test_vae():
     W = T.variable(T.np_glorot_uniform(shape=(784, 512)), name='W')
     WT = T.transpose(W)
     encoder = odin.nnet.Dense((None, 28, 28), num_units=512, W=W, name='encoder')
+    encoder = odin.nnet.Flatten(encoder, 2)
     # decoder = odin.nnet.Dense((None, 256), num_units=512, name='decoder1')
     decoder = odin.nnet.Dense((None, 512), num_units=784, W=WT, name='decoder2')
 

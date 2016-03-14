@@ -51,7 +51,7 @@ f = odin.nnet.MaxPool2D(f,
     pool_size=(nb_pool, nb_pool))
 f = odin.nnet.Dropout(f, p=0.25, rescale=True)
 
-# the output_shape from previous function is 3D, but no need to reshape
+f = odin.nnet.Flatten(f, 2)
 f = odin.nnet.Dense(f,
     num_units=128,
     nonlinearity=T.relu)

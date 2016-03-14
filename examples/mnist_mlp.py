@@ -31,6 +31,7 @@ ds = odin.dataset.load_mnist()
 f = odin.nnet.Dense((None, 28, 28),
     num_units=512,
     nonlinearity=T.relu)
+f = odin.nnet.Flatten(f, 2)
 f = odin.nnet.Dropout(f, p=0.2)
 f = odin.nnet.Dense(f,
     num_units=512,

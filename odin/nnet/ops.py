@@ -209,7 +209,7 @@ class Flatten(OdinFunction):
     flatten  : Shortcut
     """
 
-    def __init__(self, incoming, outdim=2, unsupervised=False, **kwargs):
+    def __init__(self, incoming, outdim, unsupervised=False, **kwargs):
         super(Flatten, self).__init__(
             incoming, unsupervised=unsupervised, **kwargs)
         self.outdim = outdim

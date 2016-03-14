@@ -14,7 +14,8 @@ print(ds)
 def test_rbm():
     batch_size = 32
     persistent_chain = T.variable(numpy.zeros((batch_size, 500)))
-    input_ = odin.nnet.Dense((None, 28, 28), num_units=784)
+    input_ = odin.nnet.Flatten((None, 28, 28), 2)
+    input_ = odin.nnet.Dense(input_, num_units=784)
     input_ = (None, 28, 28)
     rbm = odin.nnet.RBM(input_, 500, persistent=persistent_chain)
     print('Input variables:', rbm.input_var)
@@ -61,7 +62,8 @@ def test_rbm():
 
 def test_rbm_multiple():
     persistent_chain = T.variable(numpy.zeros((20, 500)))
-    input_ = odin.nnet.Dense((None, 28, 28), num_units=784)
+    input_ = odin.nnet.Flatten((None, 28, 28), 2)
+    input_ = odin.nnet.Dense(input_, num_units=784)
     input_ = [(None, 28, 28), (None, 28, 28)]
     rbm = odin.nnet.RBM(input_, 500, persistent=persistent_chain)
     print('Input variables:', rbm.input_var)

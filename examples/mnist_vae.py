@@ -13,7 +13,7 @@ epoch = 5
 W = T.variable(T.np_glorot_uniform(shape=(784, 512)))
 WT = T.transpose(W)
 
-encoder = odin.nnet.Dense((None, 28, 28), W=W,
+encoder = odin.nnet.Dense(odin.nnet.Flatten((None, 28, 28), 2), W=W,
     num_units=512,
     nonlinearity=T.sigmoid, name='encoder')
 

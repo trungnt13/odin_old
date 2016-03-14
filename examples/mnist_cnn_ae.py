@@ -50,7 +50,7 @@ f2 = odin.nnet.Conv2D(f1,
     nonlinearity=T.sigmoid)
 f3 = odin.nnet.MaxPool2D(f2,
     pool_size=(nb_pool, nb_pool))
-f4 = odin.nnet.Dropout(f3, p=0.25, rescale=True)
+f4 = odin.nnet.Flatten(odin.nnet.Dropout(f3, p=0.25, rescale=True), 2)
 f5 = odin.nnet.Dense(f4,
     num_units=128,
     nonlinearity=T.sigmoid)
