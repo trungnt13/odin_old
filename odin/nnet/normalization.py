@@ -153,7 +153,7 @@ class BatchNormalization(OdinFunction):
         shape = [size for axis, size in enumerate(input_shape)
                  if axis not in self.axes]
         if any(size is None for size in shape):
-            raise ValueError("BatchNormLayer needs specified input sizes for "
+            self.raise_arguments("BatchNormLayer needs specified input sizes for "
                              "all axes not normalized over.")
         if beta is None:
             self.beta = None

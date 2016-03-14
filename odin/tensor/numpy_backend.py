@@ -7,6 +7,7 @@
 
 from __future__ import division, absolute_import, print_function
 
+import math
 import numpy as np
 import scipy as sp
 from ..config import floatX
@@ -133,9 +134,48 @@ def np_shrink_labels(labels, maxdist=1):
     return out
 
 
+def np_roll_sequences(sequences, maxlen, step, outlen, end='ignore'):
+    ''' Rolling sequences for generative RNN, for every sequence
+    of length=`maxlen` generate a small sequenc length=`outlen`, then move
+    the sequence by a number of `step` to get the next pair of (input, output)
+
+    Parameters
+    ----------
+    end : 'ignore', 'pad'(int)
+        ignore: just ignore the border of sequences
+        pad(int): pad given value
+    '''
+    if end == 'ignore':
+        pass
+    elif end == 'pad' or isinstance(end, (float, int, long)):
+        if end == 'pad':
+            end = 0.
+        end = np.cast[sequences.dtype](end)
+        # number of step
+        pad = (sequences.shape[0] - (maxlen + outlen)) / step
+        # ceil then multiply back => desire size for full sequence
+        pad = math.ceil(pad) * step + (maxlen + outlen)
+        pad = int(pad - sequences.shape[0])
+        if pad > 0:
+            pad = np.zeros((pad,) + sequences.shape[1:]) + pad
+            sequences = np.concatenate((sequences, pad), axis = 0)
+    # reupdate n value
+    n = int(math.ceil((sequences.shape[0] - (maxlen + outlen) + 1) / step))
+    rvalX = []
+    rvaly = []
+    for i in range(n):
+        start = i * step
+        end = start + maxlen
+        end_out = end + outlen
+        rvalX.append(sequences[start:end])
+        rvaly.append(sequences[end:end_out])
+    return np.asarray(rvalX), np.asarray(rvaly)
+
 # ===========================================================================
 # Special random algorithm for weights initialization
 # ===========================================================================
+
+
 def np_normal(shape, mean=0., std=1.):
     return np.cast[floatX()](
         get_random_generator().normal(mean, std, size=shape))

@@ -441,7 +441,14 @@ class Dimshuffle(OdinFunction):
     def __call__(self, training=False, **kwargs):
         inputs = self.get_input(training, **kwargs)
         outputs = []
-        for input in inputs:
+        for input, shape in zip(inputs, self.input_shape):
+            # add broadcast in case we drop broadcastable dimension
+            if len(self.pattern) < len(shape):
+                drop_axes = [i for i in range(len(shape))
+                             if i not in self.pattern and shape[i] == 1]
+                if len(drop_axes) > 0:
+                    input = T.addbroadcast(input, *drop_axes)
+            # dimshuffle
             outputs.append(T.dimshuffle(input, self.pattern))
         self._log_footprint(training, inputs, outputs)
         return outputs
@@ -455,7 +462,6 @@ class Dimshuffle(OdinFunction):
         # find the index of each element in pattern to revert the dimshuffle
         orig_pattern = tuple([self.pattern.index(i)
                               for i in range(len(pattern))])
-        print(orig_pattern)
 
         inv = Dimshuffle(incoming, pattern=orig_pattern, **kwargs)
         for i, j in zip(inv.input_shape, self.output_shape):

@@ -657,7 +657,7 @@ class dataset(OdinObject):
 
         # ====== Multple files ====== #
         if self._write_mode is None:
-            self.log('Have not set write mode, default is [last]', 30)
+            self.log('Have not set write mode, default is [last]', 20)
             self._write_mode = 'last'
 
         if self._write_mode == 'last':
@@ -749,7 +749,7 @@ class dataset(OdinObject):
                     self._object[j].append(i)
         else: # array
             if self._chunk_size == 'auto':
-                self.log('Chunk size auto is not recommended for big dataset', 30)
+                self.log('Chunk size auto is not recommended for big dataset', 10)
             shape = value.shape
             # find appropriate key
             hdf = self._get_write_hdf()

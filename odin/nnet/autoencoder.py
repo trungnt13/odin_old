@@ -21,7 +21,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         # this mode is enable if encoder and decoder already connected
         self._connected_encoder_decoder = False
         if encoder in decoder.get_children():
-            self.log('Found connected graph of encoder-decoder!', 30)
+            self.log('Found connected graph of encoder-decoder!', 10)
             self._connected_encoder_decoder = True
         else: # check input-output shape of encoder-decoder
             decoder_out = []
@@ -395,7 +395,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         prediction(mean) : if training = False
         '''
         if self._reconstruction_mode and training:
-            self.log('Training mode always return hidden activations')
+            self.log('Training mode always return hidden activations', 10)
         # ====== check inputs (only 2D) ====== #
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
              for x in self.get_input(training, **kwargs)]

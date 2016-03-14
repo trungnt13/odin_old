@@ -296,7 +296,7 @@ class OdinFunction(OdinObject):
         else:
             self.log("You changed the root inputs, we will reset the whole "
                      "function's tree for it takes effect. Bear in mind this "
-                     "situation when you used set_intermediate_inputs.", 20)
+                     "situation when you used set_intermediate_inputs.", 10)
             self.reset_cache(True)
             for i in self.get_roots():
                 i.set_intermediate_inputs(inputs)
@@ -470,7 +470,7 @@ class OdinFunction(OdinObject):
                 self.log('The return objective has > 1 dimension which '
                          'cannot be used to calculate the gradients '
                          'for optimization, hence, we take the mean of '
-                         'their values.', 30)
+                         'their values.', 10)
                 o = T.mean(o)
             cost = cost + o
         if len(y_pred) > 1:
@@ -515,7 +515,7 @@ class OdinFunction(OdinObject):
                 self.log('The return objective has > 1 dimension which '
                          'cannot be used to calculate the gradients '
                          'for optimization, hence, we take the mean of '
-                         'their values.', 30)
+                         'their values.', 10)
                 o = T.mean(o)
             obj = obj + o
         if len(y_pred) > 1:
@@ -795,7 +795,7 @@ class OdinUnsupervisedFunction(OdinFunction):
                 self.log('The return objective has > 1 dimension which '
                          'cannot be used to calculate the gradients '
                          'for optimization, hence, we take the mean of '
-                         'their values.', 30)
+                         'their values.', 10)
                 o = T.mean(o)
             cost = cost + o
         if len(y_pred) > 1:

@@ -356,7 +356,7 @@ class Cell(OdinFunction):
             if self.batch_norm_dims != norm_dims:
                 self.log('Number of gates changed from {} to {}, hence, we '
                          'recreate BatchNormalization function for {} gates'
-                         '.'.format(self.batch_norm_dims, norm_dims, norm_dims), 30)
+                         '.'.format(self.batch_norm_dims, norm_dims, norm_dims), 10)
                 self.batch_norm_dims = norm_dims
                 # check if gamma and beta are learnable
                 if self.learnable_norm:

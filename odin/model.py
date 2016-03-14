@@ -206,7 +206,7 @@ class model(OdinObject):
             shouldSave, shouldStop = shouldSave > 0, shouldStop > 0
         self.log(
             'Earlystop: shouldSave=%s, shouldStop=%s' % (shouldSave, shouldStop),
-            20)
+            10)
         return shouldSave, shouldStop
 
     # ==================== Weights ==================== #
@@ -314,7 +314,7 @@ class model(OdinObject):
         if self._model_func is None:
             raise ValueError("You must set_model first")
         if self._need_update_model or self._model is None:
-            self.log('*** Creating network ... ***', 20)
+            self.log('*** Creating network ... ***', 10)
             self._model = self._model_func()
             if self._model is None:
                 raise ValueError(
@@ -329,9 +329,9 @@ class model(OdinObject):
             if len(self._weights) > 0:
                 try:
                     API.set_weights(self._model, self._api, self._weights)
-                    self.log('*** Successfully load old weights ***', 20)
+                    self.log('*** Successfully load old weights ***', 10)
                 except Exception, e:
-                    self.log('*** Cannot load old weights ***', 50)
+                    self.log('*** Cannot load old weights ***', 40)
                     self.log(str(e), 40)
                     import traceback; traceback.print_exc()
             # ====== fetch new weights into model, create checkpoints ====== #
@@ -341,7 +341,7 @@ class model(OdinObject):
                     f = h5py.File(self._save_path, mode='a')
                     try:
                         API.save_weights(f, self._api, weights)
-                        self.log('*** Created checkpoint ... ***', 20)
+                        self.log('*** Created checkpoint ... ***', 10)
                     except Exception, e:
                         self.log('Error Creating checkpoint: %s' % str(e), 40)
                         raise e
@@ -361,7 +361,7 @@ class model(OdinObject):
                 inputs=input_var,
                 outputs=output_var)
             self.log(
-                '*** Successfully create [%s] prediction function ***' % self._api, 20)
+                '*** Successfully create [%s] prediction function ***' % self._api, 10)
         return self._pred_func
 
     # ==================== network actions ==================== #
@@ -391,15 +391,15 @@ class model(OdinObject):
                 self._weights = weights
                 if self._model is not None:
                     API.set_weights(self._model, self._api, self._weights)
-                    self.log(' *** Weights rolled-back! ***', 20)
+                    self.log(' *** Weights rolled-back! ***', 10)
 
             # rollback history
             if 'history' in f:
                 self._history = cPickle.loads(f['history'].value)
-                self.log(' *** History rolled-back! ***', 20)
+                self.log(' *** History rolled-back! ***', 10)
                 self._history_updated = True
         else:
-            self.log('No checkpoint found! Ignored rollback!', 30)
+            self.log('No checkpoint found! Ignored rollback!', 10)
         return self
 
     # ==================== History manager ==================== #

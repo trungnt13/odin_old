@@ -226,7 +226,7 @@ class RBM(OdinFunction):
         """
         if objective is not None:
             self.log("Ignored objective:%s because RBM uses contrastive divergence"
-                     " as default" % str(objective), 30)
+                     " as default" % str(objective), 10)
         outputs = self(training=True, **kwargs)
         X = self._last_inputs # get cached inputs
         # ====== calculating cost for each in-out pairs ====== #
