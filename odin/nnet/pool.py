@@ -8,6 +8,7 @@
 from __future__ import print_function, division
 
 import numpy as np
+import math
 
 from .. import tensor as T
 from ..base import OdinFunction
@@ -18,6 +19,7 @@ __all__ = [
     "MaxPool2D",
     "Pool3D",
     "MaxPool3D",
+    'Unpool2DLayer',
     'UpSampling1D',
     'UpSampling2D',
     'GlobalPool'
@@ -79,6 +81,29 @@ def pool_output_length(input_length, pool_size, stride, pad, ignore_border):
     return output_length
 
 
+def unpooling_input(input, scale_factor, algorithm):
+    if algorithm == 'pad':
+        shape = list(T.shape(input))
+        if scale_factor[-1] > 1:
+            shape[-1] = shape[-1] * scale_factor[-1]
+        if scale_factor[-2] > 1:
+            shape[-2] = shape[-2] * scale_factor[-2]
+        slices = (slice(None),) * (len(shape) - 2) + \
+            (slice(None, None, scale_factor[-2]),
+             slice(None, None, scale_factor[-1]))
+        upsample = T.zeros(tuple(shape), dtype = input.dtype)
+        upsample = T.set_subtensor(upsample[slices], input)
+    # algorithm that repeat all axis of input
+    elif algorithm == 'repeat':
+        upsample = input
+        if scale_factor[-1] > 1:
+            upsample = T.repeat_elements(upsample, scale_factor[-1], -1)
+        if scale_factor[-2] > 1:
+            upsample = T.repeat_elements(upsample, scale_factor[-2], -2)
+
+    return upsample
+
+
 class Pool2D(OdinFunction):
 
     """
@@ -133,7 +158,7 @@ class Pool2D(OdinFunction):
 
     def __init__(self, incoming, pool_size, stride=None, pad=(0, 0),
                  ignore_border=True, mode='max', **kwargs):
-        super(Pool2D, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Pool2D, self).__init__(incoming, **kwargs)
         for i in self.input_shape:
             if len(i) != 4:
                 raise ValueError("Tried to create a 2D pooling layer with "
@@ -197,6 +222,29 @@ class Pool2D(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
+    def get_inv(self, incoming, **kwargs):
+        if incoming is None:
+            incoming = self.output_shape
+        pool_size = self.pool_size
+        for inshape, outshape in zip(self.input_shape, self.output_shape):
+            if pool_size[-1] * outshape[-1] != inshape[-1] or \
+               pool_size[-2] * outshape[-2] != inshape[-2]:
+                self.raise_arguments('Cannot unpool this function since we '
+                                     'loss some information during pooling, '
+                                     'because the input_shape is not divisible '
+                                     'for the pool_isze, so, '
+                                     'input_shape={} cannot be unpooled from '
+                                     'output_shape={}.'.format(inshape, outshape))
+        algorithm = kwargs.pop('algorithm', 'repeat')
+        unpool = Unpool2DLayer(incoming, scale_factor=pool_size,
+            algorithm=algorithm, **kwargs)
+        for inshape, outshape in zip(unpool.input_shape, self.output_shape):
+            if inshape[1:] != outshape[1:]:
+                self.raise_arguments('Input_shape of invert function must equal '
+                                     'to output_shape of this function, but {} '
+                                     '!= {}'.format(inshape, outshape))
+        return unpool
 
 
 class MaxPool2D(Pool2D):
@@ -266,7 +314,7 @@ class Pool3D(OdinFunction):
 
     def __init__(self, incoming, pool_size, stride=None, pad=(0, 0, 0),
                  ignore_border=True, mode='max', **kwargs):
-        super(Pool3D, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Pool3D, self).__init__(incoming, **kwargs)
         for i in self.input_shape:
             if len(i) != 5:
                 raise ValueError("Tried to create a 3D pooling layer with "
@@ -348,41 +396,43 @@ class Unpool2DLayer(OdinFunction):
     This layer performs unpooling over the last two dimensions
     of a 4D tensor.
     ds is a tuple, denotes the upsampling
+    algorithm : 'pad', 'repeat'
+        'pad' is zero pad and set subtensor the value of input
+        'repeat' is repeat the input then add zeros if don't have enough value
     """
 
-    def __init__(self, incoming, ds, **kwargs):
-
+    def __init__(self, incoming, scale_factor, algorithm='pad', **kwargs):
         super(Unpool2DLayer, self).__init__(incoming, **kwargs)
 
-        if (isinstance(ds, int)):
-            raise ValueError('ds must have len == 2')
-        else:
-            ds = tuple(ds)
-            if len(ds) != 2:
-                raise ValueError('ds must have len == 2')
-            if ds[0] != ds[1]:
-                raise ValueError('ds should be symmetric (I am lazy)')
-            self.ds = ds
+        if algorithm != 'pad' and algorithm != 'repeat':
+            self.raise_arguments('Algorithm must equal to pad for padding zero'
+                                 ' upsampling and equal to repeat for repeating'
+                                 ' the input.')
+        self.algorithm = algorithm
 
-    def get_output_shape_for(self, input_shape):
-        output_shape = list(input_shape)
+        scale_factor = as_tuple(scale_factor, 2, int)
+        if scale_factor[0] < 1 or scale_factor[1] < 1:
+            self.raise_arguments('Upscale factor must larger than 1')
+        self.scale_factor = scale_factor
 
-        output_shape[2] = input_shape[2] * self.ds[0]
-        output_shape[3] = input_shape[3] * self.ds[1]
+    @property
+    def output_shape(self):
+        outshape = []
+        for input_shape in self.input_shape:
+            output_shape = list(input_shape)
+            output_shape[-2] = input_shape[-2] * self.scale_factor[-2]
+            output_shape[-1] = input_shape[-1] * self.scale_factor[-1]
+            outshape.append(tuple(output_shape))
+        return outshape
 
-        return tuple(output_shape)
-
-    def get_output_for(self, input, **kwargs):
-        ds = self.ds
-        """
-        input_shape = input.shape
-        output_shape = self.get_output_shape_for(input_shape)
-        return input.repeat(2, axis=2).repeat(2, axis=3)
-        """
-        shp = input.shape
-        upsample = T.zeros((shp[0], shp[1], shp[2] * 2, shp[3] * 2), dtype=input.dtype)
-        upsample = T.set_subtensor(upsample[:, :, ::ds[0], ::ds[1]], input)
-        return upsample
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        outputs = []
+        for input in inputs:
+            outputs.append(
+                unpooling_input(input, self.scale_factor, self.algorithm))
+        self._log_footprint(training, inputs, outputs)
+        return outputs
 
 
 class UpSampling1D(OdinFunction):
@@ -406,7 +456,7 @@ class UpSampling1D(OdinFunction):
     """
 
     def __init__(self, incoming, scale_factor=2, axis=-1, **kwargs):
-        super(UpSampling1D, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(UpSampling1D, self).__init__(incoming, **kwargs)
         self.scale_factor = scale_factor
         self.axis = axis
 
@@ -423,7 +473,7 @@ class UpSampling1D(OdinFunction):
                       for i, j in enumerate(shape)))
         return outshape
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training = False, **kwargs):
         inputs = self.get_input(training, **kwargs)
         outputs = []
         for X in inputs:
@@ -455,8 +505,7 @@ class UpSampling2D(OdinFunction):
     """
 
     def __init__(self, incoming, scale_factor, **kwargs):
-        super(UpSampling2D, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+        super(UpSampling2D, self).__init__(incoming, **kwargs)
 
         self.scale_factor = as_tuple(scale_factor, 2)
 
@@ -476,7 +525,7 @@ class UpSampling2D(OdinFunction):
             outshape.append(tuple(output_shape))
         return outshape
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training = False, **kwargs):
         a, b = self.scale_factor
         inputs = self.get_input(training, **kwargs)
         outputs = []
@@ -512,9 +561,8 @@ class GlobalPool(OdinFunction):
         superclass.
     """
 
-    def __init__(self, incoming, pool_function=T.mean, **kwargs):
-        super(GlobalPool, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+    def __init__(self, incoming, pool_function = T.mean, **kwargs):
+        super(GlobalPool, self).__init__(incoming, **kwargs)
         self.pool_function = pool_function
 
     @property
@@ -524,7 +572,7 @@ class GlobalPool(OdinFunction):
             outshape.append(shape[:2])
         return outshape
 
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, training = False, **kwargs):
         inputs = self.get_input(training, **kwargs)
         outputs = []
         for input in inputs:

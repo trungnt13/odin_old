@@ -286,7 +286,7 @@ class Cell(OdinFunction):
                  batch_norm=False, learnable_norm=False,
                  dropoutW=None, dropoutU=None,
                  **kwargs):
-        super(Cell, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Cell, self).__init__(incoming, **kwargs)
 
         # input shape and number of cell units
         self.hidden_dims = self.input_shape[0][1:]
@@ -1125,8 +1125,7 @@ class Recurrent(OdinFunction):
         self.return_idx = return_idx
 
         # ====== call the init of OdinFunction ====== #
-        super(Recurrent, self).__init__(
-            incoming_list, unsupervised=False, **kwargs)
+        super(Recurrent, self).__init__(incoming_list, **kwargs)
 
         # ====== parameters ====== #
         self.precompute_input = True

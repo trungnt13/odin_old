@@ -161,7 +161,7 @@ class OdinFunction(OdinObject):
 
     """
 
-    def __init__(self, incoming, unsupervised, name=None, seed='none', **kwargs):
+    def __init__(self, incoming, name=None, seed='none', **kwargs):
         # unique identity number of a function during execution
         self._function_id = OdinFunction._ID
         OdinFunction._ID += 1
@@ -174,7 +174,7 @@ class OdinFunction(OdinObject):
         self._name = name
 
         super(OdinFunction, self).__init__()
-        self._unsupervised = unsupervised
+        self._unsupervised = kwargs.get('unsupervised', False)
 
         self.set_incoming(incoming)
 

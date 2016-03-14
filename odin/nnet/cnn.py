@@ -438,6 +438,8 @@ class Conv2D(BaseConvLayer):
         return conved
 
     def get_inv(self, incoming, **kwargs):
+        if incoming is None:
+            incoming = self.output_shape
         # ====== transpose and reverse filter ====== #
         W = T.dimshuffle(self.W, (1, 0, 2, 3))
         # reverse filter: [:, :, ::-1, ::-1]

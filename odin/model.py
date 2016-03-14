@@ -206,7 +206,7 @@ class model(OdinObject):
             shouldSave, shouldStop = shouldSave > 0, shouldStop > 0
         self.log(
             'Earlystop: shouldSave=%s, shouldStop=%s' % (shouldSave, shouldStop),
-            10)
+            50)
         return shouldSave, shouldStop
 
     # ==================== Weights ==================== #
