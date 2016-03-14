@@ -11,7 +11,6 @@ import numpy as np
 
 from .. import tensor as T
 from ..base import OdinFunction
-from .ops import Reshape
 
 __all__ = [
     "Dense",
@@ -25,11 +24,16 @@ class Dense(OdinFunction):
                  W=T.np_symmetric_uniform,
                  b=T.np_constant,
                  nonlinearity=T.relu,
+                 unsupervised = False,
                  **kwargs):
         super(Dense, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+            incoming, unsupervised=unsupervised, **kwargs)
 
-        num_inputs = self._validate_nD_input(2)[1]
+        num_inputs = self.input_shape[0][-1]
+        for shape in self.input_shape:
+            if shape[-1] != num_inputs:
+                self.raise_arguments('The last dimensions of all inputs must '
+                                     'equal.')
         shape = (num_inputs, num_units)
 
         self.W = self.create_params(
@@ -46,20 +50,17 @@ class Dense(OdinFunction):
 
     @property
     def output_shape(self):
-        return [(i[0], self.num_units) for i in self.input_shape]
+        return [tuple(i[:-1]) + (self.num_units,) for i in self.input_shape]
 
     def __call__(self, training=False, **kwargs):
         inputs = self.get_input(training, **kwargs)
         outputs = []
         # ====== processing each inputs ====== #
-        for x in inputs:
-            if T.ndim(x) > 2:
-                # if the input has more than two dimensions, flatten it into a
-                # batch of feature vectors.
-                x = T.flatten(x, 2)
+        for x, shape in zip(inputs, self.input_shape):
+            # calculate projection
             activation = T.dot(x, self.W)
             if self.b is not None:
-                activation = activation + T.reshape(self.b, (1, -1))
+                activation = activation + self.b
             outputs.append(self.nonlinearity(activation))
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
@@ -69,17 +70,15 @@ class Dense(OdinFunction):
         W = T.transpose(self.W)
         b = None if self.b is None else T.np_constant
         nonlinearity = kwargs.get('nonlinearity', self.nonlinearity)
+        unsupervised = kwargs.get('unsupervised', self.unsupervised)
         # auto create incoming
         if incoming is None:
             incoming = self.output_shape
         inv = Dense(incoming, num_units=self.num_inputs,
-            W=W, b=b, nonlinearity=nonlinearity)
+            W=W, b=b, nonlinearity=nonlinearity, unsupervised=unsupervised,
+            **kwargs)
         # add reshape if Dense flatten the incoming
-        num_inputs = inv.num_inputs
-        if len(inv.output_shape[0]) != len(self.input_shape[0]):
-            shape = tuple([-1 if i is None else i for i in self.input_shape[0]])
-            inv = Reshape(inv, shape=shape)
-        if num_inputs != self.num_units:
+        if inv.num_inputs != self.num_units:
             self.raise_runtime('num_inputs of inverted function must equal to '
                                'num_units of this function, but '
                                'num_inputs={} != num_units={}'.format(

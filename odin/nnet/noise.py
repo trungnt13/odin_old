@@ -58,6 +58,9 @@ class Dropout(OdinFunction):
     deterministic is false, see references for further discussion. Note that
     this implementation scales the input at training time.
 
+    In consistent mode, n_batch should be the same for all inputs or the
+    random generator will generate different dropout mask
+
     References
     ----------
     .. [1] Hinton, G., Srivastava, N., Krizhevsky, A., Sutskever, I.,
@@ -158,6 +161,9 @@ class FastDropout(OdinFunction):
     deterministic is false, see references for further discussion. Note that
     this implementation scales the input at training time.
 
+    In consistent mode, n_batch should be the same for all inputs or the
+    random generator will generate different dropout mask
+
     References
     ----------
     .. [1] Hinton, G., Srivastava, N., Krizhevsky, A., Sutskever, I.,
@@ -249,6 +255,9 @@ class Noise(OdinFunction):
     The Gaussian noise layer is a regularizer. During training you should set
     deterministic to false and during testing you should set deterministic to
     true.
+
+    In consistent mode, n_batch should be the same for all inputs or the
+    random generator will generate different dropout mask
 
     References
     ----------

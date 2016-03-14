@@ -19,17 +19,15 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 # ===========================================================================
 # Constants
 # ===========================================================================
-_FOOT_PRINT = '''
-%s is activated with: training=%s \n
+_FOOT_PRINT = ''' %s is activated with: training=%s
  - input_shape:  %-15s   - inputs:  %s
  - output_shape: %-15s   - outputs: %s
 '''
 
+
 # ===========================================================================
 # Based class design
 # ===========================================================================
-
-
 class OdinObject(object):
     __metaclass__ = ABCMeta
     _logging = True

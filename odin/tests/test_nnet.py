@@ -29,6 +29,16 @@ class FunctionsTest(unittest.TestCase):
     def tearDown(self):
         logger.set_enable(True)
 
+    def test_ops(self):
+        f = nnet.Flatten((None, 8, 12, 13), outdim=2)
+        f = f.get_inv(f)
+        f = T.function(f.input_var, f())
+
+        np.random.seed(1208251813)
+        x = np.random.rand(128, 8, 12, 13)
+        tmp = np.sum(np.abs(f(x)[0] - x))
+        self.assertLessEqual(tmp, 0.005)
+
     def test_inv(self):
         f0 = nnet.Dense([(None, 12), (None, 12)], num_units=8)
         f1 = nnet.Dense([(None, 30), (None, 30)], num_units=8)
@@ -142,27 +152,28 @@ class FunctionsTest(unittest.TestCase):
         d1c = nnet.Dense(d1b, num_units=128, name='d1c')
         d1d = nnet.Summation([(None, 128), d1c], name='Summation')
 
-        self.assertEqual(d1d.input_shape, [(None, 128), (None, 128)])
+        self.assertEqual(d1d.input_shape, [(None, 128), (None, 28, 128)])
         self.assertEqual([T.ndim(i) for i in d1d.input_var], [2, 3])
         self.assertEqual(d1d.get_roots(), [d1d, d1a])
         self.assertEqual(d1d.get_children(include_self=False), [d1c, d1b, d1a])
 
     def test_noise(self):
         np.random.seed(12082518)
-        x = np.ones((16, 5, 8))
-        f = nnet.Dropout([(16, 5, 8), (16, 5, 8)],
+        x1 = np.ones((16, 5, 8))
+        x2 = np.ones((16, 5, 8))
+        f = nnet.Dropout([(None, 5, 8), (None, 5, 8)],
             p=0.5, rescale=True, noise_dims=1, seed=13, consistent=True)
         f = nnet.Ops(f, ops=lambda x: x + 0.)
         f = T.function(inputs=f.input_var, outputs=f(True))
-        y = f(x, x)
+        y = f(x1, x2)
         y = y[0] - y[1]
         self.assertEqual(y.ravel().tolist(), [0.] * len(y.ravel()))
 
-        f = nnet.Noise([(16, 5, 8), (16, 5, 8)],
+        f = nnet.Noise([(None, 5, 8), (None, 5, 8)],
             sigma=0.5, noise_dims=(1, 2), uniform=True, seed=13, consistent=True)
         f = nnet.Ops(f, ops=lambda x: x + 0.)
         f = T.function(inputs=f.input_var, outputs=f(True))
-        y = f(x, x)
+        y = f(x1, x2)
         y = y[0] - y[1]
         self.assertEqual(y.ravel().tolist(), [0.] * len(y.ravel()))
 
@@ -303,7 +314,7 @@ class FunctionsTest(unittest.TestCase):
         f3 = T.function([l_in.input_var],
             outputs=lasagne.layers.get_output(l, deterministic=False))
         x3 = f3(X)
-
+        print()
         print('Odin - Keras:   ', np.sum(np.abs(x1 - x2)))
         print('Odin - Lasagne: ', np.sum(np.abs(x1 - x3)))
         print('Keras - Lasagne:', np.sum(np.abs(x2 - x3)))

@@ -123,10 +123,7 @@ class _data(OdinObject):
                        shuffle=shuffle, seed=seed, mode=mode)
                 for i in self._batches]
         # handle case that 1 batch return all data
-        if len(data) == 1:
-            iter_data = data[0]
-        else:
-            iter_data = zip(*data)
+        iter_data = zip(*data)
         return iter_data
 
     def __str__(self):
@@ -164,6 +161,7 @@ class _task(object):
         self.seed = seed
         self._rand = np.random.RandomState(seed)
 
+        # task_name, n_epoch, n_iter, data/results
         self._batch_start = lambda t, x, y, z: z
         self._batch_end = lambda t, x, y, z: None
         self._epoch_start = lambda t, x, y: None
@@ -214,15 +212,18 @@ class _task(object):
             epoch_results = []
             self._epoch_start(self.name, i, it)
 
-            for dat in self._data.create_iter(
-                self._batch, self._start, self._end,
-                self._shuffle, self._rand.randint(0, 10e8), self._mode):
+            for dat in self._data.create_iter(bs=self._batch,
+                                              start=self._start,
+                                              end=self._end,
+                                              shuffle=self._shuffle,
+                                              seed=self._rand.randint(0, 10e8),
+                                              mode=self._mode):
                 if self._rand.rand() < self._p:
                     it += 1
                     dat = self._batch_start(self.name, i, it, dat)
-                    res = self._func(*dat)
-                    epoch_results.append(res)
-                    self._batch_end(self.name, i, it, res)
+                    result = self._func(*dat)
+                    epoch_results.append(result)
+                    self._batch_end(self.name, i, it, result)
                 yield just_finish_epoch
                 just_finish_epoch = False
 
@@ -442,8 +443,10 @@ class trainer(OdinObject):
         return : trainer
             for method chaining
         '''
-        if ds: ds = self._create_dataset(ds)
-        self._data_map[name] = _data(ds=ds).set(data)
+        if ds:
+            ds = self._create_dataset(ds)
+        data = _data(ds=ds).set(data)
+        self._data_map[name] = data
         return self
 
     def set_callback(self, epoch_start=_callback, epoch_end=_callback,

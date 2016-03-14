@@ -9,6 +9,7 @@ from ..utils import as_incoming_list
 __all__ = [
     'Ops',
     'Get',
+    'Flatten',
     'Reshape',
     'Dimshuffle',
     'Pad',
@@ -187,6 +188,70 @@ class Get(OdinFunction):
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
+
+
+class Flatten(OdinFunction):
+
+    """
+    A layer that flattens its input. The leading ``outdim-1`` dimensions of
+    the output will have the same shape as the input. The remaining dimensions
+    are collapsed into the last dimension.
+
+    Parameters
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        The layer feeding into this layer, or the expected input shape.
+    outdim : int
+        The number of dimensions in the output.
+
+    See Also
+    --------
+    flatten  : Shortcut
+    """
+
+    def __init__(self, incoming, outdim=2, unsupervised=False, **kwargs):
+        super(Flatten, self).__init__(
+            incoming, unsupervised=unsupervised, **kwargs)
+        self.outdim = outdim
+
+        if outdim < 1:
+            self.raise_arguments('Dim must be >0, was %i', outdim)
+
+    @property
+    def output_shape(self):
+        outshape = []
+        for input_shape in self.input_shape:
+            to_flatten = input_shape[self.outdim - 1:]
+
+            if any(s is None for s in to_flatten):
+                flattened = None
+            else:
+                flattened = int(np.prod(to_flatten))
+
+            outshape.append(input_shape[:self.outdim - 1] + (flattened,))
+        return outshape
+
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        outputs = []
+        for input in inputs:
+            outputs.append(T.flatten(input, self.outdim))
+        self._log_footprint(training, inputs, outputs)
+        return outputs
+
+    def get_inv(self, incoming, **kwargs):
+        if incoming is None:
+            incoming = self.output_shape
+        shape = [-1 if i is None else i for i in self.input_shape[0]]
+        inv = Reshape(incoming, shape=shape, **kwargs)
+        for i, j in zip(inv.input_shape, self.output_shape):
+            if i[1:] != j[1:]:
+                self.raise_arguments('Inverted function incoming must have '
+                                     'equal input_shape to output_shape of '
+                                     'this function, but input_shape={} != '
+                                     'output_shape={}'.format(
+                                         i, j))
+        return inv
 
 
 class Reshape(OdinFunction):
