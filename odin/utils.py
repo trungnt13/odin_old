@@ -708,17 +708,37 @@ class function(object):
         self._function_args = args
         self._function_kwargs = kwargs
         self._sandbox = serialize_sandbox(func.func_globals)
+        try:
+            import inspect
+            self._source = inspect.getsource(self._function)
+        except:
+            self._source = None
+
+    @property
+    def name(self):
+        return self._function_name
+
+    @property
+    def args(self):
+        return self._function_args
+
+    @property
+    def kwargs(self):
+        return self._function_kwargs
+
+    @property
+    def source(self):
+        return self._source
 
     def __call__(self):
         return self._function(*self._function_args, **self._function_kwargs)
 
     def __str__(self):
-        import inspect
-        s = 'Name:%s\n' % self._function_name
-        s += 'args:%s\n' % str(self._function_args)
-        s += 'kwargs:%s\n' % str(self._function_kwargs)
+        s = 'Name:   %s\n' % self._function_name
+        s += 'args:   %s\n' % str(self._function_args)
+        s += 'kwargs: %s\n' % str(self._function_kwargs)
         s += 'Sandbox:%s\n' % str(self._sandbox)
-        s += inspect.getsource(self._function)
+        s += self._source
         return s
 
     def __eq__(self, other):
@@ -733,31 +753,35 @@ class function(object):
         config['class'] = self.__class__.__name__
 
         import marshal
-        from array import array
+        import base64
 
-        model_func = marshal.dumps(self._function.func_code)
-        b = array("B", model_func)
-        config['func'] = b
+        model_func = base64.b64encode(marshal.dumps(self._function.func_code))
+        config['func'] = model_func
         config['args'] = self._function_args
         config['kwargs'] = self._function_kwargs
         config['name'] = self._function_name
         config['sandbox'] = self._sandbox
+        config['source'] = self._source
         return config
 
     @staticmethod
     def parse_config(config):
         import marshal
+        import base64
 
-        b = config['func']
-        func = marshal.loads(b.tostring())
+        func = marshal.loads(base64.b64decode(config['func']))
         func_name = config['name']
         func_args = config['args']
         func_kwargs = config['kwargs']
+        func_source = config['source']
 
         sandbox = globals().copy() # create sandbox
         sandbox.update(deserialize_sandbox(config['sandbox']))
         func = types.FunctionType(func, sandbox, func_name)
-        return function(func, *func_args, **func_kwargs)
+        func = function(func, *func_args, **func_kwargs)
+        if func._source is None:
+            func._source = func_source
+        return func
 
 # ===========================================================================
 # Python

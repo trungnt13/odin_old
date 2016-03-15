@@ -172,6 +172,8 @@ class model(OdinObject):
             note
         hope_hop : type
             note
+        threshold : float
+            pass
 
         Returns
         -------
@@ -519,15 +521,13 @@ class model(OdinObject):
         # model function
         s += '======== Code ========\n'
         s += ' - api:%s' % self._api + '\n'
-        s += ' - name:%s' % self._model_name + '\n'
-        s += ' - args:%s' % str(self._model_args) + '\n'
-        s += ' - sandbox:%s' % str(self._sandbox) + '\n'
+        s += str(self._model_func)
         return s[:-1]
 
     # ==================== Load & Save ==================== #
     def save(self, path=None):
         if path is None and self._save_path is None:
-            raise ValueError("Save path haven't specified!")
+            self.raise_arguments("Save path haven't specified!")
         path = path if path is not None else self._save_path
         self._save_path = path
 
@@ -543,7 +543,7 @@ class model(OdinObject):
         # check weights, always fetch newest weights from model
         weights = self.get_params()
         API.save_weights(f, self._api, weights)
-
+        self.log('Saved model to: %s' % path, 50)
         f.close()
 
     @staticmethod

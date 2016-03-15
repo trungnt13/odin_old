@@ -20,7 +20,7 @@ def run(name=None):
                 tests.append('test_models')
             elif 'train' in i:
                 tests.append('test_training')
-            elif 'utils' in i:
+            elif 'util' in i:
                 tests.append('test_utils')
             elif 'obj' in i or 'opt' in i:
                 tests.append('test_obj_opt')

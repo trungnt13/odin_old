@@ -15,7 +15,7 @@ from ..config import floatX
 # ===========================================================================
 # RandomStates
 # ===========================================================================
-_MAGIC_SEED = 12082518
+_MAGIC_SEED = np.random.randint(0, 12082518, size=1)[0]
 _SEED_GENERATOR = np.random.RandomState(_MAGIC_SEED)
 
 

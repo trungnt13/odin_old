@@ -2,8 +2,8 @@
 # Author: TrungNT
 # ======================================================================
 from __future__ import print_function, division
-
-from ..utils import function, frame
+import os
+from ..utils import function, frame, get_from_path
 from ..tensor import get_magic_seed
 import unittest
 import cPickle
@@ -14,9 +14,19 @@ import random
 # ===========================================================================
 # Main Test
 # ===========================================================================
+CODE = '''
+import math
+
 def test(a=1, b=2):
     a = math.sqrt(a)
     return 'Shit %s over %s here!' % (str(a), str(b))
+'''
+
+
+def test(a=1, b=2):
+    a = math.sqrt(a)
+    return 'Shit %s over %s here!' % (str(a), str(b))
+
 
 class UtilsTest(unittest.TestCase):
 
@@ -27,14 +37,42 @@ class UtilsTest(unittest.TestCase):
         pass
 
     def test_function_save_load(self):
-        f = function(test, 3, 4)
+        try:
+            import h5py
+        except:
+            print('\n This test require h5py library.')
+            return
+        # ====== write code to file ====== #
+        f = open('/tmp/tmp_code.py', 'w')
+        f.write(CODE)
+        f.close()
+
+        # ====== save ====== #
+        code = get_from_path('test', prefix='tmp_code', path='/tmp')[0]
+        f = function(code, 3, 4)
         s1 = f()
         config = cPickle.dumps(f.get_config())
+        file = h5py.File('/tmp/tmp.h5', 'w')
+        file['function'] = config
+        file.close()
+
+        # ====== load ====== #
+        os.remove('/tmp/tmp_code.py')
+        file = h5py.File('/tmp/tmp.h5', 'r')
+        config = file['function'].value
+        os.remove('/tmp/tmp.h5')
+
         config = cPickle.loads(config)
         f = function.parse_config(config)
+        print('\n', f)
         s2 = f()
 
         self.assertEqual(s1, s2)
+
+        # ====== exec the source of function ====== #
+        exec(f.source)
+        a = test()
+        self.assertEqual(a, 'Shit 1.0 over 2 here!')
 
     def test_function_compare(self):
         f1 = function(test, 3, 4)

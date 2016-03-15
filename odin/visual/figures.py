@@ -216,7 +216,7 @@ def plot_weights(x, ax=None, colormap = "Greys", colorbar=False, path=None,
     ax : matplotlib.Axis
         create by fig.add_subplot, or plt.subplots
     colormap : str
-        colormap alias from plt.cm.Greys = 'Greys'
+        colormap alias from plt.cm.Greys = 'Greys' ('spectral')
     colorbar : bool, 'all'
         whether adding colorbar to plot, if colorbar='all', call this
         methods after you add all subplots will create big colorbar
