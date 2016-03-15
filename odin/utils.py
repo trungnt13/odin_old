@@ -738,7 +738,7 @@ class function(object):
         s += 'args:   %s\n' % str(self._function_args)
         s += 'kwargs: %s\n' % str(self._function_kwargs)
         s += 'Sandbox:%s\n' % str(self._sandbox)
-        s += self._source
+        s += str(self._source)
         return s
 
     def __eq__(self, other):

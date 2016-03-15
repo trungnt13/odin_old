@@ -541,6 +541,7 @@ class model(OdinObject):
         # check weights, always fetch newest weights from model
         weights = self.get_params()
         API.save_weights(f, self._api, weights)
+        f.flush()
         self.log('Saved model to: %s' % path, 50)
         f.close()
 
