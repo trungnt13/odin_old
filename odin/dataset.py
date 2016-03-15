@@ -532,8 +532,9 @@ class batch(object):
             results = []
             for i in sorted(indices.keys()):
                 start, end = indices[i]
-                results.append(self._data[start:end])
-            return np.asarray(results)
+                # since end is the exact index, we need to +1 as upper bound
+                results.append(self._data[i][start:end + 1])
+            return np.concatenate(results, axis=0)
         elif isinstance(key, (tuple, list)):
             if any(not isinstance(i, (int, long)) for i in key):
                 raise ValueError('Only accept indices as int.')
