@@ -314,7 +314,7 @@ class model(OdinObject):
          and save it to file to create checkpoint of save_path available
         '''
         if self._model_func is None:
-            raise ValueError("You must set_model first")
+            raise ValueError("You must set_model first.")
         if self._need_update_model or self._model is None:
             self.log('*** Creating network ... ***', 10)
             self._model = self._model_func()
@@ -535,6 +535,7 @@ class model(OdinObject):
         f['history'] = cPickle.dumps(self._history)
         # ====== Save model function ====== #
         if self._model_func is not None:
+            self.get_model() # need to create model to find which API
             f['model_func'] = cPickle.dumps(self._model_func.get_config())
             f['api'] = self._api
         # ====== save weights ====== #
