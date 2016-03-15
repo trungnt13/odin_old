@@ -318,12 +318,12 @@ class Noise(OdinFunction):
             # ====== dropout each inputs ====== #
             outputs = []
             for x, shape in zip(inputs, noise_shape):
-                shape = tuple(x.shape[i] if j is None else j
-                              for i, j in enumerate(shape))
                 broadcastable = None
                 if shape is None:
                     shape = T.shape(x)
                 else:
+                    shape = tuple(x.shape[i] if j is None else j
+                                  for i, j in enumerate(shape))
                     broadcastable = [i for i, j in enumerate(shape) if j == 1]
                 noise = randfunc(x, shape)
                 if self.uniform:

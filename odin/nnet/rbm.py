@@ -213,7 +213,7 @@ class RBM(OdinFunction):
         return outputs
 
     def get_optimization(self, objective=None, optimizer=None,
-                         globals=True, **kwargs):
+                         globals=True, y_true=None, **kwargs):
         """This functions implements one step of CD-k or PCD-k
 
         Returns

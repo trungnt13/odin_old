@@ -357,11 +357,11 @@ class model(OdinObject):
         # ====== Create prediction function ====== #
         if not self._pred_func:
             input_var = API.get_input_variables(self._model, self._api)
-            output_var = API.get_outputs(self._model, self._api, False)
+            outputs = API.get_outputs(self._model, self._api, False)
             # create prediction function
             self._pred_func = tensor.function(
                 inputs=input_var,
-                outputs=output_var)
+                outputs=outputs)
             self.log(
                 '*** Successfully create [%s] prediction function ***' % self._api, 10)
         return self._pred_func

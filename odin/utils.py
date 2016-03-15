@@ -202,12 +202,14 @@ class api(object):
         if api_ == 'odin':
             children = model.get_children(include_self=True)
             # the order of children is from output to input
+            prev = model
             for i in children:
                 try:
-                    i.get_inv(None)
+                    i = i.get_inv(prev)
+                    prev = i
                 except NotImplementedError:
-                    print(i)
                     pass # no support for get_inv
+            return prev
         else:
             raise ValueError('Only support invert OdinNetwork')
 # ===========================================================================

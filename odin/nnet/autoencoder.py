@@ -66,7 +66,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, **kwargs):
+                         globals=True, y_true=None, **kwargs):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
         tmp = self._reconstruction_mode
@@ -249,7 +249,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, **kwargs):
+                         globals=True, y_true=None, **kwargs):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
         X = [x if T.ndim(x) <= 2 else T.flatten(x, 2)
@@ -428,7 +428,7 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
         return outputs
 
     def get_optimization(self, objective, optimizer=None,
-                         globals=True, **kwargs):
+                         globals=True, y_true=None, **kwargs):
         # ====== Get the outputs ====== #
         tmp = self._reconstruction_mode
         outputs = self.set_reconstruction_mode(True)(training=True, **kwargs)

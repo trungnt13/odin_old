@@ -451,14 +451,18 @@ class OdinFunction(OdinObject):
         OdinFunction: the function that give the output_shape equal to
             input_shape of this function
         '''
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__.__name__)
 
-    def get_cost(self, objective, **kwargs):
+    def get_cost(self, objective, y_true=None, **kwargs):
         y_pred = self(training=False, **kwargs)
-        if self.unsupervised:
-            y_true = self.input_var
-        else:
-            y_true = self.output_var
+        # auto select y_true
+        if y_true is None:
+            if self.unsupervised:
+                y_true = self.input_var
+            else:
+                y_true = self.output_var
+        elif not isinstance(y_true, (tuple, list)):
+            y_true = [y_true]
         cost = T.castX(0.)
         for yp, yt in zip(y_pred, y_true):
             o = objective(yp, yt)
@@ -475,7 +479,8 @@ class OdinFunction(OdinObject):
             cost = cost / len(y_pred)
         return cost
 
-    def get_optimization(self, objective, optimizer=None, globals=True, **kwargs):
+    def get_optimization(self, objective, optimizer=None,
+        globals=True, y_true=None, **kwargs):
         '''
 
         Parameters
@@ -498,10 +503,14 @@ class OdinFunction(OdinObject):
         '''
         self._validation_optimization_params(objective, optimizer)
         y_pred = self(training=True, **kwargs)
-        if self.unsupervised:
-            y_true = self.input_var
-        else:
-            y_true = self.output_var
+        # auto select y_true
+        if y_true is None:
+            if self.unsupervised:
+                y_true = self.input_var
+            else:
+                y_true = self.output_var
+        elif not isinstance(y_true, (tuple, list)):
+            y_true = [y_true]
         # ====== caluclate objectives for each in-out pair ====== #
         obj = T.castX(0.)
         # in case of multiple output, we take the mean of loss for each output

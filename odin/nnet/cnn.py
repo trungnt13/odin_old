@@ -500,7 +500,7 @@ class Conv2D(BaseConvLayer):
         # ====== transpose and reverse filter ====== #
         W = T.dimshuffle(self.W, (1, 0, 2, 3))
         # reverse filter: [:, :, ::-1, ::-1]
-        W = T.reverse(T.reverse(W, -1), axis=-2)
+        W = T.reverse(T.reverse(W, axis=-1), axis=-2)
         num_filters = self.input_shape[0][1]
         # ====== pad ====== #
         if self.pad == 'valid' or self.pad == (0, 0):
