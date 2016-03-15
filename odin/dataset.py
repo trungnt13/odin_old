@@ -507,12 +507,43 @@ class batch(object):
         return sum([i.shape[0] for i in self._data])
 
     def __getitem__(self, key):
+        # this indexing is extremely slow and should not be used freqently
         self._is_dataset_init()
-        if type(key) == tuple:
-            return np.concatenate(
-                [d[k] for k, d in zip(key, self._data) if k is not None],
-                axis=0)
-        return np.concatenate([i[key] for i in self._data], axis=0)
+        # generate a seqeunce of indices for each dataset, so we can
+        # index a slice through multiple dataset
+        if not hasattr(self, '_indices_sequences') or \
+           len(self._indices_sequences) != self.shape[0]:
+            indices_sequences = [] # tuple: (dataset_idx, sample_idx)
+            for i, data in enumerate(self._data):
+                indices_sequences += [(i, _) for _ in range(data.shape[0])]
+            self._indices_sequences = indices_sequences
+        # ====== good to go ====== #
+        if isinstance(key, (int, long)):
+            key = self._indices_sequences[int(key)]
+            return self._data[key[0]][key[1]]
+        elif isinstance(key, slice):
+            key = self._indices_sequences[key]
+            indices = defaultdict(lambda: [float('inf'), -float('inf')])
+            for dataset, sample in key:
+                if indices[dataset][0] > sample: # lower index
+                    indices[dataset][0] = sample
+                if indices[dataset][1] < sample: # higher index
+                    indices[dataset][1] = sample
+            results = []
+            for i in sorted(indices.keys()):
+                start, end = indices[i]
+                results.append(self._data[start:end])
+            return np.asarray(results)
+        elif isinstance(key, (tuple, list)):
+            if any(not isinstance(i, (int, long)) for i in key):
+                raise ValueError('Only accept indices as int.')
+            results = []
+            for i in key:
+                i = self._indices_sequences[int(i)]
+                results.append(self._data[i[0]][i[1]])
+            return np.asarray(results)
+        else:
+            raise ValueError('only accept key as int, list of int or slice')
 
     def __setitem__(self, key, value):
         '''
