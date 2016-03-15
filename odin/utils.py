@@ -753,10 +753,10 @@ class function(object):
         config['class'] = self.__class__.__name__
 
         import marshal
-        import base64
+        from array import array
 
-        model_func = base64.b64encode(marshal.dumps(self._function.func_code))
-        config['func'] = model_func
+        # conver to byte
+        config['func'] = array("B", marshal.dumps(self._function.func_code))
         config['args'] = self._function_args
         config['kwargs'] = self._function_kwargs
         config['name'] = self._function_name
@@ -767,13 +767,16 @@ class function(object):
     @staticmethod
     def parse_config(config):
         import marshal
-        import base64
 
-        func = marshal.loads(base64.b64decode(config['func']))
+        func = marshal.loads(config['func'].tostring())
         func_name = config['name']
         func_args = config['args']
         func_kwargs = config['kwargs']
-        func_source = config['source']
+        # for compatible with out API
+        if 'source' in config:
+            func_source = config['source']
+        else:
+            func_source = None
 
         sandbox = globals().copy() # create sandbox
         sandbox.update(deserialize_sandbox(config['sandbox']))

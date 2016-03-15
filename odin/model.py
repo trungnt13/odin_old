@@ -530,9 +530,7 @@ class model(OdinObject):
             self.raise_arguments("Save path haven't specified!")
         path = path if path is not None else self._save_path
         self._save_path = path
-
         import cPickle
-
         f = h5py.File(path, 'w')
         f['history'] = cPickle.dumps(self._history)
         # ====== Save model function ====== #
@@ -550,14 +548,11 @@ class model(OdinObject):
     def load(path):
         ''' Load won't create any modification to original AI file '''
         if not os.path.exists(path):
-            m = model()
-            m._save_path = path
-            return m
+            raise ValueError('Give path: [%s] not exist, cannot load model' % str(path))
         import cPickle
-
+        # ====== init model and file ====== #
         m = model()
         m._save_path = path
-
         f = h5py.File(path, 'r')
         # ====== Load history ====== #
         if 'history' in f:
@@ -565,16 +560,15 @@ class model(OdinObject):
         else:
             m._history = []
         # ====== Load model ====== #
+        m._api = None
         if 'api' in f:
             m._api = f['api'].value
-        else: m._api = None
         # load model_func code
+        m._model_func = None
         if 'model_func' in f:
             m._model_func = function.parse_config(
                 cPickle.loads(f['model_func'].value))
-        else: m._model_func = None
         # ====== load weights ====== #
         m._weights = API.load_weights(f, m._api)
-
         f.close()
         return m
