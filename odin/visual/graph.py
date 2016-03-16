@@ -15,7 +15,7 @@ def draw_computational_graph(var_or_func, save_path=None):
     import matplotlib.image as mpimg
 
     if save_path is None:
-        save_path = os.path.join(utils.get_tmp_dir(), 'tmp.html')
+        save_path = utils.get_tmp_dir('tmp.html')
 
     if config.backend() == 'theano':
         import theano.d3viz as d3v

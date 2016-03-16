@@ -815,13 +815,19 @@ def get_all_files(path, filter_func=None):
     return file_list
 
 
-def get_tmp_dir():
+def get_tmp_dir(addition_path='', user=False):
     import pwd
     user_name = pwd.getpwuid(os.getuid())[0]
-    tmp_path = os.path.join('/tmp', user_name, '.odin')
+    if addition_path is None:
+        addition_path = ''
+    addition_path = str(addition_path)
+    if user:
+        tmp_path = os.path.join(os.path.expanduser('~'), 'tmp')
+    else:
+        tmp_path = os.path.join('/tmp', user_name)
     if not os.path.exists(tmp_path):
         os.makedirs(tmp_path)
-    return tmp_path
+    return os.path.join(tmp_path, addition_path)
 
 
 def get_from_module(module, identifier, environment=None):

@@ -36,11 +36,10 @@ def get_random_magic_seed():
 def get_random_generator():
     return _SEED_GENERATOR
 
+
 # ===========================================================================
 # Main
 # ===========================================================================
-
-
 def is_ndarray(x):
     return isinstance(x, np.ndarray)
 
