@@ -8,9 +8,18 @@ from __future__ import absolute_import, print_function, division
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
+from scipy.signal import lfilter
+from scipy.fftpack import fft
 
 import six
 import re
+
+
+# ===========================================================================
+# Vad
+# ===========================================================================
+def pre_emphasis(input, pre=0.97):
+    return lfilter([1.0, -pre], 1, input)
 
 
 # ===========================================================================
@@ -450,6 +459,9 @@ def samples_to_time(samples, sr=22050):
     return np.atleast_1d(samples) / float(sr)
 
 
+# ===========================================================================
+# frequencies
+# ===========================================================================
 def note_to_hz(note, **kwargs):
     '''Convert one or more note names to frequency (Hz)
 

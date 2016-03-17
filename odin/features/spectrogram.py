@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# ===========================================================================
+# The waveform and spectrogram preprocess utilities is adapted from:
+# [librosa](https://github.com/bmcfee/librosa)
+# Copyright (c) 2016, librosa development team.
+# Modified work Copyright 2016-2017 TrungNT
+# ===========================================================================
 from __future__ import print_function, division, absolute_import
 
 import six
@@ -14,7 +20,7 @@ MAX_MEM_BLOCK = 2**8 * 2**10
 SMALL_FLOAT = 1e-20
 
 
-def _validate_stft_arguments(n_fft=2048, hop_length=None, win_length=None):
+def _validate_stft_arguments(n_fft, hop_length, win_length):
     # By default, use the entire frame
     if win_length is None:
         win_length = n_fft
@@ -703,7 +709,279 @@ def logamplitude(S, ref_power=1.0, amin=1e-10, top_db=80.0):
     return log_spec
 
 
-def ipowspec(y, n_fft, hop_length=None, win_length=None, excit=None):
+# ===========================================================================
+# Filter
+# ===========================================================================
+def _fft_frequencies(sr=22050, n_fft=2048):
+    '''Alternative implementation of `np.fft.fftfreqs`
+
+    Parameters
+    ----------
+    sr : number > 0 [scalar]
+        Audio sampling rate
+
+    n_fft : int > 0 [scalar]
+        FFT window size
+
+
+    Returns
+    -------
+    freqs : np.ndarray [shape=(1 + n_fft/2,)]
+        Frequencies `(0, sr/n_fft, 2*sr/n_fft, ..., sr/2)`
+
+
+    Examples
+    --------
+    >>> librosa.fft_frequencies(sr=22050, n_fft=16)
+    array([     0.   ,   1378.125,   2756.25 ,   4134.375,
+             5512.5  ,   6890.625,   8268.75 ,   9646.875,  11025.   ])
+
+    '''
+
+    return np.linspace(0,
+                       float(sr) / 2,
+                       int(1 + n_fft // 2),
+                       endpoint=True)
+
+
+def _mel_frequencies(n_mels=128, fmin=0.0, fmax=11025.0, htk=False):
+    """Compute the center frequencies of mel bands.
+
+    Parameters
+    ----------
+    n_mels    : int > 0 [scalar]
+        number of Mel bins
+
+    fmin      : float >= 0 [scalar]
+        minimum frequency (Hz)
+
+    fmax      : float >= 0 [scalar]
+        maximum frequency (Hz)
+
+    htk       : bool
+        use HTK formula instead of Slaney
+
+    Returns
+    -------
+    bin_frequencies : ndarray [shape=(n_mels,)]
+        vector of n_mels frequencies in Hz which are uniformly spaced on the Mel
+        axis.
+
+    Examples
+    --------
+    >>> librosa.mel_frequencies(n_mels=40)
+    array([     0.   ,     85.317,    170.635,    255.952,
+              341.269,    426.586,    511.904,    597.221,
+              682.538,    767.855,    853.173,    938.49 ,
+             1024.856,   1119.114,   1222.042,   1334.436,
+             1457.167,   1591.187,   1737.532,   1897.337,
+             2071.84 ,   2262.393,   2470.47 ,   2697.686,
+             2945.799,   3216.731,   3512.582,   3835.643,
+             4188.417,   4573.636,   4994.285,   5453.621,
+             5955.205,   6502.92 ,   7101.009,   7754.107,
+             8467.272,   9246.028,  10096.408,  11025.   ])
+
+    """
+
+    # 'Center freqs' of mel bands - uniformly spaced between limits
+    min_mel = pp.hz_to_mel(fmin, htk=htk)
+    max_mel = pp.hz_to_mel(fmax, htk=htk)
+
+    mels = np.linspace(min_mel, max_mel, n_mels)
+
+    return pp.mel_to_hz(mels, htk=htk)
+
+
+def mel_filter(sr, n_fft, n_mels=128, fmin=0.0, fmax=None, htk=False):
+    """Create a Filterbank matrix to combine FFT bins into Mel-frequency bins
+
+    Parameters
+    ----------
+    sr        : number > 0 [scalar]
+        sampling rate of the incoming signal
+
+    n_fft     : int > 0 [scalar]
+        number of FFT components
+
+    n_mels    : int > 0 [scalar]
+        number of Mel bands to generate
+
+    fmin      : float >= 0 [scalar]
+        lowest frequency (in Hz)
+
+    fmax      : float >= 0 [scalar]
+        highest frequency (in Hz).
+        If `None`, use `fmax = sr / 2.0`
+
+    htk       : bool [scalar]
+        use HTK formula instead of Slaney
+
+    Returns
+    -------
+    M         : np.ndarray [shape=(n_mels, 1 + n_fft/2)]
+        Mel transform matrix
+
+    Examples
+    --------
+    >>> melfb = librosa.filters.mel(22050, 2048)
+    >>> melfb
+    array([[ 0.   ,  0.016, ...,  0.   ,  0.   ],
+           [ 0.   ,  0.   , ...,  0.   ,  0.   ],
+           ...,
+           [ 0.   ,  0.   , ...,  0.   ,  0.   ],
+           [ 0.   ,  0.   , ...,  0.   ,  0.   ]])
+
+
+    Clip the maximum frequency to 8KHz
+
+    >>> librosa.filters.mel(22050, 2048, fmax=8000)
+    array([[ 0.  ,  0.02, ...,  0.  ,  0.  ],
+           [ 0.  ,  0.  , ...,  0.  ,  0.  ],
+           ...,
+           [ 0.  ,  0.  , ...,  0.  ,  0.  ],
+           [ 0.  ,  0.  , ...,  0.  ,  0.  ]])
+
+
+    >>> import matplotlib.pyplot as plt
+    >>> plt.figure()
+    >>> librosa.display.specshow(melfb, x_axis='linear')
+    >>> plt.ylabel('Mel filter')
+    >>> plt.title('Mel filter bank')
+    >>> plt.colorbar()
+    >>> plt.tight_layout()
+    """
+
+    if fmax is None:
+        fmax = float(sr) / 2
+
+    # Initialize the weights
+    n_mels = int(n_mels)
+    weights = np.zeros((n_mels, int(1 + n_fft // 2)))
+
+    # Center freqs of each FFT bin
+    fftfreqs = _fft_frequencies(sr=sr, n_fft=n_fft)
+
+    # 'Center freqs' of mel bands - uniformly spaced between limits
+    freqs = _mel_frequencies(n_mels + 2,
+                            fmin=fmin,
+                            fmax=fmax,
+                            htk=htk)
+
+    # Slaney-style mel is scaled to be approx constant energy per channel
+    enorm = 2.0 / (freqs[2:n_mels + 2] - freqs[:n_mels])
+
+    for i in range(n_mels):
+        # lower and upper slopes for all bins
+        lower = (fftfreqs - freqs[i]) / (freqs[i + 1] - freqs[i])
+        upper = (freqs[i + 2] - fftfreqs) / (freqs[i + 2] - freqs[i + 1])
+
+        # .. then intersect them with each other and zero
+        weights[i] = np.maximum(0, np.minimum(lower, upper)) * enorm[i]
+
+    return weights
+
+
+def dct(n_filters, n_input):
+    """Discrete cosine transform (DCT type-III) basis.
+
+    .. [1] http://en.wikipedia.org/wiki/Discrete_cosine_transform
+
+    Parameters
+    ----------
+    n_filters : int > 0 [scalar]
+        number of output components (DCT filters)
+
+    n_input : int > 0 [scalar]
+        number of input components (frequency bins)
+
+    Returns
+    -------
+    dct_basis: np.ndarray [shape=(n_filters, n_input)]
+        DCT (type-III) basis vectors [1]_
+
+    Examples
+    --------
+    >>> n_fft = 2048
+    >>> dct_filters = librosa.filters.dct(13, 1 + n_fft // 2)
+    >>> dct_filters
+    array([[ 0.031,  0.031, ...,  0.031,  0.031],
+           [ 0.044,  0.044, ..., -0.044, -0.044],
+           ...,
+           [ 0.044,  0.044, ..., -0.044, -0.044],
+           [ 0.044,  0.044, ...,  0.044,  0.044]])
+
+    >>> import matplotlib.pyplot as plt
+    >>> plt.figure()
+    >>> librosa.display.specshow(dct_filters, x_axis='linear')
+    >>> plt.ylabel('DCT function')
+    >>> plt.title('DCT filter bank')
+    >>> plt.colorbar()
+    >>> plt.tight_layout()
+    """
+
+    basis = np.empty((n_filters, n_input))
+    basis[0, :] = 1.0 / np.sqrt(n_input)
+
+    samples = np.arange(1, 2 * n_input, 2) * np.pi / (2.0 * n_input)
+
+    for i in range(1, n_filters):
+        basis[i, :] = np.cos(i * samples) * np.sqrt(2.0 / n_input)
+
+    return basis
+
+
+# ===========================================================================
+# Spectrogram
+# ===========================================================================
+def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1):
+    '''Helper function to retrieve a magnitude spectrogram.
+
+    This is primarily used in feature extraction functions that can operate on
+    either audio time-series or spectrogram input.
+
+
+    Parameters
+    ----------
+    y : None or np.ndarray [ndim=1]
+        If provided, an audio time series
+
+    S : None or np.ndarray
+        Spectrogram input, optional
+
+    n_fft : int > 0
+        STFT window size
+
+    hop_length : int > 0
+        STFT hop length
+
+    power : float > 0
+        Exponent for the magnitude spectrogram,
+        e.g., 1 for energy, 2 for power, etc.
+
+    Returns
+    -------
+    S_out : np.ndarray [dtype=np.float32]
+        - If `S` is provided as input, then `S_out == S`
+        - Else, `S_out = |stft(y, n_fft=n_fft, hop_length=hop_length)|**power`
+
+    n_fft : int > 0
+        - If `S` is provided, then `n_fft` is inferred from `S`
+        - Else, copied from input
+    '''
+    n_fft, hop_length, win_length = _validate_stft_arguments(
+        n_fft, hop_length, win_length)
+
+    # Otherwise, compute a magnitude spectrogram from input
+    S = np.power(
+        np.abs(
+            stft(y, n_fft=n_fft, hop_length=hop_length, win_length=win_length)),
+        power)
+
+    return S
+
+
+def ispectrogram(y, n_fft, hop_length=None, win_length=None, power=1,
+    excit=None):
     ''' Attempt to go back from specgram-like powerspec to audio waveform
     by scaling specgram of white noise
     Parameters
@@ -747,6 +1025,162 @@ def ipowspec(y, n_fft, hop_length=None, win_length=None, excit=None):
     if r is None:
         r = np.random.randn(xlen)
     R = stft(r, n_fft, hop_length=hop_length, win_length=win_length)
-    R = R[:, :y.shape[1]]
-    R = R * np.sqrt(y)
+    if R.shape[1] < y.shape[1]:
+        y = y[:, :R.shape[1]]
+    elif R.shape[1] > y.shape[1]:
+        R = R[:, :y.shape[1]]
+    R = R * np.power(y, 1 / power)
     return istft(R, hop_length=hop_length, win_length=win_length)
+
+
+def melspectrogram(y=None, sr=22050,
+                   n_fft=2048, hop_length=None, win_length=None,
+                   n_mels=128, fmin=0.0, fmax=None):
+    """Compute a Mel-scaled power spectrogram.
+
+    Parameters
+    ----------
+    y : np.ndarray [shape=(n,)] or None
+        audio time-series
+
+    sr : number > 0 [scalar]
+        sampling rate of `y`
+
+    S : np.ndarray [shape=(d, t)]
+        power spectrogram
+
+    n_fft : int > 0 [scalar]
+        length of the FFT window
+
+    hop_length : int > 0 [scalar]
+        number of samples between successive frames.
+        See `librosa.core.stft`
+
+    kwargs : additional keyword arguments
+      Mel filter bank parameters.
+      See `librosa.filters.mel` for details.
+
+    Returns
+    -------
+    S : np.ndarray [shape=(n_mels, t)]
+        Mel power spectrogram
+
+    See Also
+    --------
+    librosa.filters.mel
+        Mel filter bank construction
+
+    librosa.core.stft
+        Short-time Fourier Transform
+
+
+    Examples
+    --------
+    >>> y, sr = librosa.load(librosa.util.example_audio_file())
+    >>> librosa.feature.melspectrogram(y=y, sr=sr)
+    array([[  2.891e-07,   2.548e-03, ...,   8.116e-09,   5.633e-09],
+           [  1.986e-07,   1.162e-02, ...,   9.332e-08,   6.716e-09],
+           ...,
+           [  3.668e-09,   2.029e-08, ...,   3.208e-09,   2.864e-09],
+           [  2.561e-10,   2.096e-09, ...,   7.543e-10,   6.101e-10]])
+
+    Using a pre-computed power spectrogram
+
+    >>> D = np.abs(librosa.stft(y))**2
+    >>> S = librosa.feature.melspectrogram(S=D)
+
+    >>> # Passing through arguments to the Mel filters
+    >>> S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128,
+    ...                                     fmax=8000)
+
+    >>> import matplotlib.pyplot as plt
+    >>> librosa.display.specshow(librosa.logamplitude(S,
+    ...                                               ref_power=np.max),
+    ...                          y_axis='mel', fmax=8000,
+    ...                          x_axis='time')
+    >>> plt.colorbar(format='%+2.0f dB')
+    >>> plt.title('Mel spectrogram')
+    >>> plt.tight_layout()
+
+
+    """
+
+    S, n_fft = spectrogram(y=y, n_fft=n_fft,
+        hop_length=hop_length, win_length=win_length, power=2)
+
+    # Build a Mel filter
+    mel_basis = mel_filter(sr, n_fft, n_mels=n_mels, fmin=fmin, fmax=fmax)
+
+    return np.dot(mel_basis, S)
+
+
+# -- Mel spectrogram and MFCCs -- #
+def mfcc(y=None, sr=22050, n_mfcc=20, **kwargs):
+    """Mel-frequency cepstral coefficients
+
+    Parameters
+    ----------
+    y     : np.ndarray [shape=(n,)] or None
+        audio time series
+
+    sr    : number > 0 [scalar]
+        sampling rate of `y`
+
+    S     : np.ndarray [shape=(d, t)] or None
+        log-power Mel spectrogram
+
+    n_mfcc: int > 0 [scalar]
+        number of MFCCs to return
+
+    kwargs : additional keyword arguments
+        Arguments to `melspectrogram`, if operating
+        on time series input
+
+    Returns
+    -------
+    M     : np.ndarray [shape=(n_mfcc, t)]
+        MFCC sequence
+
+    See Also
+    --------
+    melspectrogram
+
+    Examples
+    --------
+    Generate mfccs from a time series
+
+    >>> y, sr = librosa.load(librosa.util.example_audio_file())
+    >>> librosa.feature.mfcc(y=y, sr=sr)
+    array([[ -5.229e+02,  -4.944e+02, ...,  -5.229e+02,  -5.229e+02],
+           [  7.105e-15,   3.787e+01, ...,  -7.105e-15,  -7.105e-15],
+           ...,
+           [  1.066e-14,  -7.500e+00, ...,   1.421e-14,   1.421e-14],
+           [  3.109e-14,  -5.058e+00, ...,   2.931e-14,   2.931e-14]])
+
+    Use a pre-computed log-power Mel spectrogram
+
+    >>> S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128,
+    ...                                    fmax=8000)
+    >>> librosa.feature.mfcc(S=librosa.logamplitude(S))
+    array([[ -5.207e+02,  -4.898e+02, ...,  -5.207e+02,  -5.207e+02],
+           [ -2.576e-14,   4.054e+01, ...,  -3.997e-14,  -3.997e-14],
+           ...,
+           [  7.105e-15,  -3.534e+00, ...,   0.000e+00,   0.000e+00],
+           [  3.020e-14,  -2.613e+00, ...,   3.553e-14,   3.553e-14]])
+
+    Get more components
+
+    >>> mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40)
+
+    Visualize the MFCC series
+
+    >>> import matplotlib.pyplot as plt
+    >>> librosa.display.specshow(mfccs, x_axis='time')
+    >>> plt.colorbar()
+    >>> plt.title('MFCC')
+    >>> plt.tight_layout()
+
+
+    """
+    S = logamplitude(melspectrogram(y=y, sr=sr, **kwargs))
+    return np.dot(dct(n_mfcc, S.shape[0]), S)

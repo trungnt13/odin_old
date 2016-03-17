@@ -4,6 +4,9 @@ import numpy as np
 
 from collections import OrderedDict
 
+from ..features import preprocess as pp
+from ..features import spectrogram as spt
+
 # ==================== Predefined datasets information ==================== #
 nist15_cluster_lang = OrderedDict([
     ['ara', ['ara-arz', 'ara-acm', 'ara-apc', 'ara-ary', 'ara-arb']],
@@ -108,7 +111,7 @@ def read(f, pcm = False):
     return read(f)
 
 
-def preprocess(signal, add_noise=False):
+def _preprocess(signal, add_noise=False):
     if len(signal.shape) > 1:
         signal = signal.ravel()
     signal = signal[signal != 0]
@@ -133,7 +136,7 @@ def logmel(signal, fs, n_filters=40, n_ceps=13,
     # overlap = nwin - int(shift * fs)
     # 2. preprocess.
     if clean:
-        signal = preprocess(signal)
+        signal = _preprocess(signal)
     # 3. logmel.
     logmel = sidekit.frontend.features.mfcc(signal,
                     lowfreq=f_min, maxfreq=f_max,
@@ -180,7 +183,7 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
     f_max = fs / 2
     # 2. Speech.
     if clean:
-        signal = preprocess(signal)
+        signal = _preprocess(signal)
     #####################################
     # 3. mfcc.
     # MFCC
@@ -208,8 +211,6 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
     # VAD
     nwin = int(fs * win)
     idx = sidekit.frontend.vad.vad_snr(signal, 30, fs=fs, shift=shift, nwin=nwin)
-    # if not returnVAD:
-        # mfcc = mfcc[idx, :]
     # Normalize
     if normalize:
         mean = np.mean(mfcc, axis = 0)
@@ -217,54 +218,3 @@ def mfcc(signal, fs, n_ceps, n_filters=40,
         mfcc = (mfcc - mean) / np.sqrt(var)
     # return
     return mfcc, idx
-
-
-def spectrogram(signal, fs, n_ceps=13, n_filters=40,
-        win=0.025, shift=0.01,
-        delta1=True, delta2=True, energy=False,
-        normalize=False, clean=True):
-    import sidekit
-
-    # 1. Const.
-    f_min = 0. # The minimal frequency of the filter bank
-    f_max = fs / 2
-    # 2. Speech.
-    if clean:
-        signal = preprocess(signal)
-    # 3. mfcc.
-    # MFCC
-    spt = sidekit.frontend.features.mfcc(signal,
-                    lowfreq=f_min, maxfreq=f_max,
-                    nlinfilt=0, nlogfilt=n_filters,
-                    fs=fs, nceps=n_ceps, midfreq=1000,
-                    nwin=win, shift=shift,
-                    get_spec=True, get_mspec=False)
-    logenergy = spt[1]
-    spt = spt[2].astype(np.float32)
-    # 4. Add more information.
-    tmp = [spt]
-    if delta1 or delta2:
-        d1 = sidekit.frontend.features.compute_delta(spt,
-                        win=3, method='filter')
-        d2 = sidekit.frontend.features.compute_delta(d1,
-                        win=3, method='filter')
-        if delta1: tmp.append(d1)
-        if delta2: tmp.append(d2)
-    spt = np.concatenate(tmp, 1)
-    if energy:
-        spt = np.concatenate((spt, logenergy.reshape(-1, 1)), axis=1)
-
-    # 5. Vad and normalize.
-    # VAD
-    nwin = int(fs * win)
-    idx = sidekit.frontend.vad.vad_snr(signal, 30,
-        fs=fs, shift=shift, nwin=nwin)
-    # if not returnVAD:
-        # spt = spt[idx, :]
-    # Normalize
-    if normalize:
-        mean = np.mean(spt, axis = 0)
-        var = np.var(spt, axis = 0)
-        spt = (spt - mean) / np.sqrt(var)
-    # return
-    return spt, idx

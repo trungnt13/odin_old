@@ -1043,6 +1043,13 @@ def as_index_map(keys, values):
 # ===========================================================================
 # Misc
 # ===========================================================================
+from scipy.io import wavfile
+
+
+def save_wav(path, s, fs):
+    wavfile.write(path, fs, s)
+
+
 def play_audio(data, fs, volumn=1, speed=1):
     ''' Play audio from numpy array.
 
