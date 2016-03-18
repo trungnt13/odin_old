@@ -93,6 +93,39 @@ class BatchTest(unittest.TestCase):
         self.f2.close()
         cleanUp()
 
+    def test_normalize(self):
+        # ====== Input ====== #
+        np.random.seed(12)
+        X = np.random.randint(0, 1000, size=(4000, 80, 30)).astype(np.float64)
+        x1 = X[:2000]
+        x2 = X[2000:]
+
+        f = h5py.File('/tmp/tmp.h5', 'w')
+        f['x1'] = x1
+        f['x2'] = x2
+        f.close()
+
+        ds = dataset('/tmp/tmp.h5', 'r+')
+        x = ds['x1', 'x2']
+        axis = (0, 2)
+        self.assertLessEqual(
+            np.sum(np.abs(x.sum(axis) - X.sum(axis))), 0.0005)
+        self.assertLessEqual(
+            np.sum(np.abs(x.sum2(axis) - np.power(X, 2).sum(axis))), 0.0005)
+        self.assertLessEqual(
+            np.sum(np.abs(x.var(axis) - X.var(axis))), 0.0005)
+        self.assertLessEqual(
+            np.sum(np.abs(x.mean(axis) - X.mean(axis))), 0.0005)
+        self.assertLessEqual(
+            np.sum(np.abs(x.std(axis) - X.std(axis))), 0.0005)
+
+        x.normalize((0, 1))
+        self.assertLessEqual(np.sum(x.mean(axis)), 0.0005)
+        self.assertAlmostEqual(round(np.mean(x.std(axis)), 4), 1.)
+
+        if os.path.exists('/tmp/tmp.h5'):
+            os.remove('/tmp/tmp.h5')
+
     def test_cross_iter_2_hdf(self):
         for i in xrange(10):
             start, end = np.random.rand(1)[0] / 2, np.random.rand(1)[0] / 2
@@ -136,11 +169,6 @@ class BatchTest(unittest.TestCase):
         self.assertEqual(X5.sum2(0).tolist(), np.power(X, 2).sum(0).tolist())
         self.assertEqual(X5.mean(0).tolist(), X.mean(0).tolist())
         self.assertEqual(X5.var(0).tolist(), X.var(0).tolist())
-
-        self.assertEqual(X5.sum(1).tolist(), X.sum(1).tolist())
-        self.assertEqual(X5.sum2(1).tolist(), np.power(X, 2).sum(1).tolist())
-        self.assertEqual(X5.mean(1).tolist(), X.mean(1).tolist())
-        self.assertEqual(X5.var(1).tolist(), X.var(1).tolist())
 
     def test_double_iteration(self):
         X12 = batch(['X1', 'X2'], [self.f1, self.f2])
@@ -241,16 +269,9 @@ class BatchTest(unittest.TestCase):
 
         # arithmetic test
         self.assertEqual(tmp.sum(0).tolist(), b.sum(0).tolist())
-        self.assertEqual(tmp.sum(1).tolist(), b.sum(1).tolist())
-
         self.assertEqual(np.power(tmp, 2).sum(0).tolist(), b.sum2(0).tolist())
-        self.assertEqual(np.power(tmp, 2).sum(1).tolist(), b.sum2(1).tolist())
-
         self.assertEqual(tmp.mean(0).tolist(), b.mean(0).tolist())
-        self.assertEqual(tmp.mean(1).tolist(), b.mean(1).tolist())
-
         self.assertEqual(tmp.var(0).tolist(), b.var(0).tolist())
-        self.assertEqual(tmp.var(1).tolist(), b.var(1).tolist())
 
         # Iteration test
         it = np.concatenate(list(b.iter(7, shuffle=False, mode=0)), 0)

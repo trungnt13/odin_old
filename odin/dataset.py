@@ -3,6 +3,7 @@ from __future__ import print_function, division, absolute_import
 import os
 import numpy as np
 from numpy.random import RandomState
+import math
 
 from .base import OdinObject
 from .utils import create_batch, queue
@@ -62,6 +63,19 @@ def _hdf5_append_to_dataset(hdf_dataset, data):
     hdf_dataset[curr_size:] = data
 
 
+def _validate_operate_axis(axis):
+    ''' as we iterate over first dimension, it is prerequisite to
+    have 0 in the axis of operator
+    '''
+    if not isinstance(axis, (tuple, list)):
+        axis = [axis]
+    axis = tuple(int(i) for i in axis)
+    if 0 not in axis:
+        raise ValueError('Expect 0 in the operating axis because we always'
+                         ' iterate data over the first dimension.')
+    return axis
+
+
 class _dummy_shuffle():
 
     @staticmethod
@@ -72,11 +86,10 @@ class _dummy_shuffle():
     def permutation(x):
         return np.arange(x)
 
+
 # ===========================================================================
 # Main code
 # ===========================================================================
-
-
 class batch(object):
 
     """Batch object
@@ -185,85 +198,84 @@ class batch(object):
         return self
 
     # ==================== Arithmetic ==================== #
-    def sum2(self, axis=0):
-        ''' sum(X^2) '''
-        self._is_dataset_init()
-        if self._is_array_mode:
-            return np.power(self[:], 2).sum(axis)
+    def _iterating_operator(self, ops, axis):
+        '''Execute a list of ops on X given the axis or axes'''
+        axis = _validate_operate_axis(axis)
+        shape = self.shape
+        shape = [shape[i] for i in axis]
+        if not isinstance(ops, (tuple, list)):
+            ops = [ops]
 
-        s = 0
-        isInit = False
-        for X in self.iter(shuffle=False):
+        if self._is_array_mode:
+            X = self[:]
+            return [o(X, axis) for o in ops]
+
+        # init values all zeros
+        s = [0.] * len(ops)
+        # less than million data points, not a big deal
+        for X in self.iter(batch_size=1024, shuffle=False, mode=0):
             X = X.astype(np.float64)
-            if axis == 0:
-                # for more stable precision
-                s += np.sum(np.power(X, 2), 0)
-            else:
-                if not isInit:
-                    s = [np.sum(np.power(X, 2), axis)]
-                    isInit = True
-                else:
-                    s.append(np.sum(np.power(X, 2), axis))
-        if isinstance(s, list):
-            s = np.concatenate(s, axis=0)
+            s = [i + o(X, axis) for i, o in zip(s, ops)]
         return s
+
+    def sum2(self, axis=0):
+        ''' sum(X^2)
+        This function is the core of all operator here
+        '''
+        ops = lambda x, axis: np.sum(np.power(x, 2), axis=axis)
+        return self._iterating_operator(ops, axis)[0]
 
     def sum(self, axis=0):
         ''' sum(X) '''
-        self._is_dataset_init()
-        if self._is_array_mode:
-            return self[:].sum(axis)
+        ops = lambda x, axis: np.sum(x, axis=axis)
+        return self._iterating_operator(ops, axis)[0]
 
-        s = 0
-        isInit = False
-        for X in self.iter(shuffle=False):
-            X = X.astype(np.float64)
-            if axis == 0:
-                # for more stable precision
-                s += np.sum(X, 0)
-            else:
-                if not isInit:
-                    s = [np.sum(X, axis)]
-                    isInit = True
-                else:
-                    s.append(np.sum(X, axis))
-        if isinstance(s, list):
-            s = np.concatenate(s, axis=0)
-        return s
+    def normalize(self, axis=0):
+        axis = _validate_operate_axis(axis)
+        shape = self.shape
+        shape = [shape[i] for i in axis]
+
+        mean = self.mean(axis=axis)
+        std = self.std(axis=axis)
+        batch_size = 256
+        for d in self._data:
+            start = 0
+            n = d.shape[0]
+            while start < n:
+                end = min(start + batch_size, n)
+                _ = d[start:end]
+                d[start:end] = (_ - mean) / std
+                start = end
 
     def mean(self, axis=0):
+        axis = _validate_operate_axis(axis)
         self._is_dataset_init()
+        shape = self.shape
+        shape = [shape[i] for i in axis]
 
         s = self.sum(axis)
-        return s / self.shape[axis]
+        return s / np.prod(shape)
 
     def var(self, axis=0):
+        axis = _validate_operate_axis(axis)
         self._is_dataset_init()
         if self._is_array_mode:
             return np.var(np.concatenate(self._data, 0), axis)
+        shape = self.shape
+        shape = [shape[i] for i in axis]
 
-        v2 = 0
-        v1 = 0
-        isInit = False
-        n = self.shape[axis]
-        for X in self.iter(shuffle=False):
-            X = X.astype(np.float64)
-            if axis == 0:
-                v2 += np.sum(np.power(X, 2), axis)
-                v1 += np.sum(X, axis)
-            else:
-                if not isInit:
-                    v2 = [np.sum(np.power(X, 2), axis)]
-                    v1 = [np.sum(X, axis)]
-                    isInit = True
-                else:
-                    v2.append(np.sum(np.power(X, 2), axis))
-                    v1.append(np.sum(X, axis))
-        if isinstance(v2, list):
-            v2 = np.concatenate(v2, axis=0)
-            v1 = np.concatenate(v1, axis=0)
+        v2, v1 = self._iterating_operator(
+            [lambda x, axis: np.sum(np.power(x, 2), axis),
+             lambda x, axis: np.sum(x, axis)],
+            axis=axis)
+
+        n = np.prod(shape)
         v = v2 - 1 / n * np.power(v1, 2)
         return v / n
+
+    def std(self, axis=0):
+        var = self.var(axis=axis)
+        return np.sqrt(var)
 
     # ==================== manupilation ==================== #
     def append(self, other):
@@ -575,6 +587,17 @@ class dataset(OdinObject):
 
     '''
     dataset object to manage multiple hdf5 file
+
+    Parameters
+    ----------
+    path : str
+        file path
+    mode : 'r', 'r+', 'w', 'w-', 'a'
+        r       Readonly, file must exist
+        r+      Read/write, file must exist
+        w       Create file, truncate if exists
+        w- or x Create file, fail if exists
+        a       Read/write if exists, create otherwise (default)
 
     Note
     ----
