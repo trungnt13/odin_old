@@ -234,10 +234,16 @@ class batch(object):
         axis = _validate_operate_axis(axis)
         shape = self.shape
         shape = [shape[i] for i in axis]
-
-        mean = self.mean(axis=axis)
-        std = self.std(axis=axis)
-        batch_size = 256
+        n = np.prod(shape)
+        # ====== this only 1 pass, more efficience ====== #
+        sum2, sum1 = self._iterating_operator(
+            [lambda x, axis: np.sum(np.power(x, 2), axis),
+             lambda x, axis: np.sum(x, axis)],
+            axis=axis)
+        mean = sum1 / n
+        std = np.sqrt((sum2 - 1 / n * np.power(sum1, 2)) / n)
+        # ====== normalize data ====== #
+        batch_size = 1024
         for d in self._data:
             start = 0
             n = d.shape[0]
