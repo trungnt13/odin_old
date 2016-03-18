@@ -160,7 +160,7 @@ def stft(y, n_fft=2048, hop_length=None, win_length=None, window=None,
 
     if window is None:
         # Default is an asymmetric Hann window
-        fft_window = scipy.signal.hann(object, sym=False)
+        fft_window = scipy.signal.hann(win_length, sym=False)
     elif six.callable(window):
         # User supplied a window function
         fft_window = window(win_length)
