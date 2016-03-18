@@ -230,7 +230,34 @@ class batch(object):
         ops = lambda x, axis: np.sum(x, axis=axis)
         return self._iterating_operator(ops, axis)[0]
 
-    def normalize(self, axis=0):
+    def normalize(self, axis, mean=None, std=None):
+        axis = _validate_operate_axis(axis)
+        if mean is None or std is None:
+            mean, std = self.stat(axis)
+        shape = self.shape
+        # reshape so mean and std is broadcastable
+        stat_shape = tuple([shape[i] if i not in axis else 1
+                            for i in range(len(shape))])
+        mean = np.reshape(mean, stat_shape)
+        std = np.reshape(std, stat_shape)
+        # ====== normalize data ====== #
+        batch_size = 1024
+        # variable for progress monitor
+        p = 0
+        size = self.shape[0]
+        for d in self._data:
+            start = 0
+            n = d.shape[0]
+            while start < n:
+                end = min(start + batch_size, n)
+                _ = d[start:end]
+                d[start:end] = (_ - mean) / std
+                p += end - start
+                start = end
+                logger.progress(p, size, title='Normalizing')
+
+    def stat(self, axis=0):
+        ''' optimize the calculation to return mean and std at the same time '''
         axis = _validate_operate_axis(axis)
         shape = self.shape
         shape = [shape[i] for i in axis]
@@ -242,16 +269,7 @@ class batch(object):
             axis=axis)
         mean = sum1 / n
         std = np.sqrt((sum2 - 1 / n * np.power(sum1, 2)) / n)
-        # ====== normalize data ====== #
-        batch_size = 1024
-        for d in self._data:
-            start = 0
-            n = d.shape[0]
-            while start < n:
-                end = min(start + batch_size, n)
-                _ = d[start:end]
-                d[start:end] = (_ - mean) / std
-                start = end
+        return mean, std
 
     def mean(self, axis=0):
         axis = _validate_operate_axis(axis)
