@@ -26,14 +26,14 @@ __all__ = [
     "poisson",
     "cosine_proximity",
     "binary_accuracy",
-    "categorical_accuracy"
+    "categorical_accuracy",
+    "MfoM"
 ]
+
 
 # ===========================================================================
 # Differentiable
 # ===========================================================================
-
-
 def squared_loss(y_pred, y_true):
     return T.square(y_pred - y_true)
 
@@ -126,11 +126,10 @@ def cosine_proximity(y_pred, y_true):
     y_pred = T.l2_normalize(y_pred, axis=-1)
     return -y_true * y_pred
 
+
 # ===========================================================================
 # Stochastic optimization
 # ===========================================================================
-
-
 def contrastive_divergence(input_sampled, bias_sampled,
                            input_original, bias_original):
     ''' Contrastive divergence cost function
@@ -145,11 +144,10 @@ def contrastive_divergence(input_sampled, bias_sampled,
     return T.mean(-hidden_original - bias_original) - \
     T.mean(-hidden_sampled - bias_sampled)
 
+
 # ===========================================================================
 # Not differentiable
 # ===========================================================================
-
-
 def binary_accuracy(y_pred, y_true, threshold=0.5):
     """ Non-differentiable """
     y_pred = T.ge(y_pred, threshold)
@@ -177,3 +175,43 @@ def categorical_accuracy(y_pred, y_true, top_k=1):
 
 def mean_categorical_accuracy(y_pred, y_true, top_k=1):
     return T.mean(categorical_accuracy(y_pred, y_true, top_k))
+
+
+# ===========================================================================
+# Special objective for Language and accent recognition
+# ===========================================================================
+def MfoM(y_pred, y_true, distribution,
+    alpha=1., beta=0., eta=1.,
+    Cmiss=1., Cfa=1., Ptar=0.5,
+    epsilon=10e-8):
+    nb_classes = len(distribution)
+    # clip probability value so it not 0. or 1.
+    y_pred = T.clip(y_pred, epsilon, 1 - epsilon)
+    # if 1 dimension, transform to one-hot encoding
+    if T.ndim(y_true) == 1:
+        y_true = T.one_hot(y_true, nb_classes)
+    # ====== calculate strategy function ====== #
+    # trick to clip Non-nan and non-inf values
+    _ = T.clip((nb_classes - 1) * y_pred, epsilon, 1 - epsilon)
+    d = 1. / eta * (T.log(1 - _) - T.log(_))
+    l = 1. / (1 + T.exp(-alpha * d - beta))
+    # anti-model one-hot encoding matrix
+    y_false = T.switch(y_true, 0, 1)
+    # ====== calculate statistics ====== #
+    FN = l * y_true
+    TN = l * y_false
+    TP = (1 - l) * y_true
+    FP = (1 - l) * y_false
+    # ====== miss and false alarm ====== #
+    # sum over all samples (axis=0), plus epsilon so no divide by zero issue
+    Pmiss = T.sum(FN / (TP + FN + epsilon), axis=0)
+    Pfa = T.sum(FP / (FP + TN + epsilon), axis=0)
+    # ====== main cost ====== #
+    model_cost = Cmiss * Ptar * Pmiss
+    anti_model = 1 / (nb_classes - 1) * (Cfa * (1 - Ptar) * Pfa)
+    # Cavg now is vector of [1 x nb_classes], Cpair score for each language
+    # within cluster.
+    Cavg = 1 / nb_classes * (model_cost + anti_model)
+    # now take mean of all languages
+    Cavg = T.mean(Cavg)
+    return Cavg

@@ -111,6 +111,16 @@ def read(f, pcm = False):
     return read(f)
 
 
+def save(f, s, fs, subtype=None):
+    '''
+    Return
+    ------
+        waveform (ndarray), sample rate (int)
+    '''
+    from soundfile import write
+    return write(f, s, fs, subtype=subtype)
+
+
 def _preprocess(signal, add_noise=False):
     if len(signal.shape) > 1:
         signal = signal.ravel()

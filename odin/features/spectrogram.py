@@ -160,12 +160,10 @@ def stft(y, n_fft=2048, hop_length=None, win_length=None, window=None,
 
     if window is None:
         # Default is an asymmetric Hann window
-        fft_window = scipy.signal.hann(win_length, sym=False)
-
+        fft_window = scipy.signal.hann(object, sym=False)
     elif six.callable(window):
         # User supplied a window function
         fft_window = window(win_length)
-
     else:
         # User supplied a window vector.
         # Make sure it's an array:
@@ -933,7 +931,8 @@ def dct(n_filters, n_input):
 # ===========================================================================
 # Spectrogram
 # ===========================================================================
-def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1):
+def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1,
+    window=None, center=True):
     '''Helper function to retrieve a magnitude spectrogram.
 
     This is primarily used in feature extraction functions that can operate on
@@ -945,11 +944,15 @@ def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1):
     y : None or np.ndarray [ndim=1]
         If provided, an audio time series
 
-    S : None or np.ndarray
-        Spectrogram input, optional
-
     n_fft : int > 0
         STFT window size
+
+    win_length  : int <= n_fft [scalar]
+        Each frame of audio is windowed by `window()`.
+        The window will be of length `win_length` and then padded
+        with zeros to match `n_fft`.
+
+        If unspecified, defaults to ``win_length = n_fft``.
 
     hop_length : int > 0
         STFT hop length
@@ -964,9 +967,6 @@ def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1):
         - If `S` is provided as input, then `S_out == S`
         - Else, `S_out = |stft(y, n_fft=n_fft, hop_length=hop_length)|**power`
 
-    n_fft : int > 0
-        - If `S` is provided, then `n_fft` is inferred from `S`
-        - Else, copied from input
     '''
     n_fft, hop_length, win_length = _validate_stft_arguments(
         n_fft, hop_length, win_length)
@@ -974,26 +974,43 @@ def spectrogram(y, n_fft=2048, hop_length=None, win_length=None, power=1):
     # Otherwise, compute a magnitude spectrogram from input
     S = np.power(
         np.abs(
-            stft(y, n_fft=n_fft, hop_length=hop_length, win_length=win_length)),
+            stft(y, n_fft=n_fft, hop_length=hop_length, win_length=win_length,
+                center=center, window=window)),
         power)
 
     return S
 
 
 def ispectrogram(y, n_fft, hop_length=None, win_length=None, power=1,
-    excit=None):
+    normalize=True, excit=None):
     ''' Attempt to go back from specgram-like powerspec to audio waveform
     by scaling specgram of white noise
     Parameters
     ----------
-    y:
-        y = abs(specgram(x*32768,NFFT,SAMPRATE,WINDOW,NOVERLAP)).^2;
-    sr: int
-        sample rate
-    wintime: float
-        windows time in millisecond
-    steptime: float
-        step time in millisecond
+    y : None or np.ndarray [ndim=1]
+        If provided, an audio time series
+
+    n_fft : int > 0
+        STFT window size
+
+    win_length  : int <= n_fft [scalar]
+        Each frame of audio is windowed by `window()`.
+        The window will be of length `win_length` and then padded
+        with zeros to match `n_fft`.
+
+        If unspecified, defaults to ``win_length = n_fft``.
+
+    hop_length : int > 0
+        STFT hop length
+
+    power : float > 0
+        Exponent for the magnitude spectrogram,
+        e.g., 1 for energy, 2 for power, etc.
+
+    normalize : bool
+        it is suggested to normalize the reconstructed signal or you
+        won't hear anything
+
     '''
     # default values:
     # sr = 8000Hz
@@ -1030,7 +1047,10 @@ def ispectrogram(y, n_fft, hop_length=None, win_length=None, power=1,
     elif R.shape[1] > y.shape[1]:
         R = R[:, :y.shape[1]]
     R = R * np.power(y, 1 / power)
-    return istft(R, hop_length=hop_length, win_length=win_length)
+    y_ = istft(R, hop_length=hop_length, win_length=win_length)
+    if normalize:
+        y_ = (y_ - np.mean(y_)) / np.std(y_)
+    return y_
 
 
 def melspectrogram(y=None, sr=22050,
