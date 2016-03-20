@@ -660,7 +660,11 @@ class trainer(OdinObject):
                         niter = current_it / self.epoch
                     # ====== print progress ====== #
                     if progress:
-                        title = task.name + ',output:%s' % str(np.mean(self.output))
+                        title = task.name + ',output:%s'
+                        if isinstance(self.output, (tuple, list)):
+                            title = title % '[not-monitorable]'
+                        else:
+                            title = title % str(np.mean(self.output))
                         logger.progress(current_it % niter, niter, title=title)
                     # ====== run subtasks ====== #
                     for i, j in sub_it.iteritems():
@@ -674,8 +678,11 @@ class trainer(OdinObject):
                                 maxit = i.est_niter()
                                 while j.next() is not None:
                                     if progress:
-                                        title = i.name + ',output:%s' % \
-                                        str(np.mean(self.output))
+                                        title = i.name + ',output:%s'
+                                        if isinstance(self.output, (tuple, list)):
+                                            title = title % '[not-monitorable]'
+                                        else:
+                                            title = title % str(np.mean(self.output))
                                         logger.progress(self.iter, maxit, title)
                                 sub_it[i] = i.run_iter() # new run_iter
                     # ====== check signal ====== #
