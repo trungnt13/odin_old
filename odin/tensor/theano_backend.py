@@ -955,9 +955,8 @@ def dropout(x, level, rescale=True, noise_shape=None,
         x /= retain_prob
     return x
 
+
 # ==================== Regularizations ==================== #
-
-
 def l2_normalize(x, axis):
     norm = T.sqrt(T.sum(T.square(x), axis=axis, keepdims=True))
     return x / norm
@@ -1014,11 +1013,10 @@ def correntropy_regularize(x, sigma=1.):
     '''
     return -T.sum(T.mean(T.exp(x**2 / sigma), axis=0)) / T.sqrt(2 * np.pi * sigma)
 
+
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
-
-
 def conv2d(x, kernel, strides=(1, 1),
            border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
@@ -1102,6 +1100,39 @@ def conv2d(x, kernel, strides=(1, 1),
             conv_out = conv_out[:, :,
                                 shift_x: shift_x + expected_width,
                                 shift_y: shift_y + expected_height]
+    if dim_ordering == 'tf':
+        conv_out = conv_out.dimshuffle((0, 2, 3, 1))
+    return conv_out
+
+
+def deconv2d(x, kernel, img_shape,
+    strides=(1, 1), border_mode='valid', dim_ordering='th'):
+    '''
+    Run on cuDNN if available.
+    border_mode: string, "same" or "valid".
+    img_shape: (width, height) of original image
+    '''
+    if dim_ordering not in {'th', 'tf'}:
+        raise Exception('Unknown dim_ordering ' + str(dim_ordering))
+
+    if dim_ordering == 'tf':
+        # TF uses the last dimension as channel dimension,
+        # instead of the 2nd one.
+        # TH input shape: (samples, input_depth, rows, cols)
+        # TH kernel shape: (depth, input_depth, rows, cols)
+        # TF input shape: (samples, rows, cols, input_depth)
+        # TF kernel shape: (rows, cols, input_depth, depth)
+        x = x.dimshuffle((0, 3, 1, 2))
+        kernel = kernel.dimshuffle((3, 2, 0, 1))
+
+    border_mode = 'half' if border_mode == 'same' else border_mode
+    op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
+        imshp=None,
+        kshp=None,
+        subsample=strides, border_mode=border_mode,
+        filter_flip=True)
+    conv_out = op(kernel, x, img_shape)
+
     if dim_ordering == 'tf':
         conv_out = conv_out.dimshuffle((0, 2, 3, 1))
     return conv_out

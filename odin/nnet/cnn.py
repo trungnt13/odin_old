@@ -15,6 +15,7 @@ from .pool import UpSampling2D
 __all__ = [
     "Conv2D",
     "Conv3D",
+    "Deconv2D"
 ]
 
 
@@ -85,60 +86,10 @@ def conv_output_length(input_length, filter_size, stride, pad=0):
 
 
 def conv_input_length(output_length, filter_size, stride, pad=0):
-    """Helper function to compute the input size of a convolution operation
-    This function computes the length along a single axis, which corresponds
-    to a 1D convolution. It can also be used for convolutions with higher
-    dimensionalities by using it individually for each axis.
-    Parameters
-    ----------
-    output_length : int
-        The size of the output.
-    filter_size : int
-        The size of the filter.
-    stride : int
-        The stride of the convolution operation.
-    pad : int, 'full' or 'same' (default: 0)
-        By default, the convolution is only computed where the input and the
-        filter fully overlap (a valid convolution). When ``stride=1``, this
-        yields an output that is smaller than the input by ``filter_size - 1``.
-        The `pad` argument allows you to implicitly pad the input with zeros,
-        extending the output size.
-        A single integer results in symmetric zero-padding of the given size on
-        both borders.
-        ``'full'`` pads with one less than the filter size on both sides. This
-        is equivalent to computing the convolution wherever the input and the
-        filter overlap by at least one position.
-        ``'same'`` pads with half the filter size on both sides (one less on
-        the second side for an even filter size). When ``stride=1``, this
-        results in an output size equal to the input size.
-    Returns
-    -------
-    int
-        The input size corresponding to the given convolution parameters for
-        the given output size. For a strided convolution, any input size of up
-        to ``stride - 1`` elements smaller than returned will still give the
-        same output size.
-    Raises
-    ------
-    ValueError
-        When an invalid padding is specified, a `ValueError` is raised.
-    Notes
-    -----
-    This can be used to compute the output size of a convolution backward pass,
-    also called transposed convolution, fractionally-strided convolution or
-    (wrongly) deconvolution in the literature.
-    """
-    if output_length is None:
-        return None
-    if pad == 'valid':
-        pad = 0
-    elif pad == 'full':
-        pad = filter_size - 1
-    elif pad == 'half':
-        pad = filter_size // 2
-    if not isinstance(pad, (int, long)):
-        raise ValueError('Invalid pad: {0}'.format(pad))
-    return output_length * stride - 2 * pad + filter_size - 1
+    # It is not possible to invert the shape of convolution given its output
+    # because // stride will floor the number and have 2 possible values
+    # for 1 stride
+    raise NotImplementedError
 
 
 class BaseConvLayer(OdinFunction):
@@ -255,7 +206,7 @@ class BaseConvLayer(OdinFunction):
     def __init__(self, incoming, num_filters, filter_size, stride=1, pad=0,
                  untie_biases=False,
                  W=T.np_glorot_uniform, b=T.np_constant,
-                 nonlinearity=T.relu, flip_filters=True,
+                 nonlinearity=T.relu, flip_filters=False,
                  unsupervised=False,
                  n=None, **kwargs):
         super(BaseConvLayer, self).__init__(
@@ -605,12 +556,6 @@ class Deconv2D(BaseConvLayer):
     nonlinearity : callable or None
         The nonlinearity that is applied to the layer activations. If None
         is provided, the layer will be linear.
-    flip_filters : bool (default: True)
-        Whether to flip the filters before sliding them over the input,
-        performing a convolution (this is the default), or not to flip them and
-        perform a correlation. Note that for some other convolutional layers in
-        Lasagne, flipping incurs an overhead and is disabled by default --
-        check the documentation when using learned weights from another layer.
     convolution : callable
         The convolution implementation to use. Usually it should be fine to
         leave this at the default value.
@@ -622,38 +567,58 @@ class Deconv2D(BaseConvLayer):
         Variable or expression representing the filter weights.
     b : Theano shared variable or expression
         Variable or expression representing the biases.
+
+    Notes
+    -----
+    flip_filters : bool (default: True)
+        (As Conv2D has default flip_filter=False, Deconv must flip_filter=True)
+        Whether to flip the filters before sliding them over the input,
+        performing a convolution (this is the default), or not to flip them and
+        perform a correlation. Note that for some other convolutional layers in
+        Lasagne, flipping incurs an overhead and is disabled by default --
+        check the documentation when using learned weights from another layer.
+
     """
 
-    def __init__(self, incoming, num_filters, filter_size, stride=(1, 1),
-                 pad=0, untie_biases=False,
+    def __init__(self, incoming, img_shape, filter_size,
+                 stride=(1, 1), pad=0, untie_biases=False,
                  W=T.np_glorot_uniform, b=T.np_constant,
                  nonlinearity=T.relu, **kwargs):
+        # image shape must contains: (n_channels, width, height)
+        if isinstance(img_shape, (tuple, list)):
+            if len(img_shape) == 4:
+                img_shape = img_shape[1:]
+            elif len(img_shape) != 3:
+                self.raise_arguments('img_shape must contains: '
+                                     '(n_channels, width, height) of the '
+                                     'original image.')
+        else:
+            self.raise_arguments('img_shape must contains: '
+                                 '(n_channels, width, height) of the '
+                                 'original image.')
+        img_shape = tuple(img_shape)
+        # ====== Init ====== #
         super(Deconv2D, self).__init__(
-            incoming, num_filters, filter_size, stride, pad, untie_biases,
-            W, b, nonlinearity, n=2, **kwargs)
+            incoming, img_shape[0], filter_size, stride, pad, untie_biases,
+            W, b, nonlinearity, flip_filters=True, n=2, **kwargs)
+        self.img_shape = img_shape
 
     def get_W_shape(self):
-        num_input_channels = self.input_shape[1]
+        num_input_channels = self.input_shape[0][1]
         # first two sizes are swapped compared to a forward convolution
         return (num_input_channels, self.num_filters) + self.filter_size
 
-    def get_output_shape_for(self, input_shape):
-        pad = self.pad if isinstance(self.pad, tuple) else (self.pad,) * self.n
-        batchsize = input_shape[0]
-        return ((batchsize, self.num_filters) +
-                tuple(conv_input_length(input, filter, stride, p)
-                      for input, filter, stride, p
-                      in zip(input_shape[2:], self.filter_size,
-                             self.stride, pad)))
+    @property
+    def output_shape(self):
+        outshape = []
+        for input_shape in self.input_shape:
+            outshape.append((input_shape[0],) + self.img_shape)
+        return outshape
 
     def convolve(self, input, **kwargs):
-        border_mode = 'half' if self.pad == 'same' else self.pad
-        op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
-            imshp=self.output_shape,
-            kshp=self.get_W_shape(),
-            subsample=self.stride, border_mode=self.pad)
-        conved = op(self.W, input, self.output_shape[2:])
-        return conved
+        output_shape = (self.img_shape[1], self.img_shape[2])
+        return T.deconv2d(input, self.W, output_shape,
+            strides=self.stride, border_mode=self.pad)
 
 
 class Conv3D(BaseConvLayer):

@@ -79,19 +79,38 @@ class FunctionsTest(unittest.TestCase):
                         (32, 32, 28, 28))
 
     def test_deconv(self):
-        f_conv = nnet.Conv2D((None, 3, 28, 28), num_filters=16,
-            b=None,
-            filter_size=(2, 2),
-            stride=(1, 1),
-            pad='same',
-            nonlinearity=T.linear)
+        filter_size = (3, 3)
+        stride = (3, 5)
+        pad = 'valid'
+        # ====== test ====== #
+        x = np.random.rand(16, 3, 28, 28)
+        W = T.variable(np.random.rand(32, 3, 3, 3))
 
-        f_deconv = f_conv.get_inv(f_conv)
-        f = T.function(f_deconv.input_var, f_deconv(False))
-        np.random.seed(13)
-        X = np.random.rand(32, 3, 28, 28)
-        X_ = f(X)[0]
-        self.assertEqual(X.shape, X_.shape)
+        f = nnet.Conv2D((None, 3, 28, 28),
+            num_filters=32,
+            filter_size=filter_size,
+            stride=stride,
+            pad=pad,
+            W=W,
+            b=None,
+            nonlinearity=T.linear)
+        f1 = nnet.Inverse(f, f)
+        f1 = T.function(inputs=f1.input_var, outputs=f1())
+        x1 = f1(x)[0]
+
+        # ====== Input ====== #
+        f2 = nnet.Deconv2D(f,
+            img_shape=f.input_shape[0],
+            filter_size=filter_size,
+            stride=stride,
+            pad=pad,
+            W=W,
+            b=None,
+            nonlinearity=T.linear)
+        f2 = T.function(inputs=f2.input_var, outputs=f2())
+        x2 = f2(x)[0]
+        self.assertEqual((np.abs(np.sum(x1 - x2))), 0.)
+        self.assertEqual(x1.shape, x2.shape)
 
     def test_dense_func(self):
         d3 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)

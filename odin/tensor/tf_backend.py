@@ -1169,11 +1169,10 @@ def correntropy_regularize(x, sigma=1.):
     '''
     return -sum(mean(tf.exp(tf.pow(x, 2) / sigma), axis=0)) / tf.sqrt(2 * np.pi * sigma)
 
+
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
-
-
 def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
            image_shape=None, filter_shape=None):
     '''Runs on cuDNN if available.
@@ -1216,6 +1215,13 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
     if _FLOATX == 'float64':
         x = tf.cast(x, 'float64')
     return x
+
+
+def deconv2d(x, kernel, kernel_shape, output_shape,
+           strides=(1, 1),
+           border_mode='valid',
+           dim_ordering='th'):
+    raise NotImplementedError
 
 
 def conv3d(x, kernel, strides=(1, 1, 1), border_mode='valid', dim_ordering='th',
