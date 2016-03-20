@@ -1389,7 +1389,7 @@ def one_hot(x, nb_class):
     return ret
 
 
-def confusion_matrix(pred, actual):
+def confusion_matrix(y_pred, y_true, labels=None):
     """
     Computes the confusion matrix of given vectors containing
     actual observations and predicted observations.
@@ -1397,6 +1397,11 @@ def confusion_matrix(pred, actual):
     ----------
     pred : 1-d or 2-d tensor variable
     actual : 1-d or 2-d tensor variable
+    labels : array, shape = [n_classes], optional
+        List of labels to index the matrix. This may be used to reorder
+        or select a subset of labels.
+        If none is given, those that appear at least once
+        in ``y_true`` or ``y_pred`` are used in sorted order.
 
     Returns
     -------
@@ -1405,7 +1410,6 @@ def confusion_matrix(pred, actual):
     ___________|___________
        Actual  |
                |
-    order : 1-d array of order of entries in rows and columns
     Examples
     --------
     >>> import theano
@@ -1420,25 +1424,26 @@ def confusion_matrix(pred, actual):
             [2, 1, 0],
             [0, 0, 1]]), array([ 0.,  1.,  2.])]
     """
-    if actual.ndim == 2:
-        actual = T.argmax(actual, axis=-1)
-    elif actual.ndim != 1:
+    if y_true.ndim == 2:
+        y_true = T.argmax(y_true, axis=-1)
+    elif y_true.ndim != 1:
         raise ValueError('actual must be 1-d or 2-d tensor variable')
-    if pred.ndim == 2:
-        pred = T.argmax(pred, axis=-1)
-    elif pred.ndim != 1:
+    if y_pred.ndim == 2:
+        y_pred = T.argmax(y_pred, axis=-1)
+    elif y_pred.ndim != 1:
         raise ValueError('pred must be 1-d or 2-d tensor variable')
 
-    order = T.extra_ops.Unique(False, False, False)(T.concatenate([actual, pred]))
+    if labels is None:
+        labels = T.extra_ops.Unique(False, False, False)(T.concatenate([y_true, y_pred]))
 
-    colA = actual.dimshuffle(0, 'x')
-    colP = pred.dimshuffle(0, 'x')
+    colA = y_true.dimshuffle(0, 'x')
+    colP = y_pred.dimshuffle(0, 'x')
 
-    oneHotA = T.eq(colA, order).astype('int64')
-    oneHotP = T.eq(colP, order).astype('int64')
+    oneHotA = T.eq(colA, labels).astype('int64')
+    oneHotP = T.eq(colP, labels).astype('int64')
 
     conf_mat = T.dot(oneHotA.T, oneHotP)
-    return [conf_mat, order]
+    return conf_mat
 
 
 def one_hot_max(x, axis=-1):
