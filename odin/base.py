@@ -453,8 +453,8 @@ class OdinFunction(OdinObject):
         '''
         raise NotImplementedError(self.__class__.__name__)
 
-    def get_cost(self, objective, y_true=None, **kwargs):
-        y_pred = self(training=False, **kwargs)
+    def get_cost(self, objective, y_true=None, training=False, **kwargs):
+        y_pred = self(training=training, **kwargs)
         # auto select y_true
         if y_true is None:
             if self.unsupervised:

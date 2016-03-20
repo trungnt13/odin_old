@@ -1389,6 +1389,58 @@ def one_hot(x, nb_class):
     return ret
 
 
+def confusion_matrix(pred, actual):
+    """
+    Computes the confusion matrix of given vectors containing
+    actual observations and predicted observations.
+    Parameters
+    ----------
+    pred : 1-d or 2-d tensor variable
+    actual : 1-d or 2-d tensor variable
+
+    Returns
+    -------
+    conf_mat : Confusion matrix of actual and predictions observations as shown below.
+               | Predicted
+    ___________|___________
+       Actual  |
+               |
+    order : 1-d array of order of entries in rows and columns
+    Examples
+    --------
+    >>> import theano
+    >>> from theano.tensor.nnet import confusion_matrix
+    >>> x = theano.tensor.vector()
+    >>> y = theano.tensor.vector()
+    >>> f = theano.function([x, y], confusion_matrix(x, y))
+    >>> a = [0, 1, 2, 1, 0]
+    >>> b = [0, 0, 2, 1, 2]
+    >>> print(f(a, b))
+    [array([[0, 0, 1],
+            [2, 1, 0],
+            [0, 0, 1]]), array([ 0.,  1.,  2.])]
+    """
+    if actual.ndim == 2:
+        actual = T.argmax(actual, axis=-1)
+    elif actual.ndim != 1:
+        raise ValueError('actual must be 1-d or 2-d tensor variable')
+    if pred.ndim == 2:
+        pred = T.argmax(pred, axis=-1)
+    elif pred.ndim != 1:
+        raise ValueError('pred must be 1-d or 2-d tensor variable')
+
+    order = T.extra_ops.Unique(False, False, False)(T.concatenate([actual, pred]))
+
+    colA = actual.dimshuffle(0, 'x')
+    colP = pred.dimshuffle(0, 'x')
+
+    oneHotA = T.eq(colA, order).astype('int64')
+    oneHotP = T.eq(colP, order).astype('int64')
+
+    conf_mat = T.dot(oneHotA.T, oneHotP)
+    return [conf_mat, order]
+
+
 def one_hot_max(x, axis=-1):
     '''
     Example

@@ -1387,6 +1387,10 @@ def one_hot(x, nb_class):
     return ret
 
 
+def confusion_matrix(pred, actual):
+    raise NotImplementedError
+
+
 def one_hot_max(x, axis=-1):
     '''
     Example
