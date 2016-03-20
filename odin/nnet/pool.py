@@ -223,29 +223,6 @@ class Pool2D(OdinFunction):
         self._log_footprint(training, inputs, outputs)
         return outputs
 
-    def get_inv(self, incoming, **kwargs):
-        if incoming is None:
-            incoming = self.output_shape
-        pool_size = self.pool_size
-        for inshape, outshape in zip(self.input_shape, self.output_shape):
-            if pool_size[-1] * outshape[-1] != inshape[-1] or \
-               pool_size[-2] * outshape[-2] != inshape[-2]:
-                self.raise_arguments('Cannot unpool this function since we '
-                                     'loss some information during pooling, '
-                                     'because the input_shape is not divisible '
-                                     'for the pool_isze, so, '
-                                     'input_shape={} cannot be unpooled from '
-                                     'output_shape={}.'.format(inshape, outshape))
-        algorithm = kwargs.pop('algorithm', 'repeat')
-        unpool = Unpool2DLayer(incoming, scale_factor=pool_size,
-            algorithm=algorithm, **kwargs)
-        for inshape, outshape in zip(unpool.input_shape, self.output_shape):
-            if inshape[1:] != outshape[1:]:
-                self.raise_arguments('Input_shape of invert function must equal '
-                                     'to output_shape of this function, but {} '
-                                     '!= {}'.format(inshape, outshape))
-        return unpool
-
 
 class MaxPool2D(Pool2D):
 

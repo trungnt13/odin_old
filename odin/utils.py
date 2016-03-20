@@ -196,22 +196,6 @@ class api(object):
         elif api == 'odin':
             return model(training=training, **kwargs)
 
-    @staticmethod
-    def invert_network(model):
-        api_ = api.get_object_api(model)
-        if api_ == 'odin':
-            children = model.get_children(include_self=True)
-            # the order of children is from output to input
-            prev = model
-            for i in children:
-                try:
-                    i = i.get_inv(prev)
-                    prev = i
-                except NotImplementedError:
-                    pass # no support for get_inv
-            return prev
-        else:
-            raise ValueError('Only support invert OdinNetwork')
 # ===========================================================================
 # DAA
 # ===========================================================================
