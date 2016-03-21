@@ -353,13 +353,13 @@ class model(OdinObject):
         return self._model
 
     # ==================== Network function ==================== #
-    def create_pred(self):
+    def create_pred(self, training=False):
         ''' Create prediction funciton '''
         self.get_model()
         # ====== Create prediction function ====== #
         if not self._pred_func:
             input_var = API.get_input_variables(self._model, self._api)
-            outputs = API.get_outputs(self._model, self._api, False)
+            outputs = API.get_outputs(self._model, self._api, training)
             # create prediction function
             self._pred_func = tensor.function(
                 inputs=input_var,
