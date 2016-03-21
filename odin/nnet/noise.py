@@ -90,7 +90,7 @@ class Dropout(OdinFunction):
         self.noise_dims = noise_dims
         self.consistent = consistent
 
-        if not hasattr(self, 'rng'):
+        if self.rng is None:
             self.rng = T.rng(seed=None)
 
     @property
@@ -279,7 +279,7 @@ class Noise(OdinFunction):
         self.uniform = uniform
         self.consistent = consistent
 
-        if not hasattr(self, 'rng'):
+        if self.rng is None:
             self.rng = T.rng(seed=None)
 
     @property

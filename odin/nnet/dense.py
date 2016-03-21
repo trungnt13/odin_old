@@ -46,7 +46,7 @@ class Dense(OdinFunction):
 
         self.num_units = num_units
         self.num_inputs = num_inputs
-        self.nonlinearity = nonlinearity
+        self.nonlinearity = (T.linear if nonlinearity is None else nonlinearity)
 
     @property
     def output_shape(self):
@@ -56,7 +56,7 @@ class Dense(OdinFunction):
         inputs = self.get_input(training, **kwargs)
         outputs = []
         # ====== processing each inputs ====== #
-        for x, shape in zip(inputs, self.input_shape):
+        for x in inputs:
             # calculate projection
             activation = T.dot(x, self.W)
             if self.b is not None:
@@ -85,6 +85,95 @@ class Dense(OdinFunction):
                                    inv.num_inputs, self.num_units
                                ))
         return inv
+
+
+class VariationalDense(OdinFunction):
+
+    def __init__(self, incoming, num_units,
+                 W=T.np_symmetric_uniform,
+                 b=T.np_constant,
+                 nonlinearity=T.relu,
+                 unsupervised = False,
+                 prior_mean=0.,
+                 prior_std=T.exp(-3),
+                 regularizer_scale=1.,
+                 **kwargs):
+        super(VariationalDense, self).__init__(
+            incoming, unsupervised=unsupervised, **kwargs)
+        if self.rng is None:
+            self.rng = T.rng(None)
+
+        # ====== check shape ====== #
+        num_inputs = self.input_shape[0][-1]
+        for shape in self.input_shape:
+            if shape[-1] != num_inputs:
+                self.raise_arguments('The last dimensions of all inputs must '
+                                     'equal.')
+        shape = (num_inputs, num_units)
+        # ====== create params ====== #
+        self.W_mu = self.create_params(W, shape=shape, name="W_mu",
+            regularizable=True, trainable=True)
+        self.W_logsigma = self.add_param(W, shape=shape, name="W_logsigma",
+            regularizable=True, training=True)
+        if b is None:
+            self.b_mu = None
+            self.b_logsigma = None
+        else:
+            self.b_mu = self.create_params(
+                b, (num_units,), 'b', regularizable=False, trainable=True)
+            self.b_logsigma = self.create_params(
+                b, (num_units,), 'b', regularizable=False, trainable=True)
+        # ====== cache ====== #
+        self.W_cache = None
+        self.b_cache = None
+        # ====== attribute ====== #
+        self.nonlinearity = (T.linear if nonlinearity is None else nonlinearity)
+        self.prior_std = prior_std
+        self.prior_mean = prior_mean
+        self.regularizer_scale = regularizer_scale
+
+    # ==================== abstract methods ==================== #
+    @property
+    def output_shape(self):
+        return [tuple(i[:-1]) + (self.num_units,) for i in self.input_shape]
+
+    def __call__(self, training=False, **kwargs):
+        inputs = self.get_input(training, **kwargs)
+        outputs = []
+        # ====== processing each inputs ====== #
+        for x in inputs:
+            if not training:
+                W = self.W_mu
+                b = self.b_mu
+            else:
+                W = self.get_W()
+                b = self.get_b()
+            activation = T.dot(x, W)
+            if b is not None:
+                activation = activation + b
+            outputs.append(self.nonlinearity(activation))
+        # ====== log the footprint for debugging ====== #
+        self._log_footprint(training, inputs, outputs)
+        return outputs
+
+    def get_regularization(self):
+        pass
+
+    def get_W(self):
+        eps = self.rng.normal(
+            shape=T.shape(self.W_mu), mean=self.prior_mean, std=self.prior_std,
+            dtype=self.W_mu.dtype)
+        self.W_cache = self.W_mu + T.log(1. + T.exp(self.W_logsigma)) * eps
+        return self.W_cache
+
+    def get_b(self):
+        if self.b_mu is None:
+            return None
+        eps = self.rng.normal(
+            shape=T.shape(self.b_mu), mean=self.prior_mean, std=self.prior_std,
+            dtype=self.b_mu.dtype)
+        self.b_cache = self.b_mu + T.log(1. + T.exp(self.b_logsigma)) * eps
+        return self.b_cache
 
 
 class Embedding(OdinFunction):

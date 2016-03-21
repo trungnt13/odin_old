@@ -181,8 +181,10 @@ class model(OdinObject):
             shouldSave, shouldStop
 
         '''
-        costs = self.select(tags,
-            filter_value=lambda x: isinstance(x, float) or isinstance(x, int))
+        try:
+            costs = [float(i) for i in self.select(tags)]
+        except:
+            costs = []
 
         if len(costs) == 0:
             shouldSave, shouldStop = False, False
@@ -207,7 +209,7 @@ class model(OdinObject):
                 shouldStop += stop
             shouldSave, shouldStop = shouldSave > 0, shouldStop > 0
         self.log(
-            'Earlystop: shouldSave=%s, shouldStop=%s' % (shouldSave, shouldStop),
+            'Earlystop: len(costs)=%d, shouldSave=%s, shouldStop=%s' % (len(costs), shouldSave, shouldStop),
             50)
         return shouldSave, shouldStop
 

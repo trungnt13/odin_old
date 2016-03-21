@@ -448,9 +448,10 @@ class VariationalEncoderDecoder(OdinUnsupervisedFunction):
             o = objective(x_reco, x_orig)
             if T.ndim(o) > 0:
                 o = T.mean(o)
-            o = o + self.regularizer_scale * T.kl_gaussian(mean, logsigma,
-                                                self.prior_mean,
-                                                self.prior_logsigma)
+            o = o + self.regularizer_scale * \
+            T.mean(T.kl_gaussian(mean, logsigma * 2,
+                                 self.prior_mean,
+                                 self.prior_logsigma * 2))
             obj = obj + o
         obj = obj / len(inputs) # mean of all objectives
         # ====== Create the optimizer ====== #

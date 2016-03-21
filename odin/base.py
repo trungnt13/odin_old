@@ -181,6 +181,7 @@ class OdinFunction(OdinObject):
         # you can have 2 different version of parameters, for training and for
         # making prediction
         self.params = OrderedDict()
+        self.is_fixed = False # fixed the output no trainable parameters
 
         # this is dirty hack that allow other functions to modify the inputs
         # of this function right before getting the outputs
@@ -196,6 +197,8 @@ class OdinFunction(OdinObject):
 
         if seed != 'none':
             self.rng = T.rng(seed)
+        else:
+            self.rng = None
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
@@ -263,6 +266,10 @@ class OdinFunction(OdinObject):
         '''
         if T.is_variable(variable):
             self._learnable_incoming[variable] = [trainable, regularizable]
+        return self
+
+    def set_fixed(self, is_fixed):
+        self.is_fixed = is_fixed
         return self
 
     def set_intermediate_inputs(self, inputs, root=False):
@@ -479,6 +486,13 @@ class OdinFunction(OdinObject):
             cost = cost / len(y_pred)
         return cost
 
+    def get_regularization(self):
+        regularization = 0.
+        for i in self._incoming:
+            if hasattr(i, 'get_regularization'):
+                regularization = regularization + i.get_regularization()
+        return regularization
+
     def get_optimization(self, objective, optimizer=None,
         globals=True, y_true=None, **kwargs):
         '''
@@ -661,6 +675,8 @@ class OdinFunction(OdinObject):
 
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
+        if self.is_fixed:
+            return params
         # ====== Incoming variables ====== #
         for i in self._incoming:
             # variables that learnable
