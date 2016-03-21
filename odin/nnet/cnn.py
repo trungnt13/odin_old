@@ -207,10 +207,9 @@ class BaseConvLayer(OdinFunction):
                  untie_biases=False,
                  W=T.np_glorot_uniform, b=T.np_constant,
                  nonlinearity=T.relu, flip_filters=False,
-                 unsupervised=False,
                  n=None, **kwargs):
         super(BaseConvLayer, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+            incoming, **kwargs)
         if nonlinearity is None:
             self.nonlinearity = T.linear
         else:

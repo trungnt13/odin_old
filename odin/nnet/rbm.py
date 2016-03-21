@@ -74,8 +74,7 @@ class RBM(OdinFunction):
                  gibbs_steps=15, persistent=None,
                  **kwargs):
         # ====== super ====== #
-        super(RBM, self).__init__(
-            incoming, unsupervised=True, **kwargs)
+        super(RBM, self).__init__(incoming, **kwargs)
         # ====== persitent variable ====== #
         if persistent is None:
             persistent_params = None

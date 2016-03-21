@@ -690,7 +690,7 @@ class GatingCell(Cell):
             for i in g:
                 if T.is_variable(i):
                     params += self.params[i.name].as_variables(
-                        globals, trainable, regularizable)
+                        trainable, regularizable)
         return params
 
     # ==================== methods for preparing parameters ==================== #

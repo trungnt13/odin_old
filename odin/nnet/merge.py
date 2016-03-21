@@ -8,9 +8,8 @@ from ..base import OdinFunction
 
 class Summation(OdinFunction):
 
-    def __init__(self, incoming, unsupervised=False, **kwargs):
-        super(Summation, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+    def __init__(self, incoming, **kwargs):
+        super(Summation, self).__init__(incoming, **kwargs)
 
     @property
     def output_shape(self):

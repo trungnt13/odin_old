@@ -108,7 +108,7 @@ class Ops(OdinFunction):
 
     def __init__(self, incoming, ops, output_shape='auto',
                  broadcast=True, **kwargs):
-        super(Ops, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Ops, self).__init__(incoming, **kwargs)
         self.ops = ops
         self.broadcast = broadcast
 
@@ -166,7 +166,7 @@ class Get(OdinFunction):
     """Get a particular output at given indices and return"""
 
     def __init__(self, incoming, indices, **kwargs):
-        super(Get, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Get, self).__init__(incoming, **kwargs)
         if not isinstance(indices, (tuple, list)):
             indices = [indices]
         # only OdinFunction can return multiple outputs
@@ -209,9 +209,9 @@ class Flatten(OdinFunction):
     flatten  : Shortcut
     """
 
-    def __init__(self, incoming, outdim, unsupervised=False, **kwargs):
+    def __init__(self, incoming, outdim, **kwargs):
         super(Flatten, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+            incoming, **kwargs)
         self.outdim = outdim
 
         if outdim < 1:
@@ -297,9 +297,9 @@ class Reshape(OdinFunction):
     input, reshaping is cheap, for others it may require copying the data.
     """
 
-    def __init__(self, incoming, shape, unsupervised=False, **kwargs):
+    def __init__(self, incoming, shape, **kwargs):
         super(Reshape, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+            incoming, **kwargs)
         shape = tuple(shape)
         for s in shape:
             if isinstance(s, int):
@@ -446,8 +446,8 @@ class Dimshuffle(OdinFunction):
     (2, 3, 5, 7)
     """
 
-    def __init__(self, incoming, pattern, unsupervised=False, **kwargs):
-        super(Dimshuffle, self).__init__(incoming, unsupervised=unsupervised, **kwargs)
+    def __init__(self, incoming, pattern, **kwargs):
+        super(Dimshuffle, self).__init__(incoming, **kwargs)
 
         # Sanity check the pattern
         used_dims = set()
@@ -573,7 +573,7 @@ class Pad(OdinFunction):
     """
 
     def __init__(self, incoming, width, batch_ndim=2, val=0, **kwargs):
-        super(Pad, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Pad, self).__init__(incoming, **kwargs)
         self.width = width
         self.val = val
         self.batch_ndim = batch_ndim
@@ -647,16 +647,13 @@ class Inverse(OdinFunction):
     >>> l_u = InverseLayer(l2, l1)  # As Deconv2DLayer
     """
 
-    def __init__(self, incoming, function, unsupervised=None, **kwargs):
+    def __init__(self, incoming, function, **kwargs):
         if not isinstance(function, OdinFunction):
             self.raise_arguments('The function we want to take inverse must '
                                  'be OdinFunction, but its type is: {}'
                                  '.'.format(type(function)))
 
-        if unsupervised is None:
-            unsupervised = function.unsupervised
-        super(Inverse, self).__init__(
-            incoming, unsupervised=unsupervised, ** kwargs)
+        super(Inverse, self).__init__(incoming, **kwargs)
         if len(incoming.input_shape) != len(function.output_shape):
             self.raise_arguments('The number of input and output of function '
                                  'we invert must equal to the inputs to this '

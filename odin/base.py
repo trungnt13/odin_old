@@ -13,7 +13,7 @@ from six.moves import zip, range
 from . import logger
 from . import tensor as T
 from .utils import api as API
-from .utils import as_incoming_list
+from .utils import as_incoming_list, as_tuple
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 # ===========================================================================
@@ -114,7 +114,7 @@ class OdinParams(OdinObject):
     def name(self):
         return self._name
 
-    def as_variables(self, globals, trainable, regularizable):
+    def as_variables(self, trainable, regularizable):
         ''' Return list of variables that create this parameters '''
         if trainable is not None and self._trainable != trainable:
             return []
@@ -143,8 +143,7 @@ class OdinFunction(OdinObject):
     input_var : list
         list of placeholders for input of this functions
     output_var : list
-        list of placeholders for output of this functions, zero length list
-        if the function is unsupervised function
+        list of placeholders for output of this functions,
 
     Parameters
     ----------
@@ -152,10 +151,6 @@ class OdinFunction(OdinObject):
                keras :class:`Models` instance, variable, placeholder (or
                shape tuple, which then converted to placeholder)
         The layer feeding into this layer, or the expected input shape.
-    unsupervised : bool
-        whether or not this is unsupervised model, this affect the output_var
-        will be the same as input_var(unsupervised) or based-on output_shape
-        (supervised)
     name : a string, None or list of string
         An optional identifiers to attach to this layer.
 
@@ -174,14 +169,12 @@ class OdinFunction(OdinObject):
         self._name = name
 
         super(OdinFunction, self).__init__()
-        self._unsupervised = kwargs.get('unsupervised', False)
 
         self.set_incoming(incoming)
 
         # you can have 2 different version of parameters, for training and for
         # making prediction
         self.params = OrderedDict()
-        self.is_fixed = False # fixed the output no trainable parameters
 
         # this is dirty hack that allow other functions to modify the inputs
         # of this function right before getting the outputs
@@ -199,6 +192,8 @@ class OdinFunction(OdinObject):
             self.rng = T.rng(seed)
         else:
             self.rng = None
+
+        self._reconstruction_mode = False
 
     # ==================== Layer utilities ==================== #
     def set_incoming(self, incoming):
@@ -256,6 +251,10 @@ class OdinFunction(OdinObject):
 
         return self
 
+    def set_reconstruction_mode(self, reconstruct):
+        self._reconstruction_mode = reconstruct
+        return self
+
     def set_learnable_incoming(self, variable, trainable, regularizable):
         '''If a variable is specified at the incoming, you can set it learnable
         by using this function.
@@ -266,10 +265,6 @@ class OdinFunction(OdinObject):
         '''
         if T.is_variable(variable):
             self._learnable_incoming[variable] = [trainable, regularizable]
-        return self
-
-    def set_fixed(self, is_fixed):
-        self.is_fixed = is_fixed
         return self
 
     def set_intermediate_inputs(self, inputs, root=False):
@@ -460,14 +455,18 @@ class OdinFunction(OdinObject):
         '''
         raise NotImplementedError(self.__class__.__name__)
 
+    def get_regularization(self):
+        regularization = 0.
+        for i in self._incoming:
+            if hasattr(i, 'get_regularization'):
+                regularization = regularization + i.get_regularization()
+        return regularization
+
     def get_cost(self, objective, y_true=None, training=False, **kwargs):
         y_pred = self(training=training, **kwargs)
         # auto select y_true
         if y_true is None:
-            if self.unsupervised:
-                y_true = self.input_var
-            else:
-                y_true = self.output_var
+            y_true = self.output_var
         elif not isinstance(y_true, (tuple, list)):
             y_true = [y_true]
         cost = T.castX(0.)
@@ -485,13 +484,6 @@ class OdinFunction(OdinObject):
         if len(y_pred) > 1:
             cost = cost / len(y_pred)
         return cost
-
-    def get_regularization(self):
-        regularization = 0.
-        for i in self._incoming:
-            if hasattr(i, 'get_regularization'):
-                regularization = regularization + i.get_regularization()
-        return regularization
 
     def get_optimization(self, objective, optimizer=None,
         globals=True, y_true=None, **kwargs):
@@ -516,31 +508,7 @@ class OdinFunction(OdinObject):
             optimization
         '''
         self._validation_optimization_params(objective, optimizer)
-        y_pred = self(training=True, **kwargs)
-        # auto select y_true
-        if y_true is None:
-            if self.unsupervised:
-                y_true = self.input_var
-            else:
-                y_true = self.output_var
-        elif not isinstance(y_true, (tuple, list)):
-            y_true = [y_true]
-        # ====== caluclate objectives for each in-out pair ====== #
-        obj = T.castX(0.)
-        # in case of multiple output, we take the mean of loss for each output
-        for yp, yt in zip(y_pred, y_true):
-            o = objective(yp, yt)
-            # if multiple-dimension cannot calculate gradients
-            # hence, we take mean of the objective
-            if T.ndim(o) > 0 and optimizer is not None:
-                self.log('The return objective has > 1 dimension which '
-                         'cannot be used to calculate the gradients '
-                         'for optimization, hence, we take the mean of '
-                         'their values.', 10)
-                o = T.mean(o)
-            obj = obj + o
-        if len(y_pred) > 1:
-            obj = obj / len(y_pred)
+        obj = self.get_cost(objective, y_true, training=True, **kwargs)
         # ====== get optimizer ====== #
         if optimizer is None:
             opt = None
@@ -582,10 +550,6 @@ class OdinFunction(OdinObject):
         return self._incoming
 
     @property
-    def unsupervised(self):
-        return self._unsupervised
-
-    @property
     def input_var(self):
         ''' list of placeholder for input of this function
         Note
@@ -593,7 +557,6 @@ class OdinFunction(OdinObject):
         This property doesn't return appropriate inputs for this funcitons,
         just the placeholder to create T.function
         '''
-
         input_var = []
         for i, j in zip(self._incoming, self._input_shape):
             if i is None:
@@ -613,14 +576,15 @@ class OdinFunction(OdinObject):
     def output_var(self):
         if self._output_var is None:
             self._output_var = []
-            if self.unsupervised:
-                pass
-            else:
-                for outshape in self.output_shape:
-                    shape_str = '_'.join([str(k) for k in outshape])
-                    self._output_var.append(T.placeholder(shape=outshape,
-                            name='out.%s.%s' % (shape_str, self.name)))
+            for outshape in self.output_shape:
+                shape_str = '_'.join([str(k) for k in outshape])
+                self._output_var.append(T.placeholder(shape=outshape,
+                        name='out.%s.%s' % (shape_str, self.name)))
         return self._output_var
+
+    @property
+    def as_fixed(self):
+        return DummyFunction(self, fixed=True)
 
     def get_input(self, training=True, **kwargs):
         '''
@@ -675,8 +639,6 @@ class OdinFunction(OdinObject):
 
     def get_params(self, globals, trainable=None, regularizable=None):
         params = []
-        if self.is_fixed:
-            return params
         # ====== Incoming variables ====== #
         for i in self._incoming:
             # variables that learnable
@@ -700,7 +662,7 @@ class OdinFunction(OdinObject):
         # ====== Params from this layers ====== #
         local_params = []
         for i, j in self.params.iteritems():
-            local_params += j.as_variables(globals, trainable, regularizable)
+            local_params += j.as_variables(trainable, regularizable)
         return T.np_ordered_set(params + local_params).tolist()
 
     def get_params_value(self, globals, trainable=None, regularizable=None):
@@ -793,34 +755,41 @@ class OdinFunction(OdinObject):
         return config
 
 
-class OdinUnsupervisedFunction(OdinFunction):
+class DummyFunction(OdinFunction):
 
-    def __init__(self, incoming, name=None, **kwargs):
-        super(OdinUnsupervisedFunction, self).__init__(
-            incoming, unsupervised=True, name=name, **kwargs)
-        self._reconstruction_mode = False
+    """
+    expression : expression or list of expression
+        first expression used for training=False, second one for training=True
+    """
 
-    def set_reconstruction_mode(self, reconstruct):
-        self._reconstruction_mode = reconstruct
-        return self
+    def __init__(self, incoming, expression=None,
+                 output_shape=None,
+                 fixed=True, **kwargs):
+        super(DummyFunction, self).__init__(incoming, **kwargs)
 
-    def get_cost(self, objective, **kwargs):
-        rescons_mode = self._reconstruction_mode
-        y_pred = self.set_reconstruction_mode(True)(training=False, **kwargs)
-        self._reconstruction_mode = rescons_mode
-        y_true = self.input_var
-        cost = T.castX(0.)
-        for yp, yt in zip(y_pred, y_true):
-            o = objective(yp, yt)
-            # if multiple-dimension cannot calculate gradients
-            # hence, we take mean of the objective
-            if T.ndim(o) > 0:
-                self.log('The return objective has > 1 dimension which '
-                         'cannot be used to calculate the gradients '
-                         'for optimization, hence, we take the mean of '
-                         'their values.', 10)
-                o = T.mean(o)
-            cost = cost + o
-        if len(y_pred) > 1:
-            cost = cost / len(y_pred)
-        return cost
+        if output_shape is not None:
+            output_shape = as_incoming_list(output_shape)
+        self._output_shape = output_shape
+
+        if expression is not None:
+            expression = as_tuple(expression, 2)
+        self._expression = expression
+
+        self._fixed = fixed
+
+    @property
+    def output_shape(self):
+        if self._output_shape is None:
+            return self.input_shape
+        return self._output_shape
+
+    def __call__(self, training=False, **kwargs):
+        if self._expression is not None:
+            return self._expression[int(training)]
+        return self.get_input(training, **kwargs)
+
+    def get_params(self, globals, trainable=None, regularizable=None):
+        if self._fixed:
+            return []
+        return super(DummyFunction, self).get_params(
+            globals, trainable, regularizable)

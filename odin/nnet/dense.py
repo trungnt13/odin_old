@@ -7,7 +7,6 @@
 
 from __future__ import print_function, division, absolute_import
 
-import numpy as np
 
 from .. import tensor as T
 from ..base import OdinFunction
@@ -24,10 +23,9 @@ class Dense(OdinFunction):
                  W=T.np_symmetric_uniform,
                  b=T.np_constant,
                  nonlinearity=T.relu,
-                 unsupervised = False,
                  **kwargs):
         super(Dense, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+            incoming, **kwargs)
 
         num_inputs = self.input_shape[0][-1]
         for shape in self.input_shape:
@@ -70,12 +68,11 @@ class Dense(OdinFunction):
         W = T.transpose(self.W)
         b = None if self.b is None else T.np_constant
         nonlinearity = kwargs.get('nonlinearity', self.nonlinearity)
-        unsupervised = kwargs.get('unsupervised', self.unsupervised)
         # auto create incoming
         if incoming is None:
             incoming = self.output_shape
         inv = Dense(incoming, num_units=self.num_inputs,
-            W=W, b=b, nonlinearity=nonlinearity, unsupervised=unsupervised,
+            W=W, b=b, nonlinearity=nonlinearity,
             **kwargs)
         # add reshape if Dense flatten the incoming
         if inv.num_inputs != self.num_units:
@@ -93,13 +90,12 @@ class VariationalDense(OdinFunction):
                  W=T.np_symmetric_uniform,
                  b=T.np_constant,
                  nonlinearity=T.relu,
-                 unsupervised = False,
                  prior_mean=0.,
                  prior_std=T.exp(-3),
                  regularizer_scale=1.,
                  **kwargs):
         super(VariationalDense, self).__init__(
-            incoming, unsupervised=unsupervised, **kwargs)
+            incoming, **kwargs)
         if self.rng is None:
             self.rng = T.rng(None)
 
@@ -230,8 +226,7 @@ class Embedding(OdinFunction):
 
     def __init__(self, incoming, input_size, output_size,
         W=T.np_uniform, dropout=None, rescale=True, seed=None, **kwargs):
-        super(Embedding, self).__init__(incoming,
-            unsupervised=False, **kwargs)
+        super(Embedding, self).__init__(incoming, **kwargs)
 
         self.input_size = input_size
         self.output_size = output_size

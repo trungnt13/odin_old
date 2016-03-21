@@ -130,8 +130,7 @@ class BatchNormalization(OdinFunction):
                  mean=T.np_constant, inv_std=lambda x: T.np_constant(x, 1.),
                  nonlinearity=T.linear,
                  **kwargs):
-        super(BatchNormalization, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+        super(BatchNormalization, self).__init__(incoming, **kwargs)
 
         input_shape = self.input_shape[0]
         for i in self.input_shape:

@@ -5,11 +5,11 @@ import numpy as np
 from six.moves import zip
 
 from .. import tensor as T
-from ..base import OdinUnsupervisedFunction, OdinFunction
+from ..base import OdinFunction
 from .. import config
 
 
-class AutoEncoderDecoder(OdinUnsupervisedFunction):
+class AutoEncoderDecoder(OdinFunction):
 
     def __init__(self, encoder, decoder,
                  reconstruction=False, **kwargs):
@@ -118,7 +118,7 @@ class AutoEncoderDecoder(OdinUnsupervisedFunction):
         return T.np_ordered_set([i for i in params if T.is_variable(i)]).tolist()
 
 
-class AutoEncoder(OdinUnsupervisedFunction):
+class AutoEncoder(OdinFunction):
 
     """Denoising Auto-Encoder class (dA)
 
@@ -297,7 +297,7 @@ class AutoEncoder(OdinUnsupervisedFunction):
             shape=input.shape, p=1 - corruption_level) * input
 
 
-class VariationalEncoderDecoder(OdinUnsupervisedFunction):
+class VariationalEncoderDecoder(OdinFunction):
 
     """ Hidden layer for Variational Autoencoding Bayes method [1].
     This layer projects the input twice to calculate the mean and variance

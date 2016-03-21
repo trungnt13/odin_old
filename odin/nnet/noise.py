@@ -79,8 +79,7 @@ class Dropout(OdinFunction):
                  noise_dims=None,
                  consistent=False,
                  **kwargs):
-        super(Dropout, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+        super(Dropout, self).__init__(incoming, **kwargs)
         if p is not None and not T.is_variable(p):
             p = T.variable(p, name=self.name + '_p')
         self.p = p
@@ -181,8 +180,7 @@ class FastDropout(OdinFunction):
                  rescale=True,
                  noise_dims=None,
                  consistent=False, **kwargs):
-        super(Dropout, self).__init__(
-            incoming, unsupervised=False, **kwargs)
+        super(Dropout, self).__init__(incoming, **kwargs)
         if p is not None and not T.is_variable(p):
             p = T.variable(p, name=self.name + '_p')
         self.p = p
@@ -269,7 +267,7 @@ class Noise(OdinFunction):
 
     def __init__(self, incoming, sigma=0.1, noise_dims=None,
                  uniform=False, consistent=False, **kwargs):
-        super(Noise, self).__init__(incoming, unsupervised=False, **kwargs)
+        super(Noise, self).__init__(incoming, **kwargs)
         if sigma is not None and not T.is_variable(sigma):
             sigma = T.variable(sigma, name=self.name + '_p')
         self.sigma = sigma
