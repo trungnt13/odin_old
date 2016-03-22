@@ -879,6 +879,26 @@ def categorical_crossentropy(output, target, from_logits=False):
     return T.nnet.categorical_crossentropy(output, target)
 
 
+def bayes_crossentropy(y_pred, y_true, distribution=None, from_logits=False):
+    if y_pred.ndim != 2 or y_true.ndim != 2:
+        raise ValueError('both y_pred and y_true must be 2-d tensor')
+
+    if from_logits:
+        y_pred = T.nnet.softmax(y_pred)
+    else:
+        # scale preds so that the class probas of each sample sum to 1
+        y_pred /= y_pred.sum(axis=-1, keepdims=True)
+    # avoid numerical instability with _EPSILON clipping
+    y_pred = T.clip(y_pred, _EPSILON, 1.0 - _EPSILON)
+    if distribution is None:
+        distribution = y_true.sum(axis=0)
+    # probability distribution of each class
+    prob_distribution = T.dimshuffle(distribution / T.sum(distribution), ('x', 0))
+    nb_classes = y_true.shape[1]
+    return -1 / nb_classes * T.sum(y_true * T.log(y_pred) / prob_distribution,
+        axis=y_pred.ndim - 1)
+
+
 def binary_crossentropy(output, target, from_logits=False):
     if from_logits:
         output = T.nnet.sigmoid(output)
