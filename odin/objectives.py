@@ -109,6 +109,18 @@ def mean_categorical_crossentropy(y_pred, y_true):
     return T.mean(T.categorical_crossentropy(y_pred, y_true))
 
 
+def bayes_crossentropy(y_pred, y_true, distribution=None):
+    '''Expects a binary class matrix instead of a vector of scalar classes.
+    '''
+    return T.bayes_crossentropy(y_pred, y_true, distribution)
+
+
+def mean_bayes_crossentropy(y_pred, y_true, distribution=None):
+    '''Expects a binary class matrix instead of a vector of scalar classes.
+    '''
+    return T.mean(T.bayes_crossentropy(y_pred, y_true, distribution))
+
+
 def binary_crossentropy(y_pred, y_true):
     return T.binary_crossentropy(y_pred, y_true)
 
