@@ -9,11 +9,12 @@ import numpy as np
 from .. import tensor as T
 from ..objectives import *
 from ..optimizers import *
-
+from ..metrics import *
 
 # ===========================================================================
 # Main Test
 # ===========================================================================
+
 
 class ObjectivesTest(unittest.TestCase):
 
@@ -58,6 +59,7 @@ class ObjectivesTest(unittest.TestCase):
 
         self.assertEqual(calc_cost(binary_accuracy), (0.438, False))
         self.assertEqual(calc_cost(categorical_accuracy), (0.063, False))
+
 
 class OptimizersTest(unittest.TestCase):
 
