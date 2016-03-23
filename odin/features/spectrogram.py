@@ -1039,9 +1039,11 @@ def ispectrogram(y, n_fft, hop_length=None, win_length=None, power=1,
     # not range -1..1, hence scale up here to match (approx)
     xlen = win_length + hop_length * (ncol - 1)
 
+    # generate random noise, then rescale its spectrogram
     if r is None:
         r = np.random.randn(xlen)
     R = stft(r, n_fft, hop_length=hop_length, win_length=win_length)
+    # match shape of new and old spectrogram
     if R.shape[1] < y.shape[1]:
         y = y[:, :R.shape[1]]
     elif R.shape[1] > y.shape[1]:

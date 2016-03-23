@@ -25,8 +25,6 @@ __all__ = [
     "mean_binary_crossentropy",
     "poisson",
     "cosine_proximity",
-    "binary_accuracy",
-    "categorical_accuracy",
     "MfoM"
 ]
 
@@ -142,8 +140,8 @@ def cosine_proximity(y_pred, y_true):
 # ===========================================================================
 # Stochastic optimization
 # ===========================================================================
-def contrastive_divergence(input_sampled, bias_sampled,
-                           input_original, bias_original):
+def free_energy(input_sampled, bias_sampled,
+                input_original, bias_original):
     ''' Contrastive divergence cost function
     The input and bias should be calculated as follow:
         input = T.dot(X, self.W) + hbias
@@ -155,38 +153,6 @@ def contrastive_divergence(input_sampled, bias_sampled,
     hidden_original = T.sum(T.log(1 + T.exp(input_original)), axis=1)
     return T.mean(-hidden_original - bias_original) - \
     T.mean(-hidden_sampled - bias_sampled)
-
-
-# ===========================================================================
-# Not differentiable
-# ===========================================================================
-def binary_accuracy(y_pred, y_true, threshold=0.5):
-    """ Non-differentiable """
-    y_pred = T.ge(y_pred, threshold)
-    return T.eq(T.cast(y_pred, 'int32'),
-                T.cast(y_true, 'int32'))
-
-
-def categorical_accuracy(y_pred, y_true, top_k=1):
-    """ Non-differentiable """
-    if T.ndim(y_true) == T.ndim(y_pred):
-        y_true = T.argmax(y_true, axis=-1)
-    elif T.ndim(y_true) != T.ndim(y_pred) - 1:
-        raise TypeError('rank mismatch between y_true and y_pred')
-
-    if top_k == 1:
-        # standard categorical accuracy
-        top = T.argmax(y_pred, axis=-1)
-        return T.eq(top, y_true)
-    else:
-        # top-k accuracy
-        top = T.argtop_k(y_pred, top_k)
-        y_true = T.expand_dims(y_true, dim=-1)
-        return T.any(T.eq(top, y_true), axis=-1)
-
-
-def mean_categorical_accuracy(y_pred, y_true, top_k=1):
-    return T.mean(categorical_accuracy(y_pred, y_true, top_k))
 
 
 # ===========================================================================

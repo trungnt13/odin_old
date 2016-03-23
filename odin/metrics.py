@@ -1,13 +1,25 @@
+# ===========================================================================
+# This module contains non-differentiable cost for monitor
+# ===========================================================================
 from __future__ import print_function, division, absolute_import
 
 import numpy as np
+from . import tensor as T
 
 __all__ = [
     'LevenshteinDistance',
-    'LER'
+    'LER',
+    'Cavg_fast',
+    'Cavg',
+    'categorical_accuracy',
+    'mean_categorical_accuracy',
+    'binary_accuracy'
 ]
 
 
+# ===========================================================================
+# Main metrics
+# ===========================================================================
 def LevenshteinDistance(s1, s2):
     ''' Implementation of the wikipedia algorithm, optimized for memory
     Reference: http://rosettacode.org/wiki/Levenshtein_distance#Python
@@ -57,3 +69,124 @@ def LER(y_true, y_pred, return_mean=True):
     if return_mean:
         return np.mean(results)
     return results
+
+
+# ===========================================================================
+# Not differentiable
+# ===========================================================================
+def binary_accuracy(y_pred, y_true, threshold=0.5):
+    """ Non-differentiable """
+    y_pred = T.ge(y_pred, threshold)
+    return T.eq(T.cast(y_pred, 'int32'),
+                T.cast(y_true, 'int32'))
+
+
+def categorical_accuracy(y_pred, y_true, top_k=1):
+    """ Non-differentiable """
+    if T.ndim(y_true) == T.ndim(y_pred):
+        y_true = T.argmax(y_true, axis=-1)
+    elif T.ndim(y_true) != T.ndim(y_pred) - 1:
+        raise TypeError('rank mismatch between y_true and y_pred')
+
+    if top_k == 1:
+        # standard categorical accuracy
+        top = T.argmax(y_pred, axis=-1)
+        return T.eq(top, y_true)
+    else:
+        # top-k accuracy
+        top = T.argtop_k(y_pred, top_k)
+        y_true = T.expand_dims(y_true, dim=-1)
+        return T.any(T.eq(top, y_true), axis=-1)
+
+
+def mean_categorical_accuracy(y_pred, y_true, top_k=1):
+    return T.mean(categorical_accuracy(y_pred, y_true, top_k))
+
+
+def Cavg_fast(y_llr, y_true, Ptar=0.5, Cfa=1., Cmiss=1.):
+    ''' Fast calculation of Cavg (for only 1 clusters) '''
+    thresh = np.log(Cfa / Cmiss) - np.log(Ptar / (1 - Ptar))
+    if isinstance(y_true, (list, tuple)) or y_true.ndim == 1:
+        y_true = T.np_one_hot(y_true)
+
+    y_false = T.switch(y_true, 0, 1) # invert of y_true, False Negative mask
+    y_positive = T.switch(y_llr >= thresh, 1, 0)
+    y_negative = T.switch(y_llr < thresh, 1, 0) # inver of y_positive
+    distribution = T.clip(np.sum(y_true, 0), 10e-8, 10e8) # no zero values
+    n = distribution.shape[1]
+    # ====== Pmiss ====== #
+    miss = T.sum(y_true * y_negative, 0)
+    Pmiss = 100 * (Cmiss * Ptar * miss) / distribution
+    # ====== Pfa ====== # This calculation give different results
+    fa = T.sum(y_false * y_positive, 0)
+    Pfa = 100 * (Cfa * (1 - Ptar) * fa) / distribution
+    Cavg = T.mean(Pmiss) + T.mean(Pfa) / (n - 1)
+    return Cavg
+
+
+# ===========================================================================
+# Cavg
+# ===========================================================================
+def Cavg(log_llh, y, cluster_idx=None,
+         Ptar=0.5, Cfa=1, Cmiss=1):
+    """Compute cluster-wise and total LRE'15 percentage costs.
+
+   Args:
+       log_llh: numpy array of shape (n_samples, n_classes)
+           There are N log-likelihoods for each of T trials:
+           loglh(t,i) = log P(trail_t | class_i) - offset_t,
+           where:
+               log denotes natural logarithm
+               offset_t is an unspecified real constant that may vary by trial
+       y: numpy array of shape (n_samples,)
+           Class labels.
+       cluster_idx: list,
+           Each element is a list that represents a particular language
+           cluster and contains all class labels that belong to the cluster.
+       Ptar: float, optional
+           Probability of a target trial.
+       Cfa: float, optional
+           Cost for False Acceptance error.
+       Cmiss: float, optional
+           Cost for False Rejection error.
+       verbose: int, optional
+           0 - print nothing
+           1 - print only total cost
+           2 - print total cost and cluster average costs
+   Returns:
+       cluster_cost: numpy array of shape (n_clusters,)
+           It contains average percentage costs for each cluster as defined by
+           NIST LRE-15 language detection task. See
+           http://www.nist.gov/itl/iad/mig/upload/LRE15_EvalPlan_v22-3.pdf
+       total_cost: float
+           An average percentage cost over all clusters.
+   """
+    if cluster_idx is None:
+        cluster_idx = [list(range(0, log_llh.shape[-1]))]
+    # ensure everything is numpy ndarray
+    y = np.asarray(y)
+    log_llh = np.asarray(log_llh)
+
+    thresh = np.log(Cfa / Cmiss) - np.log(Ptar / (1 - Ptar))
+    cluster_cost = np.zeros(len(cluster_idx))
+
+    for k, cluster in enumerate(cluster_idx):
+        L = len(cluster) # number of languages in a cluster
+        fa = 0
+        fr = 0
+        for lang_i in cluster:
+            N = np.sum(y == lang_i) + .0 # number of samples for lang_i
+            for lang_j in cluster:
+                if lang_i == lang_j:
+                    err = np.sum(log_llh[y == lang_i, lang_i] < thresh) / N
+                    fr += err
+                else:
+                    err = np.sum(log_llh[y == lang_i, lang_j] >= thresh) / N
+                    fa += err
+
+        # Calculate procentage
+        cluster_cost[k] = 100 * (Cmiss * Ptar * fr + Cfa * (1 - Ptar) * fa / (L - 1)) / L
+
+    total_cost = np.mean(cluster_cost)
+
+    return cluster_cost, total_cost

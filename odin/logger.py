@@ -150,33 +150,39 @@ def set_save_path(logging_path, mode='w', multiprocess=False):
 
 def warning(*anything, **kwargs):
     if not _logging: return
-    _default_logger.warning(*anything)
+    anything = ' '.join([str(i) for i in anything])
+    _default_logger.warning(anything)
 
 
 def error(*anything, **kwargs):
     if not _logging: return
-    _default_logger.error(*anything)
+    anything = ' '.join([str(i) for i in anything])
+    _default_logger.error(anything)
 
 
 def critical(*anything, **kwargs):
     if not _logging: return
-    _default_logger.critical(*anything)
+    anything = ' '.join([str(i) for i in anything])
+    _default_logger.critical(anything)
 
 
 def debug(*anything, **kwargs):
     if not _logging: return
-    _default_logger.debug(*anything)
+    anything = ' '.join([str(i) for i in anything])
+    _default_logger.debug(anything)
 
 
 def info(*anything, **kwargs):
     if not _logging: return
+    anything = ' '.join([str(i) for i in anything])
     if len(anything) == 0: _default_logger.info('')
-    else: _default_logger.info(*anything)
+    else: _default_logger.info(anything)
 
 
 def log(*anything, **kwargs):
     '''This log is at INFO level'''
     if not _logging: return
+    anything = ' '.join([str(i) for i in anything])
 
     # format with only messages
     for h in _default_logger.handlers:
@@ -184,7 +190,7 @@ def log(*anything, **kwargs):
     if len(anything) == 0:
         _default_logger.info('')
     else:
-        _default_logger.info(*anything)
+        _default_logger.info(anything)
     # format with time and level
     for h in _default_logger.handlers:
         h.setFormatter(logging.Formatter(

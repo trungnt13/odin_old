@@ -10,6 +10,7 @@ from __future__ import print_function, division, absolute_import
 
 from .. import tensor as T
 from ..base import OdinFunction
+from .. import config
 
 __all__ = [
     "Dense",
@@ -67,7 +68,7 @@ class Dense(OdinFunction):
     def get_inv(self, incoming, **kwargs):
         W = T.transpose(self.W)
         b = None if self.b is None else T.np_constant
-        nonlinearity = kwargs.get('nonlinearity', self.nonlinearity)
+        nonlinearity = kwargs.pop('nonlinearity', self.nonlinearity)
         # auto create incoming
         if incoming is None:
             incoming = self.output_shape
@@ -136,40 +137,42 @@ class VariationalDense(OdinFunction):
     def __call__(self, training=False, **kwargs):
         inputs = self.get_input(training, **kwargs)
         outputs = []
-        # ====== processing each inputs ====== #
-        for x in inputs:
-            if not training:
-                W = self.W_mu
-                b = self.b_mu
-            else:
-                W = self.get_W()
-                b = self.get_b()
-            activation = T.dot(x, W)
-            if b is not None:
-                activation = activation + b
-            outputs.append(self.nonlinearity(activation))
+        # ====== check inputs (only 2D) ====== #
+        X = self.get_input(training, **kwargs)
+        # ====== calculate hidden activation ====== #
+        outputs = []
+        self.mean = []
+        self.logsigma = []
+        for x, shape in zip(X, self.input_shape):
+            mean = self.nonlinearity(T.dot(X, self.W_mean) + self.b_mean)
+            logsigma = self.nonlinearity(T.dot(X, self.W_logsigma) + self.b_logsigma)
+            self.mean.append(mean)
+            self.logsigma.append(logsigma)
+            if training: # training mode (always return hidden)
+                if config.backend() == 'theano':
+                    eps = self._rng.normal((T.shape(x)[0], self.num_units),
+                        mean=0., std=1.)
+                else:
+                    # if you don't specify first dimension, you will
+                    # mess up here. Anyway, no cleaner way for doing this
+                    eps = self._rng.normal((shape[0], self.num_units),
+                        mean=0., std=1.)
+                outputs.append(mean + T.exp(logsigma) * eps)
+            else: # prediction mode only return mean
+                outputs.append(mean)
+            self._last_mean_sigma.append((mean, logsigma))
         # ====== log the footprint for debugging ====== #
         self._log_footprint(training, inputs, outputs)
         return outputs
 
     def get_regularization(self):
-        pass
-
-    def get_W(self):
-        eps = self.rng.normal(
-            shape=T.shape(self.W_mu), mean=self.prior_mean, std=self.prior_std,
-            dtype=self.W_mu.dtype)
-        self.W_cache = self.W_mu + T.log(1. + T.exp(self.W_logsigma)) * eps
-        return self.W_cache
-
-    def get_b(self):
-        if self.b_mu is None:
-            return None
-        eps = self.rng.normal(
-            shape=T.shape(self.b_mu), mean=self.prior_mean, std=self.prior_std,
-            dtype=self.b_mu.dtype)
-        self.b_cache = self.b_mu + T.log(1. + T.exp(self.b_logsigma)) * eps
-        return self.b_cache
+        regu = 0.
+        for mean, logsigma in zip(self.mean, self.logsigma):
+            regu = regu + T.mean(T.kl_gaussian(
+                                 mean, logsigma * 2,
+                                 self.prior_mean, T.log(self.prior_std) * 2))
+        return regu * self.regularizer_scale + \
+        super(VariationalDense, self).get_regularization()
 
 
 class Embedding(OdinFunction):
