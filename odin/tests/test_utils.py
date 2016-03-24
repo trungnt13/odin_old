@@ -51,7 +51,7 @@ class UtilsTest(unittest.TestCase):
         code = get_from_path('test', prefix='tmp_code', path='/tmp')[0]
         f = function(code, 3, 4)
         s1 = f()
-        config = cPickle.dumps(f.get_config())
+        config = cPickle.dumps(f)
         file = h5py.File('/tmp/tmp.h5', 'w')
         file['function'] = config
         file.close()
@@ -62,8 +62,7 @@ class UtilsTest(unittest.TestCase):
         config = file['function'].value
         os.remove('/tmp/tmp.h5')
 
-        config = cPickle.loads(config)
-        f = function.parse_config(config)
+        f = cPickle.loads(config)
         print('\n', f)
         s2 = f()
 

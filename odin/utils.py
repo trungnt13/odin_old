@@ -7,9 +7,12 @@
 from __future__ import print_function, division, absolute_import
 
 import os
+import cPickle
+
 import numpy as np
 import types
 import time
+import inspect
 from collections import defaultdict, OrderedDict
 
 from six.moves import zip, range, zip_longest
@@ -196,11 +199,10 @@ class api(object):
         elif api == 'odin':
             return model(training=training, **kwargs)
 
+
 # ===========================================================================
 # DAA
 # ===========================================================================
-
-
 def _get_ms_time():
     return int(round(time.time() * 1000)) # in ms
 
@@ -636,8 +638,25 @@ def create_batch(n_samples, batch_size,
 # Python utilities
 # ===========================================================================
 primitives = (bool, int, float, str,
-             tuple, list, dict, type, types.ModuleType,
+             tuple, list, dict, type, types.ModuleType, types.FunctionType,
              type(None))
+
+
+def func_to_str(func):
+    if not inspect.isfunction(func):
+        raise ValueError('Only convert function to string, but type of object'
+                         ' is: {}'.format(type(func)))
+    import marshal
+    from array import array
+    # conver to byte
+    return cPickle.dumps(array("B", marshal.dumps(func.func_code)))
+
+
+def str_to_func(s, sandbox, name):
+    import marshal
+    func = marshal.loads(cPickle.loads(s).tostring())
+    func = types.FunctionType(func, sandbox, name)
+    return func
 
 
 def serialize_sandbox(environment):
@@ -649,14 +668,29 @@ def serialize_sandbox(environment):
     import re
     sys_module = re.compile('__\w+__')
     ignore_key = ['__name__', '__file__']
-    sandbox = {}
+    sandbox = OrderedDict()
+
+    # ====== serialize primitive type ====== #
     for k, v in environment.iteritems():
         if k in ignore_key: continue
+        # primitive type
         if type(v) in primitives and sys_module.match(k) is None:
-            if isinstance(v, types.ModuleType):
-                v = {'name': v.__name__, '__module': True}
-            sandbox[k] = v
-
+            t = type(v)
+            if isinstance(v, types.ModuleType): # special case: import module
+                v = v.__name__
+                t = 'module'
+            elif inspect.isfunction(v): # special case: function
+                v = func_to_str(v)
+                t = 'function'
+            sandbox[k] = {'content': v, 'type': t}
+        # check if object is pickle-able
+        else:
+            try:
+                v = cPickle.dumps(v)
+                cPickle.loads(v) # chekc if it is loadable
+                sandbox[k] = {'content': v, 'type': 'object'}
+            except: # not pickle-albe, just ignore it
+                pass
     return sandbox
 
 
@@ -670,11 +704,23 @@ def deserialize_sandbox(sandbox):
             '[environment] must be dictionary created by serialize_sandbox')
     import importlib
     environment = {}
+    # first pass we deserialize all type except function type
     for k, v in sandbox.iteritems():
-        if type(v) in primitives:
-            if isinstance(v, dict) and '__module' in v:
-                v = importlib.import_module(v['name'])
-            environment[k] = v
+        if v['type'] in primitives:
+            v = v['content']
+        elif v['type'] == 'module':
+            v = importlib.import_module(v['content'])
+        elif v['type'] == 'function':
+            v = str_to_func(v['content'], globals(), name=k)
+        elif v['type'] == 'object':
+            v = cPickle.loads(v['content'])
+        else:
+            raise ValueError('Unsupport deserializing type: {}'.format(v['type']))
+        environment[k] = v
+    # second pass, function all funciton and set it globales to new environment
+    for k, v in environment.items():
+        if inspect.isfunction(v):
+            v.func_globals.update(environment)
     return environment
 
 
@@ -699,6 +745,10 @@ class function(object):
             self._source = inspect.getsource(self._function)
         except:
             self._source = None
+
+    @property
+    def func(self):
+        return self._function
 
     @property
     def name(self):
@@ -734,15 +784,10 @@ class function(object):
             return True
         return False
 
-    def get_config(self):
+    # ==================== Pickling methods ==================== #
+    def __getstate__(self):
         config = OrderedDict()
-        config['class'] = self.__class__.__name__
-
-        import marshal
-        from array import array
-
         # conver to byte
-        config['func'] = array("B", marshal.dumps(self._function.func_code))
         config['args'] = self._function_args
         config['kwargs'] = self._function_kwargs
         config['name'] = self._function_name
@@ -750,33 +795,18 @@ class function(object):
         config['source'] = self._source
         return config
 
-    @staticmethod
-    def parse_config(config):
-        import marshal
+    def __setstate__(self, config):
+        self._function_args = config['args']
+        self._function_kwargs = config['kwargs']
+        self._function_name = config['name']
+        self._sandbox = config['sandbox']
+        self._source = config['source']
+        self._function = deserialize_sandbox(self._sandbox)[self._function_name]
 
-        func = marshal.loads(config['func'].tostring())
-        func_name = config['name']
-        func_args = config['args']
-        func_kwargs = config['kwargs']
-        # for compatible with out API
-        if 'source' in config:
-            func_source = config['source']
-        else:
-            func_source = None
-
-        sandbox = globals().copy() # create sandbox
-        sandbox.update(deserialize_sandbox(config['sandbox']))
-        func = types.FunctionType(func, sandbox, func_name)
-        func = function(func, *func_args, **func_kwargs)
-        if func._source is None:
-            func._source = func_source
-        return func
 
 # ===========================================================================
 # Python
 # ===========================================================================
-
-
 def get_all_files(path, filter_func=None):
     ''' Recurrsively get all files in the given path '''
     file_list = []

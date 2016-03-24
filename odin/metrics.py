@@ -106,19 +106,22 @@ def mean_categorical_accuracy(y_pred, y_true, top_k=1):
 def Cavg_fast(y_llr, y_true, Ptar=0.5, Cfa=1., Cmiss=1.):
     ''' Fast calculation of Cavg (for only 1 clusters) '''
     thresh = np.log(Cfa / Cmiss) - np.log(Ptar / (1 - Ptar))
-    if isinstance(y_true, (list, tuple)) or y_true.ndim == 1:
-        y_true = T.np_one_hot(y_true)
+    n = y_llr.shape[1]
+
+    if isinstance(y_true, (list, tuple)):
+        y_true = np.asarray(y_true)
+    if T.ndim(y_true) == 1:
+        y_true = T.one_hot(y_true, n)
 
     y_false = T.switch(y_true, 0, 1) # invert of y_true, False Negative mask
-    y_positive = T.switch(y_llr >= thresh, 1, 0)
-    y_negative = T.switch(y_llr < thresh, 1, 0) # inver of y_positive
-    distribution = T.clip(np.sum(y_true, 0), 10e-8, 10e8) # no zero values
-    n = distribution.shape[1]
+    y_positive = T.switch(T.ge(y_llr, thresh), 1, 0)
+    y_negative = T.switch(T.lt(y_llr, thresh), 1, 0) # inver of y_positive
+    distribution = T.clip(T.sum(y_true, axis=0), 10e-8, 10e8) # no zero values
     # ====== Pmiss ====== #
-    miss = T.sum(y_true * y_negative, 0)
+    miss = T.sum(y_true * y_negative, axis=0)
     Pmiss = 100 * (Cmiss * Ptar * miss) / distribution
     # ====== Pfa ====== # This calculation give different results
-    fa = T.sum(y_false * y_positive, 0)
+    fa = T.sum(y_false * y_positive, axis=0)
     Pfa = 100 * (Cfa * (1 - Ptar) * fa) / distribution
     Cavg = T.mean(Pmiss) + T.mean(Pfa) / (n - 1)
     return Cavg

@@ -288,7 +288,8 @@ class model(OdinObject):
         kwargs : **
             any arguments for your model creatation function
         '''
-        if not hasattr(model, '__call__'):
+        import inspect
+        if not inspect.isfunction(model):
             raise NotImplementedError('Model must be a function return '
                                       'computational graph.')
         func = function(model, *args, **kwargs)
@@ -381,7 +382,7 @@ class model(OdinObject):
         prediction = self._pred_func(*X)
         return prediction
 
-    def rollback(self):
+    def rollback(self, history=False):
         ''' Roll-back weights and history of model from last checkpoints
         (last saved path).
         '''
@@ -397,8 +398,8 @@ class model(OdinObject):
                     API.set_weights(self._model, self._api, self._weights)
                     self.log(' *** Weights rolled-back! ***', 10)
 
-            # rollback history
-            if 'history' in f:
+            # rollback history if required
+            if 'history' in f and history:
                 self._history = cPickle.loads(f['history'].value)
                 self.log(' *** History rolled-back! ***', 10)
                 self._history_updated = True
@@ -538,7 +539,7 @@ class model(OdinObject):
         # ====== Save model function ====== #
         if self._model_func is not None:
             self.get_model() # need to create model to find which API
-            f['model_func'] = cPickle.dumps(self._model_func.get_config())
+            f['model_func'] = cPickle.dumps(self._model_func)
             f['api'] = self._api
         # ====== save weights ====== #
         # check weights, always fetch newest weights from model
@@ -570,8 +571,7 @@ class model(OdinObject):
         # load model_func code
         m._model_func = None
         if 'model_func' in f:
-            m._model_func = function.parse_config(
-                cPickle.loads(f['model_func'].value))
+            m._model_func = cPickle.loads(f['model_func'].value)
         # ====== load weights ====== #
         m._weights = API.load_weights(f, m._api)
         f.close()

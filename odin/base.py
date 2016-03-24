@@ -327,7 +327,7 @@ class OdinFunction(OdinObject):
             return [self]
         return T.np_ordered_set(roots).tolist()
 
-    def get_children(self, name=None, include_self=True):
+    def get_children(self, name=None, type=None, include_self=True):
         ''' Performing Depth First Search to return all the OdinFunction
         which act as inputs to this function
 
@@ -351,9 +351,10 @@ class OdinFunction(OdinObject):
                 children.append(i)
                 children += i.get_children()
         children = T.np_ordered_set(children).tolist()
-        if name is not None:
-            children += [i for i in children if name in i._name]
-        return children
+        type_condition = lambda x: True if type is None else isinstance(x, type)
+        name_condition = lambda x: True if name is None else name in i._name
+        return [i for i in children
+                if name_condition(i) and type_condition(i)]
 
     def get_cache_input(self, training):
         '''Return last inputs returned by this funcitons'''
