@@ -256,7 +256,7 @@ def tile_raster_images(X, tile_shape=None, tile_spacing=(2, 2), spacing_value=0.
         for j in range(n): # all columns
             idx = i * n + j
             if idx < len(X):
-                r.append(np.vstack((X[i * 4 + j], rows_spacing)))
+                r.append(np.vstack((X[i * n + j], rows_spacing)))
             else:
                 r.append(nothing)
             if j != n - 1:   # cols spacing
@@ -504,8 +504,7 @@ def plot_spectrogram(x, vad=None, ax=None, colorbar=False):
     return ax
 
 
-def plot_images(X, tile_shape=None, tile_spacing=None,
-    fig=None, title=None):
+def plot_images(X, tile_shape=None, tile_spacing=None, fig=None, title=None):
     '''
     x : 2D-gray or 3D-color images, or list of (2D, 3D images)
         for color image the color channel is second dimension
@@ -692,9 +691,6 @@ def plot_weights3D(x, colormap = "Greys"):
     >>> # 3D shape
     >>> x = np.random.rand(32, 28, 28)
     >>> dnntoolkit.visual.plot_conv_weights(x)
-    >>> # 4D shape
-    >>> x = np.random.rand(32, 3, 28, 28)
-    >>> dnntoolkit.visual.plot_conv_weights(x)
     '''
     from matplotlib import pyplot as plt
 
@@ -705,11 +701,8 @@ def plot_weights3D(x, colormap = "Greys"):
     if len(shape) == 3:
         ncols = int(np.ceil(np.sqrt(shape[0])))
         nrows = int(ncols)
-    elif len(shape) == 4:
-        ncols = shape[0]
-        nrows = shape[1]
     else:
-        raise ValueError('Unsupport for %d dimension' % x.ndim)
+        raise ValueError('This function only support 3D weights matrices')
 
     fig = plt.figure()
     count = 0
@@ -717,27 +710,74 @@ def plot_weights3D(x, colormap = "Greys"):
         for j in range(ncols):
             count += 1
             # skip
-            if x.ndim == 3 and count > shape[0]:
+            if count > shape[0]:
+                continue
+
+            ax = fig.add_subplot(nrows, ncols, count)
+            # ax.set_aspect('equal', 'box')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if i == 0 and j == 0:
+                ax.set_xlabel('Width:%d' % x.shape[-1], fontsize=6)
+                ax.xaxis.set_label_position('top')
+                ax.set_ylabel('Height:%d' % x.shape[-2], fontsize=6)
+                ax.yaxis.set_label_position('left')
+            else:
+                ax.axis('off')
+            # image data: no idea why pcolorfast flip image vertically
+            img = ax.pcolorfast(x[count - 1][::-1, :], cmap=colormap, alpha=0.9)
+            # plt.grid(True)
+
+    plt.tight_layout()
+    # colorbar
+    axes = fig.get_axes()
+    fig.colorbar(img, ax=axes)
+
+    return fig
+
+
+def plot_weights4D(x, colormap = "Greys"):
+    '''
+    Example
+    -------
+    >>> # 3D shape
+    >>> x = np.random.rand(32, 28, 28)
+    >>> dnntoolkit.visual.plot_conv_weights(x)
+    '''
+    from matplotlib import pyplot as plt
+
+    if colormap is None:
+        colormap = plt.cm.Greys
+
+    shape = x.shape
+    if len(shape) != 4:
+        raise ValueError('This function only support 4D weights matrices')
+
+    fig = plt.figure()
+    imgs = []
+    for i in range(shape[0]):
+        imgs.append(tile_raster_images(x[i], tile_spacing=(3, 3)))
+
+    ncols = int(np.ceil(np.sqrt(shape[0])))
+    nrows = int(ncols)
+
+    count = 0
+    for i in range(nrows):
+        for j in range(ncols):
+            count += 1
+            # skip
+            if count > shape[0]:
                 continue
 
             ax = fig.add_subplot(nrows, ncols, count)
             ax.set_aspect('equal', 'box')
             ax.set_xticks([])
             ax.set_yticks([])
-            if i == 0 and j == 0:
-                ax.set_xlabel('New channels', fontsize=6)
-                ax.xaxis.set_label_position('top')
-                ax.set_ylabel('Old channels', fontsize=6)
-                ax.yaxis.set_label_position('left')
-            else:
-                ax.axis('off')
-            # image data
-            if x.ndim == 4:
-                img = ax.pcolorfast(x[j, i], cmap=colormap, alpha=0.8)
-            else:
-                img = ax.pcolorfast(x[count - 1], cmap=colormap, alpha=0.8)
-            plt.grid(True)
+            ax.axis('off')
+            # image data: no idea why pcolorfast flip image vertically
+            img = ax.pcolorfast(imgs[count - 1][::-1, :], cmap=colormap, alpha=0.9)
 
+    plt.tight_layout()
     # colorbar
     axes = fig.get_axes()
     fig.colorbar(img, ax=axes)
