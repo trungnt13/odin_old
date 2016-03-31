@@ -23,6 +23,8 @@ def _load_theano_config():
     if config.fastcnn() and config.device() == 'gpu':
         flags += ',dnn.conv.algo_fwd=time_once,dnn.conv.algo_bwd_filter=time_once,dnn.conv.algo_bwd_data=time_once'
         logger.warning('Using fast cnn algorithm, only compatible with CuDNN v4.')
+    # CNMEM
+    flags += ',lib.cnmem=.9,allow_gc=True'
     os.environ['THEANO_FLAGS'] = flags
 
 
