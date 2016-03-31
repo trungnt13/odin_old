@@ -679,6 +679,9 @@ def serialize_sandbox(environment):
             if isinstance(v, types.ModuleType): # special case: import module
                 v = v.__name__
                 t = 'module'
+            elif v is None: # for some reason, pickle cannot serialize None type
+                v = None
+                t = 'None'
             elif inspect.isfunction(v): # special case: function
                 v = func_to_str(v)
                 t = 'function'
@@ -708,6 +711,8 @@ def deserialize_sandbox(sandbox):
     for k, v in sandbox.iteritems():
         if v['type'] in primitives:
             v = v['content']
+        elif v['type'] == 'None':
+            v = None
         elif v['type'] == 'module':
             v = importlib.import_module(v['content'])
         elif v['type'] == 'function':

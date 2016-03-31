@@ -586,7 +586,7 @@ def plot_images_old(x, fig=None, titles=None, show=False):
         return fig
 
 
-def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
+def plot_confusion_matrix(cm, labels, axis=None, fontsize=13, colorbar=False):
     from matplotlib import pyplot as plt
 
     title = 'Confusion matrix'
@@ -602,15 +602,23 @@ def plot_confusion_matrix(cm, labels, axis=None, fontsize=13):
 
     im = axis.imshow(cm_normalized, interpolation='nearest', cmap=cmap)
     axis.set_title(title)
-    axis.get_figure().colorbar(im)
+    # axis.get_figure().colorbar(im)
 
     tick_marks = np.arange(len(labels))
     axis.set_xticks(tick_marks)
     axis.set_yticks(tick_marks)
-    axis.set_xticklabels(labels, rotation=90, fontsize=13)
-    axis.set_yticklabels(labels, fontsize=13)
+    axis.set_xticklabels(labels, rotation=90, fontsize=fontsize)
+    axis.set_yticklabels(labels, fontsize=fontsize)
     axis.set_ylabel('True label')
     axis.set_xlabel('Predicted label')
+
+    if colorbar == 'all':
+        fig = axis.get_figure()
+        axes = fig.get_axes()
+        fig.colorbar(im, ax=axes)
+    elif colorbar:
+        plt.colorbar(im, ax=axis)
+
     # axis.tight_layout()
     return axis
 
@@ -825,10 +833,11 @@ def plot_hinton(matrix, max_weight=None, ax=None):
 # ===========================================================================
 # Helper methods
 # ===========================================================================
-def plot_show():
+def plot_show(block=False):
     from matplotlib import pyplot as plt
-    plt.show(block=False)
-    raw_input('<enter> to close all plots')
+    plt.show(block=block)
+    if not block: # manually block
+        raw_input('<enter> to close all plots')
     plt.close('all')
 
 

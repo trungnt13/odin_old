@@ -8,6 +8,7 @@
 # Original work Copyright (c) [dementrock](https://github.com/dementrock)
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
+from __future__ import division
 
 import tensorflow as tf
 import numpy as np
@@ -90,7 +91,7 @@ def _wrap_into_list(x):
 # ===========================================================================
 
 
-def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
+def variable(value, dtype=_FLOATX, name=None, broadcastable=None, target='dev0'):
     v = tf.Variable(np.asarray(value, dtype=dtype), name=name)
     get_session().run(v.initializer)
     return v
@@ -231,6 +232,15 @@ def gather(reference, indices):
         a tensor of same type as `reference`.
     '''
     return tf.gather(reference, indices)
+
+
+def diag(x):
+    return tf.diag(x)
+
+
+def eye(n):
+    raise NotImplementedError
+    return tf.eye()
 
 
 # ===========================================================================
@@ -1030,22 +1040,6 @@ def categorical_crossentropy(output, target, from_logits=False):
                                reduction_indices=len(output.get_shape()) - 1)
     else:
         return tf.nn.softmax_cross_entropy_with_logits(output, target)
-
-
-def bayes_crossentropy(y_pred, y_true, distribution=None, from_logits=False):
-    # TODO: implement distribution
-    if not from_logits:
-        # scale preds so that the class probas of each sample sum to 1
-        y_pred /= tf.reduce_sum(y_pred,
-                                reduction_indices=len(y_pred.get_shape()) - 1,
-                                keep_dims=True)
-        # manual computation of crossentropy
-        y_pred = tf.clip_by_value(y_pred, tf.cast(_EPSILON, dtype=_FLOATX),
-                                  tf.cast(1. - _EPSILON, dtype=_FLOATX))
-        return - tf.reduce_sum(y_true * tf.log(y_true),
-                               reduction_indices=len(y_true.get_shape()) - 1)
-    else:
-        return tf.nn.softmax_cross_entropy_with_logits(y_pred, y_true)
 
 
 def binary_crossentropy(output, target, from_logits=False):

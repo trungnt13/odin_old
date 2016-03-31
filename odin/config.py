@@ -1,6 +1,7 @@
 from __future__ import print_function, division, absolute_import
 
 import os
+import re
 from .logger import set_enable, info, set_print_level, error
 
 __all__ = [
@@ -9,11 +10,13 @@ __all__ = [
     'epsilon'
 ]
 
+_valid_device_name = re.compile('(cuda|gpu)\d+')
+
 _ODIN_FLAGS = os.getenv("ODIN", "")
 _FLOATX = 'float32'
 _BACKEND = None
 _EPSILON = 10e-8
-_DEVICE = 'cpu'
+_DEVICE = []
 _VERBOSE = False
 _FAST_CNN = False
 _GRAPHIC = False
@@ -31,14 +34,32 @@ def _parse_config():
     s = _ODIN_FLAGS.split(',')
     for i in s:
         i = i.lower()
+        # ====== Data type ====== #
         if 'float' in i or 'int' in i:
             _FLOATX = i
+            if _FLOATX == 'float16':
+                _EPSILON = 10e-5
+            elif _FLOATX == 'float32':
+                _EPSILON = 10e-8
+            elif _FLOATX == 'float64':
+                _EPSILON = 10e-12
+        # ====== Backend ====== #
         elif 'theano' in i:
             _BACKEND = 'theano'
         elif 'tensorflow' in i or 'tf' in i:
             _BACKEND = 'tensorflow'
-        elif 'gpu' == i or 'cpu' == i:
-            _DEVICE = i
+        # ====== Devices ====== #
+        elif 'cpu' == i:
+            _DEVICE = 'cpu'
+        elif 'gpu' in i or 'cuda' in i:
+            if i == 'gpu': i = 'gpu0'
+            elif i == 'cuda': i = 'cuda0'
+            if _valid_device_name.match(i) is None:
+                raise ValueError('Unsupport device name: %s '
+                                 '(must be "cuda"|"gpu" and optional number)'
+                                 ', e.g: cuda0, gpu0, cuda, gpu, ...' % i)
+            _DEVICE.append(i.replace('gpu', 'cuda'))
+        # ====== others ====== #
         elif 'verbose' in i:
             _VERBOSE = True
             set_enable(True)
@@ -48,16 +69,12 @@ def _parse_config():
                     set_print_level(log_level)
             except Exception, e:
                 error('Fail to read verbose level, error:' + str(e))
+        # ====== fastcnn ====== #
         elif 'fastcnn' in i:
             _FAST_CNN = True
+        # ====== graphic ====== #
         elif 'graphic' in i:
             _GRAPHIC = True
-        else:
-            try:
-                i = float(i)
-                _EPSILON = i
-            except:
-                pass
 
     # set non-graphic backend for matplotlib
     if not _GRAPHIC:
@@ -66,6 +83,9 @@ def _parse_config():
             matplotlib.use('Agg')
         except:
             pass
+    # if DEVICE still len = 0, use cpu
+    if len(_DEVICE) == 0:
+        _DEVICE = 'cpu'
 
 
 def set_backend(backend):

@@ -32,16 +32,19 @@ __all__ = [
 # ===========================================================================
 # Differentiable
 # ===========================================================================
-def squared_loss(y_pred, y_true):
-    return T.square(y_pred - y_true)
+def squared_loss(y_pred, y_true, infomat=None):
+    if infomat is None:
+        return T.sum(T.square(y_pred - y_true), axis=-1)
+    infomat = infomat[T.argmax(y_true, -1)]
+    return T.sum(T.square(y_pred - y_true) * infomat, axis=-1)
 
 
-def mean_squared_loss(y_pred, y_true):
-    return T.mean(T.square(y_pred - y_true))
+def mean_squared_loss(y_pred, y_true, infomat=None):
+    return T.mean(squared_loss(y_pred, y_true, infomat))
 
 
 def absolute_loss(y_pred, y_true):
-    return T.abs(y_pred - y_true)
+    return T.sum(T.abs(y_pred - y_true), axis=-1)
 
 
 def mean_absolute_loss(y_pred, y_true):
@@ -107,16 +110,56 @@ def mean_categorical_crossentropy(y_pred, y_true):
     return T.mean(T.categorical_crossentropy(y_pred, y_true))
 
 
-def bayes_crossentropy(y_pred, y_true, distribution=None):
-    '''Expects a binary class matrix instead of a vector of scalar classes.
-    '''
-    return T.bayes_crossentropy(y_pred, y_true, distribution)
+def infogain_crossentropy(y_pred, y_true, infomat):
+    if T.ndim(y_pred) != 2 or T.ndim(y_true) != 2:
+        raise ValueError('both y_pred and y_true must be 2-d tensor')
+    if infomat is None:
+        raise ValueError('Confusion matrix cannot be None')
+    # avoid numerical instability with _EPSILON clipping
+    y_pred = T.clip(y_pred, epsilon(), 1.0 - epsilon())
+    # ====== init confusion info loss ====== #
+    # normalize the confusion matrix
+    infomat = infomat[T.argmax(y_true, -1)]
+    # weighed loss based on cofusion weights f
+    return -T.sum(infomat * T.log(y_pred), axis=1)
 
 
-def mean_bayes_crossentropy(y_pred, y_true, distribution=None):
+def mean_infogain_crossentropy(y_pred, y_true, infomat):
     '''Expects a binary class matrix instead of a vector of scalar classes.
     '''
-    return T.mean(T.bayes_crossentropy(y_pred, y_true, distribution))
+    return T.mean(infogain_crossentropy(y_pred, y_true, infomat))
+
+
+def bayes_crossentropy(y_pred, y_true, distribution=None, infomat=None):
+    if T.ndim(y_pred) != 2 or T.ndim(y_true) != 2 or \
+    (infomat is not None and T.ndim(infomat) != 2):
+        raise ValueError('y_pred, y_true and infomat must be 2-d tensor')
+    # avoid numerical instability with _EPSILON clipping
+    y_pred = T.clip(y_pred, epsilon(), 1.0 - epsilon())
+    nb_classes = T.shape(y_true)[1]
+    # ====== check distribution ====== #
+    if distribution is None:
+        distribution = T.sum(y_true, axis=0)
+    # ====== init confusion info loss ====== #
+    if infomat is not None: # weighted by confusion matrix
+        # normalize the confusion matrix
+        # confusion = confusion / T.sum(confusion)
+        infomat = infomat[T.argmax(y_true, -1)]
+        # weighed loss based on cofusion weights f
+        loss = infomat * T.log(y_pred)
+    else: # weighted by y_true
+        loss = y_true * T.log(y_pred)
+    # probability distribution of each class
+    prob_distribution = T.dimshuffle(distribution / T.sum(distribution), ('x', 0))
+    # we need to clip the prior probability distribution also
+    prob_distribution = T.clip(prob_distribution, epsilon(), 1.0 - epsilon())
+    return - 1 / nb_classes * T.sum(loss / prob_distribution, axis=1)
+
+
+def mean_bayes_crossentropy(y_pred, y_true, distribution=None, infomat=None):
+    '''Expects a binary class matrix instead of a vector of scalar classes.
+    '''
+    return T.mean(bayes_crossentropy(y_pred, y_true, distribution, infomat))
 
 
 def binary_crossentropy(y_pred, y_true):
@@ -125,6 +168,32 @@ def binary_crossentropy(y_pred, y_true):
 
 def mean_binary_crossentropy(y_pred, y_true):
     return T.mean(T.binary_crossentropy(y_pred, y_true))
+
+
+def hellinger_distance(y_pred, y_true, infomat=None):
+    ''' a skew insensitive criterion
+    distance between probability measures independent of the dominating
+    parameters, best use for imbalanced dataset
+    Properties:
+        range from 0 to sqrt(2)
+        symetric: D(P,Q) = D(Q,P)
+        lower bound of KL divergence
+    '''
+
+    if T.ndim(y_pred) != 2 or T.ndim(y_true) != 2:
+        raise ValueError('both y_pred and y_true must be 2-d tensor')
+    if infomat is None:
+        return T.sqrt(1. / 2 *
+                      T.sum(T.pow(T.sqrt(y_pred) - T.sqrt(y_true), 2), axis=-1))
+    else:
+        infomat = infomat[T.argmax(y_true, -1)]
+        return T.sqrt(1. / 2 *
+                      T.sum(T.pow(T.sqrt(y_pred) - T.sqrt(y_true), 2) * infomat,
+                            axis=-1))
+
+
+def mean_hellinger_distance(y_pred, y_true, infomat=None):
+    return T.mean(hellinger_distance(y_pred, y_true, infomat))
 
 
 def poisson(y_pred, y_true):
@@ -183,7 +252,8 @@ def MfoM(y_pred, y_true, distribution,
     # ====== miss and false alarm ====== #
     # sum over all samples (axis=0), plus epsilon so no divide by zero issue
     Pmiss = T.sum(FN / (TP + FN + epsilon), axis=0)
-    Pfa = T.sum(FP / (FP + TN + epsilon), axis=0)
+    Pfa = T.sum(FP / (TP + FN + epsilon), axis=0)
+    # Pfa = T.sum(FP / (FP + TN + epsilon), axis=0)
     # ====== main cost ====== #
     model_cost = Cmiss * Ptar * Pmiss
     anti_model = 1 / (nb_classes - 1) * (Cfa * (1 - Ptar) * Pfa)

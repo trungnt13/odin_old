@@ -6,6 +6,7 @@
 # Original work Copyright (c) 2014-2015 Lasagne contributors
 # Modified work Copyright 2016-2017 TrungNT
 # ===========================================================================
+from __future__ import division
 
 import theano
 from theano import tensor as T
@@ -50,14 +51,14 @@ def get_session():
 # ===========================================================================
 # VARIABLE MANIPULATION
 # ===========================================================================
-def variable(value, dtype=_FLOATX, name=None, broadcastable=None):
+def variable(value, dtype=_FLOATX, name=None, broadcastable=None, target='dev0'):
     '''Instantiate a tensor variable.
     '''
     value = np.asarray(value, dtype=dtype)
     if broadcastable:
         return theano.shared(value=value, name=name, strict=False,
-                             broadcastable=broadcastable)
-    return theano.shared(value=value, name=name, strict=False)
+                             broadcastable=broadcastable, target=target)
+    return theano.shared(value=value, name=name, strict=False, target=target)
 
 
 def zeros_var(shape, dtype=_FLOATX, name=None):
@@ -197,8 +198,9 @@ def cast(x, dtype):
 def castX(x):
     return cast(x, _FLOATX)
 
+# ===========================================================================
 # LINEAR ALGEBRA
-
+# ===========================================================================
 '''
 Assumed overridden:
 +, -, /, *, +=, -=, *=, /=
@@ -220,6 +222,14 @@ def gather(reference, indices):
     Return: a tensor of same type as reference.
     '''
     return reference[indices]
+
+
+def diag(x):
+    return T.diag(x)
+
+
+def eye(n, dtype=_FLOATX):
+    return T.eye(n, dtype=dtype)
 
 
 # ===========================================================================
@@ -877,25 +887,6 @@ def categorical_crossentropy(output, target, from_logits=False):
     # avoid numerical instability with _EPSILON clipping
     output = T.clip(output, _EPSILON, 1.0 - _EPSILON)
     return T.nnet.categorical_crossentropy(output, target)
-
-
-def bayes_crossentropy(y_pred, y_true, distribution=None, from_logits=False):
-    if y_pred.ndim != 2 or y_true.ndim != 2:
-        raise ValueError('both y_pred and y_true must be 2-d tensor')
-
-    if from_logits:
-        y_pred = T.nnet.softmax(y_pred)
-    # avoid numerical instability with _EPSILON clipping
-    y_pred = T.clip(y_pred, _EPSILON, 1.0 - _EPSILON)
-    if distribution is None:
-        distribution = y_true.sum(axis=0)
-    # probability distribution of each class
-    prob_distribution = dimshuffle(distribution / T.sum(distribution), ('x', 0))
-    # we need to clip the prior probability distribution also
-    prob_distribution = T.clip(prob_distribution, _EPSILON, 1.0 - _EPSILON)
-    nb_classes = y_true.shape[1]
-    return -1 / nb_classes * T.sum(y_true * T.log(y_pred) / prob_distribution,
-        axis=y_pred.ndim - 1)
 
 
 def binary_crossentropy(output, target, from_logits=False):

@@ -5,8 +5,18 @@ from .. import config
 from .. import logger
 from .numpy_backend import *
 
+
+# ===========================================================================
+# Load the config
+# ===========================================================================
 def _load_theano_config():
-    flags = "mode=FAST_RUN,device=%s,floatX=%s" % (config.device(), config.floatX())
+    if config.device() == 'cpu':
+        flags = "mode=FAST_RUN,device=%s,floatX=%s" % (config.device(), config.floatX())
+    else:
+        contexts = ';'.join(['dev%d->cuda%d' % (i, int(_.replace('cuda', '')))
+                             for i, _ in enumerate(config.device())])
+        flags = "contexts=" + contexts + ",mode=FAST_RUN,floatX=%s" % config.floatX()
+    # ====== others ====== #
     if config.verbose():
         flags += ',exception_verbosity=high'
     # Speedup CuDNNv4
@@ -15,6 +25,10 @@ def _load_theano_config():
         logger.warning('Using fast cnn algorithm, only compatible with CuDNN v4.')
     os.environ['THEANO_FLAGS'] = flags
 
+
+# ===========================================================================
+# Load backend
+# ===========================================================================
 if config.backend() == 'theano':
     _load_theano_config()
     logger.critical('Using Theano backend, flags:%s' % os.environ['THEANO_FLAGS'])
@@ -22,9 +36,11 @@ if config.backend() == 'theano':
 elif config.backend() == 'tensorflow':
     logger.critical('Using TensorFlow backend.')
     from .tf_backend import *
+# ===========================================================================
+# Auto load backend
+# ===========================================================================
 else:
     is_load_backend = False
-
     try:
         _load_theano_config()
         import theano
@@ -46,4 +62,3 @@ else:
             logger.critical('Failed to load tensorflow, error:' + str(e))
     if not is_load_backend:
         raise Exception('Unknown backend: ' + str(config.backend()))
-

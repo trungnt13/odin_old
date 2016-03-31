@@ -530,12 +530,14 @@ class trainer(OdinObject):
             for chaining method calling, subtasks can be add after calling this
             function
         '''
-        if not seed:
+        if seed is None:
             seed = get_magic_seed()
+        if mode is None:
+            mode = self._iter_mode
         data = self._validate_data(data, ds)
         # ====== create task ====== #
         task = _task(name, func, data, epoch=epoch, p=p, seed=seed, mode=mode)
-        task.set_iter(bs, start, end, shuffle, self._iter_mode)
+        task.set_iter(bs, start, end, shuffle, mode)
         task.set_callback(self)
         # ====== store the task ====== #
         self._task_list.append(task)
