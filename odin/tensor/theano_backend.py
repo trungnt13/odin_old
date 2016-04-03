@@ -212,16 +212,16 @@ def cast(x, dtype):
 def castX(x):
     return cast(x, _FLOATX)
 
+
 # ===========================================================================
 # LINEAR ALGEBRA
+# Assumed overridden:
+# +, -, /, *, +=, -=, *=, /=
 # ===========================================================================
-'''
-Assumed overridden:
-+, -, /, *, +=, -=, *=, /=
-'''
-
-
 def dot(x, y):
+    # TODO: float16 overflow
+    if config.floatX() == 'float16':
+        return T.dot(x.astype('float32'), y.astype('float32')).astype('float16')
     return T.dot(x, y)
 
 
@@ -278,8 +278,8 @@ def prod(x, axis=None, keepdims=False):
 
 
 def mean(x, axis=None, keepdims=False):
-    dtype = None
-    if 'int' in x.dtype:
+    dtype = x.dtype
+    if 'int' in dtype:
         dtype = _FLOATX
     return T.mean(x, axis=axis, keepdims=keepdims, dtype=dtype)
 
@@ -649,9 +649,10 @@ def gradients(loss, variables, consider_constant=None, known_grads=None):
     >>>     print(g.eval())
     >>> # a_grad=0. b_grad=0. y_grad=6.614
     """
+    # TODO: float16 overflow, unsupport DeepCopyOps
     return T.grad(loss, wrt=variables,
         consider_constant=consider_constant, known_grads=known_grads,
-        disconnected_inputs='warn')
+        disconnected_inputs='raise')
 
 
 def jacobian(loss, variables):

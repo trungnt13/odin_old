@@ -17,11 +17,11 @@ import numpy as np
 
 from six.moves import zip, range
 import time
+
+
 # ===========================================================================
 # Main Test
 # ===========================================================================
-
-
 class FunctionsTest(unittest.TestCase):
 
     def setUp(self):
@@ -60,7 +60,8 @@ class FunctionsTest(unittest.TestCase):
 
         b = nnet.BatchNormalization([(None, 8)])
 
-        f_train = T.function(b.input_var, outputs=b(True))
+        f_train = T.function(b.input_var,
+                             outputs=b(True)[0].astype(config.floatX()))
         mean1 = b.get_params_value(True)[2]
         for i in xrange(30):
             f_train(X1)
@@ -69,7 +70,10 @@ class FunctionsTest(unittest.TestCase):
         diff = mean1 - mean2
         val = np.asarray([-0.41652647, -0.54181147, -0.48397034, -0.53209579,
             -0.5128513, -0.63138282, -0.45040295, -0.3329283])
-        self.assertLessEqual(np.sum(np.abs(diff - val)), 0.00005)
+        if config.floatX() == 'float16':
+            self.assertLessEqual(np.sum(np.abs(diff - val)), 0.008)
+        else:
+            self.assertLessEqual(np.sum(np.abs(diff - val)), 0.00005)
 
     def test_cnn(self):
         np.random.seed(13)
@@ -115,6 +119,8 @@ class FunctionsTest(unittest.TestCase):
         self.assertEqual(x1.shape, x2.shape)
 
     def test_dense_func(self):
+        threshold = 10e-4 if config.floatX() == 'float16' else 10e-5
+
         d3 = nnet.Dense((None, 10), num_units=5, nonlinearity=T.linear)
         f_pred = T.function(d3.input_var, d3())
 
@@ -124,7 +130,7 @@ class FunctionsTest(unittest.TestCase):
         p = d3.get_params_value(True)[0]
         pred1 = np.round(f_pred(x)[0], 6)
         pred2 = np.round(np.dot(x, p), 6)
-        self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), 10e-5)
+        self.assertLessEqual(np.sum(np.abs(pred1 - pred2)), threshold)
 
         # ====== only cost ====== #
         cost, _ = d3.get_optimization(
@@ -133,7 +139,7 @@ class FunctionsTest(unittest.TestCase):
 
         cost1 = np.round(np.mean(f_cost(x, y)), 6)
         cost2 = np.round(np.mean((np.dot(x, p) - y)**2), 6)
-        self.assertLessEqual(np.sum(np.abs(cost1 - cost2)), 10e-5)
+        self.assertLessEqual(np.sum(np.abs(cost1 - cost2)), threshold)
 
         # ====== optimization ====== #
         cost, updates = d3.get_optimization(

@@ -40,12 +40,6 @@ def _parse_config():
         # ====== Data type ====== #
         if 'float' in i or 'int' in i:
             _FLOATX = i
-            if _FLOATX == 'float16':
-                _EPSILON = 10e-5
-            elif _FLOATX == 'float32':
-                _EPSILON = 10e-8
-            elif _FLOATX == 'float64':
-                _EPSILON = 10e-12
         # ====== Backend ====== #
         elif 'theano' in i:
             _BACKEND = 'theano'
@@ -101,6 +95,13 @@ def _parse_config():
     # if DEVICE still len = 0, use cpu
     if len(_DEVICE) == 0:
         _DEVICE = 'cpu'
+    # adject epsilon
+    if _FLOATX == 'float16':
+        _EPSILON = 10e-5
+    elif _FLOATX == 'float32':
+        _EPSILON = 10e-8
+    elif _FLOATX == 'float64':
+        _EPSILON = 10e-12
 
 
 def set_backend(backend):

@@ -10,11 +10,13 @@ from .. import tensor as T
 from ..objectives import *
 from ..optimizers import *
 from ..metrics import *
-
+from .. import config
 
 # ===========================================================================
 # Main Test
 # ===========================================================================
+
+
 class ObjectivesTest(unittest.TestCase):
 
     def setUp(self):
@@ -25,10 +27,16 @@ class ObjectivesTest(unittest.TestCase):
 
     def test_all_objectives(self):
         np.random.seed(12082518)
-        y_pred = np.random.rand(16, 10)
-        y_true = np.random.rand(16, 10)
+        y_pred = np.random.rand(16, 10).astype(config.floatX())
+        y_true = np.random.rand(16, 10).astype(config.floatX())
         y_pred_ = T.variable(y_pred)
         y_true_ = T.variable(y_true)
+
+        round_value = 3
+        if config.floatX() == 'float16':
+            y_pred_ = T.cast(y_pred_, 'float32')
+            y_true_ = T.cast(y_true_, 'float32')
+            round_value = 1
 
         def calc_cost(func):
             cost = T.mean(func(y_pred_, y_true_))
@@ -43,23 +51,38 @@ class ObjectivesTest(unittest.TestCase):
                     diffable = True
             except:
                 print('%-24s' % func.__name__, "Non-Differentiable!")
-            return round(T.eval(cost).tolist(), 3), diffable
-        print()
-        self.assertEqual(calc_cost(squared_loss), (0.174, True))
-        self.assertEqual(calc_cost(absolute_loss), (0.351, True))
-        self.assertEqual(calc_cost(absolute_percentage_loss), (305.868, True))
-        self.assertEqual(calc_cost(squared_logarithmic_loss), (0.080, True))
-        self.assertEqual(calc_cost(squared_hinge), (0.567, True))
-        self.assertEqual(calc_cost(hinge), (0.715, True))
-        self.assertEqual(calc_cost(categorical_crossentropy), (13.930, True))
-        self.assertEqual(calc_cost(poisson), (1.035, True))
-        self.assertEqual(calc_cost(cosine_proximity), (-0.078, True))
-        self.assertEqual(calc_cost(hinge), (0.715, True))
-        self.assertEqual(calc_cost(bayes_crossentropy), (5.008, True))
-        self.assertEqual(calc_cost(hellinger_distance), (0.734, True))
+            return round(T.eval(cost).tolist(), round_value), diffable
 
-        self.assertEqual(calc_cost(binary_accuracy), (0.438, False))
-        self.assertEqual(calc_cost(categorical_accuracy), (0.063, False))
+        print()
+        self.assertEqual(calc_cost(squared_loss),
+                        (round(0.174, round_value), True))
+        self.assertEqual(calc_cost(absolute_loss),
+                        (round(0.351, round_value), True))
+        self.assertEqual(calc_cost(absolute_percentage_loss),
+                        (round(305.868, round_value), True))
+        self.assertEqual(calc_cost(squared_logarithmic_loss),
+                        (round(0.080, round_value), True))
+        self.assertEqual(calc_cost(squared_hinge),
+                        (round(0.567, round_value), True))
+        self.assertEqual(calc_cost(hinge),
+                        (round(0.715, round_value), True))
+        self.assertEqual(calc_cost(categorical_crossentropy),
+                        (round(13.930, round_value), True))
+        self.assertEqual(calc_cost(poisson),
+                        (round(1.035, round_value), True))
+        self.assertEqual(calc_cost(cosine_proximity),
+                        (round(-0.078, round_value), True))
+        self.assertEqual(calc_cost(hinge),
+                        (round(0.715, round_value), True))
+        self.assertEqual(calc_cost(bayes_crossentropy),
+                        (round(5.008, round_value), True))
+        self.assertEqual(calc_cost(hellinger_distance),
+                        (round(0.734, round_value), True))
+
+        self.assertEqual(calc_cost(binary_accuracy),
+                        (round(0.438, round_value), False))
+        self.assertEqual(calc_cost(categorical_accuracy),
+                        (round(0.063, round_value), False))
 
 
 class OptimizersTest(unittest.TestCase):
@@ -73,9 +96,9 @@ class OptimizersTest(unittest.TestCase):
     def test_updates_constraint(self):
         # ====== simple matrix factorization ====== #
         np.random.seed(12082518)
-        x = np.random.rand(16, 8)
-        y = np.random.rand(8, 13)
-        z = np.random.rand(16, 13)
+        x = np.round(np.random.rand(16, 8), 5).astype(config.floatX())
+        y = np.round(np.random.rand(8, 13), 5).astype(config.floatX())
+        z = np.round(np.random.rand(16, 13), 5).astype(config.floatX())
 
         x_ = T.variable(x)
         y_ = T.variable(y)
@@ -92,6 +115,7 @@ class OptimizersTest(unittest.TestCase):
                 outputs=obj,
                 updates=updates)
             r = [f() for i in xrange(30)]
+            r = [i if isinstance(i, float) else i.tolist() for i in r]
             self.assertGreater(r[:-1], r[1:])
         print()
         print('%-18s OK!' % 'sgd'); test_opt(sgd(obj, params, 0.1))

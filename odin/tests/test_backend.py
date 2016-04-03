@@ -5,7 +5,7 @@ from __future__ import print_function, division
 
 from .. import nnet
 from .. import tensor as T
-from .. import logger
+from .. import logger, config
 from .. import objectives
 from .. import optimizers
 
@@ -31,7 +31,7 @@ class BackendTest(unittest.TestCase):
     def test_set_subtensor(self):
         x = T.variable(np.zeros((10, 10)))
         y = T.variable(np.ones((10, 10)))
-        z = T.eval(T.set_subtensor(x[:, :], y[:,:]))
+        z = T.eval(T.set_subtensor(x[:,:], y[:,:]))
 
         self.assertEqual(z.ravel().tolist(), [1.] * 100)
 
@@ -83,12 +83,12 @@ class BackendTest(unittest.TestCase):
         seq2 = T.variable(np.arange(10, 15))
         nonseq1 = T.variable(2.)
         nonseq2 = T.variable(3.)
-        # TODO: something wrong if we use T.zeros((2,2)) here
-        output1 = T.zeros((2, 2)) + 1
-        output2 = T.zeros((2, 2)) + 2
+        output1 = T.zeros((2, 2), dtype='float32') + 1
+        output2 = T.zeros((2, 2), dtype='float32') + 2
 
         def step_fn(s1, s2, o1, o2, ns1, ns2):
-            return o1 * s1 + ns1, o2 * s2 + ns2
+            return (T.cast(o1 * s1 + ns1, 'float32'),
+                    T.cast(o2 * s2 + ns2, 'float32'))
 
         r = T.loop(step_fn,
             sequences=[seq1, seq2],
@@ -117,7 +117,6 @@ class BackendTest(unittest.TestCase):
         # print(r_scan)
         # print(r_loop)
         # print(r_np)
-
         self.assertAlmostEqual(np.sum(np.abs(r_loop[0] - r_np[0])), 0.)
         self.assertAlmostEqual(np.sum(np.abs(r_loop[1] - r_np[1])), 0.)
         self.assertAlmostEqual(np.sum(np.abs(r_loop[0] - r_scan[0])), 0.)
@@ -150,21 +149,29 @@ class BackendTest(unittest.TestCase):
         x = T.variable(np.random.rand(10, 10))
         mean = T.variable(np.random.rand(32, 16))
         logsigma = T.variable(np.random.rand(32, 16))
-        self.assertAlmostEqual(round(T.eval(T.l1_regularize(x)), 5),
-            round(50.150932312, 5))
-        self.assertAlmostEqual(round(T.eval(T.l2_regularize(x)), 5),
-            round(33.7269096375, 5))
-        self.assertAlmostEqual(round(T.eval(T.mean(T.kl_gaussian(mean, logsigma))), 5),
-            round(0.29442, 5))
-        self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), 5),
-            round(-5.86702489853, 5))
+
+        round_value = 1
+        if config.floatX() == 'float32':
+            round_value = 5
+        elif config.floatX() == 'float64':
+            round_value = 5
+
+        self.assertAlmostEqual(round(T.eval(T.l1_regularize(x)), round_value),
+                               round(50.150932312, round_value))
+        self.assertAlmostEqual(round(T.eval(T.l2_regularize(x)), round_value),
+                               round(33.7269096375, round_value))
+        self.assertAlmostEqual(
+            round(T.eval(T.mean(T.kl_gaussian(mean, logsigma))), round_value),
+            round(0.29442, round_value))
+        self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), round_value),
+                               round(-5.86702489853, round_value))
 
         np.random.seed(12082518)
         x = T.variable(np.random.rand(16, 10))
         y = T.variable(np.random.rand(32, 10))
         self.assertAlmostEqual(
-            round(T.eval(T.jacobian_regularize(x, y)), 5),
-            3.89396)
+            round(T.eval(T.jacobian_regularize(x, y)), round_value),
+            round(3.89396, round_value))
 
 # ===========================================================================
 # Main
