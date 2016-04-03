@@ -16,11 +16,10 @@ import numpy as np
 
 from six.moves import zip, range
 
+
 # ===========================================================================
 # Main Test
 # ===========================================================================
-
-
 class BackendTest(unittest.TestCase):
 
     def setUp(self):
@@ -32,7 +31,7 @@ class BackendTest(unittest.TestCase):
     def test_set_subtensor(self):
         x = T.variable(np.zeros((10, 10)))
         y = T.variable(np.ones((10, 10)))
-        z = T.eval(T.set_subtensor(x[:, :], y[:, :]))
+        z = T.eval(T.set_subtensor(x[:, :], y[:,:]))
 
         self.assertEqual(z.ravel().tolist(), [1.] * 100)
 
@@ -52,8 +51,9 @@ class BackendTest(unittest.TestCase):
             consider_constant=[x], known_grads={a: T.ones_like(a)})
         G = [T.eval(g) for g in G]
         G = [g.tolist() if isinstance(g, np.ndarray) else g for g in G]
-        G = [np.round(np.asarray(g), 6).tolist() for g in G]
-        self.assertEqual(G, [1.0, 29.951998, 37.439999])
+        G = [np.asarray(g).tolist() for g in G]
+        for i, j in zip(G, [1.0, 29.951998, 37.439999]):
+            self.assertAlmostEqual(round(i), round(j))
 
     def test_loop(self):
         def numpy_loop():
@@ -154,7 +154,7 @@ class BackendTest(unittest.TestCase):
             round(50.150932312, 5))
         self.assertAlmostEqual(round(T.eval(T.l2_regularize(x)), 5),
             round(33.7269096375, 5))
-        self.assertAlmostEqual(round(T.eval(T.kl_gaussian(mean, logsigma)), 5),
+        self.assertAlmostEqual(round(T.eval(T.mean(T.kl_gaussian(mean, logsigma))), 5),
             round(0.29442, 5))
         self.assertAlmostEqual(round(T.eval(T.correntropy_regularize(x)), 5),
             round(-5.86702489853, 5))

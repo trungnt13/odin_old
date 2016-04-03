@@ -8,6 +8,7 @@ from .. import tensor as T
 from .. import logger
 from .. import objectives
 from .. import optimizers
+from .. import config
 
 import unittest
 
@@ -109,6 +110,7 @@ class FunctionsTest(unittest.TestCase):
             nonlinearity=T.linear)
         f2 = T.function(inputs=f2.input_var, outputs=f2())
         x2 = f2(x)[0]
+
         self.assertEqual((np.abs(np.sum(x1 - x2))), 0.)
         self.assertEqual(x1.shape, x2.shape)
 
@@ -305,6 +307,10 @@ class FunctionsTest(unittest.TestCase):
         except:
             print('\n This test require lasagne and keras.')
             return
+        if config.backend() == 'theano': # keras will mess up with our floatX
+            import theano
+            theano.config.floatX = config.floatX()
+
         np.random.seed(12082518)
         X = np.random.rand(32, 12, 13)
         g1 = nnet.GRU((None, 12, 13), hidden_info=8,

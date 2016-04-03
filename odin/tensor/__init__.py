@@ -20,11 +20,12 @@ def _load_theano_config():
     if config.verbose():
         flags += ',exception_verbosity=high'
     # Speedup CuDNNv4
-    if config.fastcnn() and config.device() == 'gpu':
+    if config.fastcnn() and isinstance(config.device(), (list, tuple)):
         flags += ',dnn.conv.algo_fwd=time_once,dnn.conv.algo_bwd_filter=time_once,dnn.conv.algo_bwd_data=time_once'
         logger.warning('Using fast cnn algorithm, only compatible with CuDNN v4.')
     # CNMEM
-    flags += ',lib.cnmem=.9,allow_gc=True'
+    if config.cnmem() > 0. and config.cnmem() <= 1.:
+        flags += ',lib.cnmem=%.2f,allow_gc=True' % config.cnmem()
     os.environ['THEANO_FLAGS'] = flags
 
 
@@ -35,9 +36,15 @@ if config.backend() == 'theano':
     _load_theano_config()
     logger.critical('Using Theano backend, flags:%s' % os.environ['THEANO_FLAGS'])
     from .theano_backend import *
+    from .nnet_theano import *
+    from .mgi_theano import *
+    from .stochastic_theano import *
 elif config.backend() == 'tensorflow':
     logger.critical('Using TensorFlow backend.')
     from .tf_backend import *
+    from .nnet_tf import *
+    from .mgi_tf import *
+    from .stochastic_tf import *
 # ===========================================================================
 # Auto load backend
 # ===========================================================================
@@ -47,7 +54,12 @@ else:
         _load_theano_config()
         import theano
         logger.critical('Auto load theano_backend backend, flags:%s' % os.environ['THEANO_FLAGS'])
+
         from .theano_backend import *
+        from .nnet_theano import *
+        from .mgi_theano import *
+        from .stochastic_theano import *
+
         is_load_backend = True
         config.set_backend('theano')
     except Exception, e:
@@ -56,8 +68,13 @@ else:
     if not is_load_backend:
         try:
             import tensorflow
-            from .tf_backend import *
             logger.critical('Auto load tensorflow_backend backend.')
+
+            from .tf_backend import *
+            from .nnet_tf import *
+            from .mgi_tf import *
+            from .stochastic_tf import *
+
             is_load_backend = True
             config.set_backend('tensorflow')
         except Exception, e:

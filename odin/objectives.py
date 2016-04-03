@@ -23,6 +23,10 @@ __all__ = [
     "mean_categorical_crossentropy",
     "binary_crossentropy",
     "mean_binary_crossentropy",
+    "bayes_crossentropy",
+    "mean_bayes_crossentropy",
+    "hellinger_distance",
+    "mean_hellinger_distance",
     "poisson",
     "cosine_proximity",
     "MfoM"
@@ -34,9 +38,8 @@ __all__ = [
 # ===========================================================================
 def squared_loss(y_pred, y_true, infomat=None):
     if infomat is None:
-        return T.sum(T.square(y_pred - y_true), axis=-1)
-    infomat = infomat[T.argmax(y_true, -1)]
-    return T.sum(T.square(y_pred - y_true) * infomat, axis=-1)
+        return T.square(y_pred - y_true)
+    return T.square(y_pred - y_true) * infomat[T.argmax(y_true, -1)]
 
 
 def mean_squared_loss(y_pred, y_true, infomat=None):
@@ -44,7 +47,7 @@ def mean_squared_loss(y_pred, y_true, infomat=None):
 
 
 def absolute_loss(y_pred, y_true):
-    return T.sum(T.abs(y_pred - y_true), axis=-1)
+    return T.abs(y_pred - y_true)
 
 
 def mean_absolute_loss(y_pred, y_true):

@@ -11,6 +11,7 @@ __all__ = [
 ]
 
 _valid_device_name = re.compile('(cuda|gpu)\d+')
+_valid_cnmem_name = re.compile('(cnmem)[=]?[10]?\.\d*')
 
 _ODIN_FLAGS = os.getenv("ODIN", "")
 _FLOATX = 'float32'
@@ -20,6 +21,7 @@ _DEVICE = []
 _VERBOSE = False
 _FAST_CNN = False
 _GRAPHIC = False
+_CNMEM = 0.
 
 
 def _parse_config():
@@ -30,6 +32,7 @@ def _parse_config():
     global _VERBOSE
     global _FAST_CNN
     global _GRAPHIC
+    global _CNMEM
 
     s = _ODIN_FLAGS.split(',')
     for i in s:
@@ -77,6 +80,16 @@ def _parse_config():
         # ====== graphic ====== #
         elif 'graphic' in i:
             _GRAPHIC = True
+        # ====== cnmem ====== #
+        elif 'cnmem' in i:
+            match = _valid_cnmem_name.match(i)
+            if match is None:
+                raise ValueError('Unsupport CNMEM format: %s. '
+                                 'Valid format must be: cnmem=0.75 or cnmem=.75 '
+                                 ' or cnmem.75' % str(i))
+
+            i = i[match.start():match.end()].replace('cnmem', '').replace('=', '')
+            _CNMEM = float(i)
 
     # set non-graphic backend for matplotlib
     if not _GRAPHIC:
@@ -101,9 +114,12 @@ def set_backend(backend):
     else:
         raise ValueError('Unsupport backend: %d!' % backend)
 
+
 # ===========================================================================
 # Parse and get configuration
 # ===========================================================================
+def cnmem():
+    return float(_CNMEM)
 
 
 def floatX():
@@ -136,4 +152,5 @@ if verbose():
     info('[Config] FloatX : %s' % _FLOATX)
     info('[Config] Epsilon: %s' % _EPSILON)
     info('[Config] Fast-cnn: %s' % _FAST_CNN)
+    info('[Config] CNMEM: %s' % _CNMEM)
     info('[Config] Graphic: %s' % _GRAPHIC)

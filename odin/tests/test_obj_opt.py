@@ -11,11 +11,10 @@ from ..objectives import *
 from ..optimizers import *
 from ..metrics import *
 
+
 # ===========================================================================
 # Main Test
 # ===========================================================================
-
-
 class ObjectivesTest(unittest.TestCase):
 
     def setUp(self):
@@ -56,6 +55,8 @@ class ObjectivesTest(unittest.TestCase):
         self.assertEqual(calc_cost(poisson), (1.035, True))
         self.assertEqual(calc_cost(cosine_proximity), (-0.078, True))
         self.assertEqual(calc_cost(hinge), (0.715, True))
+        self.assertEqual(calc_cost(bayes_crossentropy), (5.008, True))
+        self.assertEqual(calc_cost(hellinger_distance), (0.734, True))
 
         self.assertEqual(calc_cost(binary_accuracy), (0.438, False))
         self.assertEqual(calc_cost(categorical_accuracy), (0.063, False))
