@@ -34,7 +34,11 @@ def _on_gpu():
     '''Return whether the session is set to
     run on GPU or not (i.e. on CPU).
     '''
-    return theano.config.device[:3] == 'gpu' or theano.sandbox.cuda.cuda_enabled
+    return 'gpu' in theano.config.device or \
+    'cuda' in theano.config.device or \
+    'gpu' in theano.config.contexts or \
+    'cuda' in theano.config.contexts or \
+    theano.sandbox.cuda.cuda_enabled
 
 if _on_gpu():
     '''Import cuDNN only if running on GPU:
@@ -42,6 +46,13 @@ if _on_gpu():
     prevent from running the present code.
     '''
     from theano.sandbox.cuda import dnn
+    # dummy initialization to remove the overhead of running libgpuarray backend
+    T.zeros(0, dtype='int').eval()
+    _ = theano.shared(value=np.asarray(1., dtype='float32'),
+                     name='temporary_var')
+    T.grad(2 * _, _).eval()
+    _.set_value(None)
+    del _
 
 
 def get_session():
