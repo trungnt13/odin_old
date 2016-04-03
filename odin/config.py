@@ -49,9 +49,11 @@ def _parse_config():
         elif 'tensorflow' in i or 'tf' in i:
             _BACKEND = 'tensorflow'
         # ====== Devices ====== #
-        elif 'cpu' == i:
+        elif 'cpu' == i and len(_DEVICE) == 0:
             _DEVICE = 'cpu'
         elif 'gpu' in i or 'cuda' in i:
+            if isinstance(_DEVICE, str):
+                raise ValueError('Device already setted to cpu')
             if i == 'gpu': i = 'gpu0'
             elif i == 'cuda': i = 'cuda0'
             if _valid_device_name.match(i) is None:
