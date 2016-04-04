@@ -1,5 +1,7 @@
 from __future__ import division
 
+import numpy as np
+
 import theano
 from theano import tensor as T
 from theano.tensor.signal import pool
@@ -98,6 +100,17 @@ def jacobian_regularize(hidden, params):
     return T.mean(L)
 
 
+def correntropy_regularize(x, sigma=1.):
+    '''
+    Note
+    ----
+    origin implementation from seya:
+    https://github.com/EderSantana/seya/blob/master/seya/regularizers.py
+    Copyright (c) EderSantana
+    '''
+    return -T.sum(T.mean(T.exp(x**2 / sigma), axis=0)) / T.sqrt(2 * np.pi * sigma)
+
+
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
@@ -190,13 +203,17 @@ def conv2d(x, kernel, strides=(1, 1),
     return conv_out
 
 
-def deconv2d(x, kernel, img_shape,
-    strides=(1, 1), border_mode='valid', dim_ordering='th'):
+def deconv2d(x, kernel, img_shape, filter_shape=None,
+    strides=(1, 1), border_mode='valid',
+    dim_ordering='th', flip_filters=True):
     '''
     Run on cuDNN if available.
     border_mode: string, "same" or "valid".
     img_shape: (width, height) of original image
     '''
+    if len(img_shape) != 4:
+        raise ValueError('img_shape for deconvolution operator must be 4-D')
+
     if dim_ordering not in {'th', 'tf'}:
         raise Exception('Unknown dim_ordering ' + str(dim_ordering))
 
@@ -212,14 +229,17 @@ def deconv2d(x, kernel, img_shape,
 
     border_mode = 'half' if border_mode == 'same' else border_mode
     op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
-        imshp=None,
-        kshp=None,
+        imshp=[int(i) if isinstance(i, (long, float, int)) else None
+               for i in img_shape],
+        kshp=filter_shape,
         subsample=strides, border_mode=border_mode,
-        filter_flip=True)
-    # only support float64 ops
-    conv_out = op(kernel.astype('float32'),
-                  x.astype('float32'),
-                  img_shape).astype(x.dtype)
+        filter_flip=flip_filters)
+    # only support float32 ops
+    if _FLOATX == 'float16':
+        conv_out = op(kernel.astype('float32'), x.astype('float32'),
+                      img_shape[2:]).astype('float16')
+    else:
+        conv_out = op(kernel, x, img_shape[2:])
 
     if dim_ordering == 'tf':
         conv_out = conv_out.dimshuffle((0, 2, 3, 1))

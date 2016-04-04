@@ -114,6 +114,17 @@ def jacobian_regularize(hidden, params):
     return TB.mean(L)
 
 
+def correntropy_regularize(x, sigma=1.):
+    '''
+    Note
+    ----
+    origin implementation from seya:
+    https://github.com/EderSantana/seya/blob/master/seya/regularizers.py
+    Copyright (c) EderSantana
+    '''
+    return -sum(TB.mean(tf.exp(tf.pow(x, 2) / sigma), axis=0)) / tf.sqrt(2 * np.pi * sigma)
+
+
 # ===========================================================================
 # CONVOLUTIONS
 # ===========================================================================
@@ -164,7 +175,7 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th',
 def deconv2d(x, kernel, kernel_shape, output_shape,
            strides=(1, 1),
            border_mode='valid',
-           dim_ordering='th'):
+           dim_ordering='th', flip_filters=True):
     raise NotImplementedError
 
 

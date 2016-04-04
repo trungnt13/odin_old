@@ -64,6 +64,7 @@ else:
         config.set_backend('theano')
     except Exception, e:
         logger.critical('Failed to load theano, error:' + str(e))
+        import traceback; traceback.print_exc()
 
     if not is_load_backend:
         try:
@@ -79,5 +80,6 @@ else:
             config.set_backend('tensorflow')
         except Exception, e:
             logger.critical('Failed to load tensorflow, error:' + str(e))
+            import traceback; traceback.print_exc()
     if not is_load_backend:
         raise Exception('Unknown backend: ' + str(config.backend()))

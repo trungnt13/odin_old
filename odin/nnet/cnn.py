@@ -435,7 +435,7 @@ class Conv2D(BaseConvLayer):
 
     def convolve(self, input, **kwargs):
         # by default we assume 'cross', consistent with corrmm.
-        conv_mode = 'conv' if self.flip_filters else 'cross'
+        # conv_mode = 'conv' if self.flip_filters else 'cross'
         border_mode = self.pad
         conved = T.conv2d(input,
             kernel=self.W,
@@ -552,7 +552,7 @@ class VariationalConv2D(BaseConvLayer):
 
     def convolve(self, input, **kwargs):
         # by default we assume 'cross', consistent with corrmm.
-        conv_mode = 'conv' if self.flip_filters else 'cross'
+        # conv_mode = 'conv' if self.flip_filters else 'cross'
         border_mode = self.pad
         conved = T.conv2d(input,
             kernel=self.W,
@@ -668,7 +668,7 @@ class Deconv2D(BaseConvLayer):
         # ====== Init ====== #
         super(Deconv2D, self).__init__(
             incoming, img_shape[0], filter_size, stride, pad, untie_biases,
-            W, b, nonlinearity, flip_filters=True, n=2, **kwargs)
+            W, b, nonlinearity, flip_filters=False, n=2, **kwargs)
         self.img_shape = img_shape
 
     def get_W_shape(self):
@@ -684,9 +684,12 @@ class Deconv2D(BaseConvLayer):
         return outshape
 
     def convolve(self, input, **kwargs):
-        output_shape = (self.img_shape[1], self.img_shape[2])
-        return T.deconv2d(input, self.W, output_shape,
-            strides=self.stride, border_mode=self.pad)
+        output_shape = (None, self.num_filters,
+                        self.img_shape[1], self.img_shape[2])
+        return T.deconv2d(input, self.W,
+            img_shape=output_shape, filter_shape=self.get_W_shape(),
+            strides=self.stride, border_mode=self.pad,
+            flip_filters= not self.flip_filters)
 
 
 class Conv3D(BaseConvLayer):
