@@ -349,7 +349,8 @@ class FunctionsTest(unittest.TestCase):
         print('Odin - Keras:   ', np.sum(np.abs(x1 - x2)))
         print('Odin - Lasagne: ', np.sum(np.abs(x1 - x3)))
         print('Keras - Lasagne:', np.sum(np.abs(x2 - x3)))
-        self.assertAlmostEqual(np.sum(np.abs(x1 - x3)), 0.)
+        self.assertAlmostEqual(round(np.sum(np.abs(x1 - x3)), 3),
+                               0.)
         # print(g1.get_params(True, True))
         # p1 = g1.get_params_value(True, True)
         # print(g2.get_params()[0])
@@ -358,6 +359,13 @@ class FunctionsTest(unittest.TestCase):
 
         print()
         time.sleep(1)
+
+        start = time.time()
+        for i in xrange(12):
+            f2(X)
+        print('Keras GRU speed:', (time.time() - start) / 12)
+        time.sleep(1)
+
         start = time.time()
         for i in xrange(12):
             f1(X)
@@ -369,11 +377,6 @@ class FunctionsTest(unittest.TestCase):
             f3(X)
         print('Lasagne GRU speed:', (time.time() - start) / 12)
         time.sleep(1)
-
-        start = time.time()
-        for i in xrange(12):
-            f2(X)
-        print('Keras GRU speed:', (time.time() - start) / 12)
 
 # ===========================================================================
 # Main

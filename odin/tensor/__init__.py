@@ -11,11 +11,15 @@ from .numpy_backend import *
 # ===========================================================================
 def _load_theano_config():
     if config.device() == 'cpu':
-        flags = "mode=FAST_RUN,device=%s,floatX=%s" % (config.device(), config.floatX())
+        contexts = ""
+        device = "device=%s" % config.device()
     else:
-        contexts = ';'.join(['dev%d->cuda%d' % (i, int(_.replace('cuda', '')))
+        contexts = "contexts="
+        contexts += ';'.join(['dev%d->cuda%d' % (i, int(_.replace('cuda', '')))
                              for i, _ in enumerate(config.device())])
-        flags = "contexts=" + contexts + ",mode=FAST_RUN,floatX=%s" % config.floatX()
+        device = ','.join(set(["device=%s" % i for i in config.device()]))
+
+    flags = contexts + "," + device + ",mode=FAST_RUN,floatX=%s" % config.floatX()
     # ====== others ====== #
     if config.verbose():
         flags += ',exception_verbosity=high'
