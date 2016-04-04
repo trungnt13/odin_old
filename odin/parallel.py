@@ -13,11 +13,10 @@ __all__ = [
     'MapReduce'
 ]
 
+
 # ===========================================================================
 # MPI MapReduce
 # ===========================================================================
-
-
 class MapReduce(OdinObject):
 
     """ This class manage all MapReduce task by callback function:

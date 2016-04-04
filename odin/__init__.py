@@ -1,4 +1,5 @@
 from . import config
+from . import decorators
 from . import tensor
 
 from . import utils
