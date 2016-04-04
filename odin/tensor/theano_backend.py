@@ -66,7 +66,7 @@ def variable(value, dtype=_FLOATX, name=None, broadcastable=None, target='dev0')
     kwargs = {}
     if broadcastable is not None:
         kwargs['broadcastable'] = broadcastable
-    if target is not None and len(config.device()) > 1:
+    if target is not None:
         kwargs['target'] = target
 
     return theano.shared(value=value, name=name, strict=False, **kwargs)

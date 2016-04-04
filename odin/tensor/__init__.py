@@ -17,8 +17,8 @@ def _load_theano_config():
         contexts = "contexts="
         contexts += ';'.join(['dev%d->cuda%d' % (i, int(_.replace('cuda', '')))
                              for i, _ in enumerate(config.device())])
-        device = ','.join(set(["device=%s" % i for i in config.device()]))
-
+        # TODO: bizarre degradation in performance if not specify device=gpu
+        device = 'device=gpu'
     flags = contexts + "," + device + ",mode=FAST_RUN,floatX=%s" % config.floatX()
     # ====== others ====== #
     if config.verbose():
