@@ -7,10 +7,11 @@
 from __future__ import print_function, division
 
 import sys
-import collections
+from collections import OrderedDict
 from functools import wraps, partial
 import inspect
 import types
+from six.moves import zip, zip_longest
 
 __all__ = [
     'cache',
@@ -49,7 +50,7 @@ class func_decorator(object):
 # ===========================================================================
 # Cache
 # ===========================================================================
-class call_memory(func_decorator):
+class _call_memory(func_decorator):
 
     '''Decorator. Caches a function's return value each time it is called.
     If called later with the same arguments, the cached value is returned
@@ -73,7 +74,7 @@ class call_memory(func_decorator):
     '''
 
     def __init__(self, func):
-        super(call_memory, self).__init__(func)
+        super(_call_memory, self).__init__(func)
         self._tracking_vars = []
         self.cache_key = []
         self.cache_value = []
@@ -141,11 +142,11 @@ def cache(*args):
 
     if len(args) == 1 and hasattr(args[0], '__call__'):
         application_function, = args
-        memory = call_memory(application_function)
+        memory = _call_memory(application_function)
         return memory
     else:
         def wrap_application(application_function):
-            memory = call_memory(application_function)
+            memory = _call_memory(application_function)
             for i in args:
                 memory.set_tracking_vars(i)
             return memory
@@ -155,7 +156,7 @@ def cache(*args):
 # ===========================================================================
 # Type enforcement
 # ===========================================================================
-def info(fname, expected, actual, flag, is_method):
+def _info(fname, expected, actual, flag, is_method):
     '''Convenience function outputs nicely formatted error/warning msg.'''
     format = lambda types: ', '.join([str(t).split("'")[1] for t in types])
     expected, actual = format(expected), format(actual)
@@ -175,6 +176,13 @@ class _typecheck(func_decorator):
         self.inputs = None
         self.outputs = None
         self.debug = 2
+
+        # ====== setup some info about the function ====== #
+        _ = inspect.getargspec(self.func)
+        self.args_name = _.args
+        # reversed 2 time so everything in the right order
+        self.args_defaults = OrderedDict(reversed([(i, j)
+            for i, j in zip(reversed(_.args), reversed(_.defaults))]))
 
     def set_types(self, inputs=None, outputs=None, debug=2):
         # ====== parse debug ====== #
@@ -203,13 +211,21 @@ class _typecheck(func_decorator):
         ### Check inputs
         if self.inputs is not None:
             if self._is_method: # ignore self
-                input_args = tuple(list(args[1:]) + kwargs.values())
+                input_args = list(args[1:])
             else: # full args
-                input_args = tuple(list(args) + kwargs.values())
+                input_args = list(args)
+            # check default kwargs
+            for i, j in self.args_defaults.iteritems():
+                if i in kwargs: # specified value
+                    input_args.append(kwargs[i])
+                else: # default value
+                    input_args.append(j)
+            # main logic
             length = int(min(len(input_args), len(self.inputs)))
             argtypes = tuple(map(type, input_args))
             if argtypes[:length] != self.inputs[:length]: # wrong types
-                msg = info(self.__name__, self.inputs, argtypes, 0, self._is_method)
+                msg = _info(self.__name__, self.inputs, argtypes, 0,
+                            self._is_method)
                 if self.debug is 1:
                     print('TypeWarning:', msg)
                 elif self.debug is 2:
@@ -224,7 +240,8 @@ class _typecheck(func_decorator):
             length = min(len(res_types), len(self.outputs))
             if len(self.outputs) > len(res_types) or \
                res_types[:length] != self.outputs[:length]:
-                msg = info(self.__name__, self.outputs, res_types, 1, self._is_method)
+                msg = _info(self.__name__, self.outputs, res_types, 1,
+                            self._is_method)
                 if self.debug is 1:
                     print('TypeWarning: ', msg)
                 elif self.debug is 2:
