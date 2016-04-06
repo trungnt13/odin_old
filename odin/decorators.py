@@ -7,7 +7,7 @@
 from __future__ import print_function, division
 
 import sys
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from functools import wraps, partial, WRAPPER_UPDATES, WRAPPER_ASSIGNMENTS
 import inspect
 from six.moves import zip, zip_longest
@@ -86,73 +86,10 @@ class func_decorator(object):
 # ===========================================================================
 # Cache
 # ===========================================================================
-class _call_memory(func_decorator):
-
-    '''Decorator. Caches a function's return value each time it is called.
-    If called later with the same arguments, the cached value is returned
-    (not reevaluated).
-
-    Example
-    -------
-    >>> class ClassName(object):
-    >>>     def __init__(self, arg):
-    >>>         super(ClassName, self).__init__()
-    >>>         self.arg = arg
-    >>>     @cache('arg')
-    >>>     def abcd(self, a):
-    >>>         return np.random.rand(*a)
-    >>>     def e(self):
-    >>>         pass
-    >>> x = c.abcd((10000, 10000))
-    >>> x = c.abcd((10000, 10000)) # return cached value
-    >>> c.arg = 'test'
-    >>> x = c.abcd((10000, 10000)) # return new value
-    '''
-
-    def __init__(self, func):
-        super(_call_memory, self).__init__(func)
-        self._tracking_vars = []
-        self.cache_key = []
-        self.cache_value = []
-
-    def set_tracking_vars(self, key):
-        if key not in self._tracking_vars:
-            self._tracking_vars.append(key)
-
-    def __call__(self, *args, **kwargs):
-        input_args = list(args)
-        # check default kwargs
-        for i, j in self.args_defaults.iteritems():
-            if i in kwargs: # specified value
-                input_args.append(kwargs[i])
-            else: # default value
-                input_args.append(j)
-
-        # ====== create cache_key ====== #
-        object_vars = {}
-        if self._is_method:
-            for k in self._tracking_vars:
-                if hasattr(args[0], k):
-                    object_vars[k] = getattr(args[0], k)
-        cache_key = (input_args, object_vars)
-        # ====== check cache ====== #
-        if cache_key in self.cache_key:
-            idx = self.cache_key.index(cache_key)
-            return self.cache_value[idx]
-        else:
-            value = self.func(*args, **kwargs)
-            self.cache_key.append(cache_key)
-            self.cache_value.append(value)
-            return value
-
-    def __delete__(self, instance):
-        del self.cache_key
-        del self.cache_value
-        self.cache_key = []
-        self.cache_value = []
+_CACHE = defaultdict(lambda: ([], [])) #KEY_ARGS, RET_VALUE
 
 
-def cache(*args):
+def cache(func, *attrs):
     '''Decorator. Caches a function's return value each time it is called.
     If called later with the same arguments, the cached value is returned
     (not reevaluated).
@@ -178,115 +115,73 @@ def cache(*args):
     >>> c.arg = 'test'
     >>> x = c.abcd((10000, 10000)) # return new value
     '''
-    if not args or \
-        (not hasattr(args[0], '__call__') and
-         any(not isinstance(i, str) for i in args)):
-        raise ValueError("Not a valid decorator, only callable or string accepted"
-                         ". In case staticmethod, you should place decorator"
-                         " in following order: @staticmethod:@cache")
+    if not inspect.ismethod(func) and not inspect.isfunction(func):
+        attrs = (func,) + attrs
+        func = None
 
-    if len(args) == 1 and hasattr(args[0], '__call__'):
-        application_function, = args
-        memory = _call_memory(application_function)
-        return memory
-    else:
-        def wrap_application(application_function):
-            memory = _call_memory(application_function)
-            for i in args:
-                memory.set_tracking_vars(i)
-            return memory
-        return wrap_application
+    if any(not isinstance(i, str) for i in attrs):
+        raise ValueError('Tracking attribute must be string represented name of'
+                         ' attribute, but given attributes have types: {}'
+                         ''.format(tuple(map(type, attrs))))
+
+    def wrap_function(func):
+        # ====== fetch arguments order ====== #
+        _ = inspect.getargspec(func)
+        args_name = _.args
+        # reversed 2 time so everything in the right order
+        if _.defaults is not None:
+            args_defaults = OrderedDict(reversed([(i, j)
+                for i, j in zip(reversed(_.args), reversed(_.defaults))]))
+        else:
+            args_defaults = OrderedDict()
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            input_args = list(args)
+            excluded = {i: j for i, j in zip(args_name, input_args)}
+            # check default kwargs
+            for i, j in args_defaults.iteritems():
+                if i in excluded: # already input as positional argument
+                    continue
+                if i in kwargs: # specified value
+                    input_args.append(kwargs[i])
+                else: # default value
+                    input_args.append(j)
+            # ====== create cache_key ====== #
+            object_vars = {k: getattr(args[0], k) for k in attrs
+                           if hasattr(args[0], k)}
+            cache_key = (input_args, object_vars)
+            # ====== check cache ====== #
+            key_list = _CACHE[id(func)][0]
+            value_list = _CACHE[id(func)][1]
+            if cache_key in key_list:
+                idx = key_list.index(cache_key)
+                return value_list[idx]
+            else:
+                value = func(*args, **kwargs)
+                key_list.append(cache_key)
+                value_list.append(value)
+                return value
+        return wrapper
+
+    # return wrapped function
+    if func is None:
+        return wrap_function
+    return wrap_function(func)
 
 
 # ===========================================================================
 # Type enforcement
 # ===========================================================================
-def _info(fname, expected, actual, flag, is_method):
+def _info(fname, expected, actual, flag):
     '''Convenience function outputs nicely formatted error/warning msg.'''
     format = lambda typess: ', '.join([str(t).split("'")[1] for t in typess])
     expected, actual = format(expected), format(actual)
-    ftype = 'method' if is_method else 'function'
+    ftype = 'method'
     msg = "'{}' {} ".format(fname, ftype)\
-          + ("accepts", "outputs")[flag] + " ({}), but ".format(expected)\
+          + ("inputs", "outputs")[flag] + " ({}), but ".format(expected)\
           + ("was given", "result is")[flag] + " ({})".format(actual)
     return msg
-
-
-class _typecheck(func_decorator):
-
-    """docstring for _typecheck"""
-
-    def __init__(self, func):
-        super(_typecheck, self).__init__(func)
-        self.inputs = None
-        self.outputs = None
-        self.debug = 2
-
-    def set_types(self, inputs=None, outputs=None, debug=2):
-        # ====== parse debug ====== #
-        if isinstance(debug, str):
-            if 'raise' in debug.lower():
-                debug = 2
-            elif 'warn' in debug.lower():
-                debug = 1
-            else:
-                debug = 0
-        elif debug not in (0, 1, 2):
-            debug = 2
-        # ====== check types ====== #
-        if inputs is not None and not isinstance(inputs, (tuple, list)):
-            inputs = (inputs,)
-        if outputs is not None and not isinstance(outputs, (tuple, list)):
-            outputs = (outputs,)
-        # ====== assign ====== #
-        self.inputs = inputs
-        self.outputs = outputs
-        self.debug = debug
-
-    def __call__(self, *args, **kwargs):
-        if self.debug is 0: # ignore
-            return self.func(*args)
-        ### Check inputs
-        if self.inputs is not None:
-            # little hack to deal with classmethod
-            if self._is_method or '<class ' in str(type(args[0])): # ignore self
-                input_args = list(args[1:])
-            else: # full args
-                input_args = list(args)
-            # check default kwargs
-            for i, j in self.args_defaults.iteritems():
-                if i in kwargs: # specified value
-                    input_args.append(kwargs[i])
-                else: # default value
-                    input_args.append(j)
-            # main logic
-            length = int(min(len(input_args), len(self.inputs)))
-            argtypes = tuple(map(type, input_args))
-            if argtypes[:length] != self.inputs[:length]: # wrong types
-                msg = _info(self.__name__, self.inputs, argtypes, 0,
-                            self._is_method)
-                if self.debug is 1:
-                    print('TypeWarning:', msg)
-                elif self.debug is 2:
-                    raise TypeError(msg)
-        ### get results
-        results = self.func(*args, **kwargs)
-        ### Check outputs
-        if self.outputs is not None:
-            res_types = ((type(results),)
-                         if not isinstance(results, (tuple, list))
-                         else tuple(map(type, results)))
-            length = min(len(res_types), len(self.outputs))
-            if len(self.outputs) > len(res_types) or \
-               res_types[:length] != self.outputs[:length]:
-                msg = _info(self.__name__, self.outputs, res_types, 1,
-                            self._is_method)
-                if self.debug is 1:
-                    print('TypeWarning: ', msg)
-                elif self.debug is 2:
-                    raise TypeError(msg)
-        ### finally everything ok
-        return results
 
 
 def typecheck(inputs=None, outputs=None, debug=2):
@@ -324,10 +219,80 @@ def typecheck(inputs=None, outputs=None, debug=2):
     >>> x.method(1, '1') # error
 
     '''
+    # ====== parse debug ====== #
+    if isinstance(debug, str):
+        debug_str = debug.lower()
+        if 'raise' in debug_str:
+            debug = 2
+        elif 'warn' in debug_str:
+            debug = 1
+        else:
+            debug = 0
+    elif debug not in (0, 1, 2):
+        debug = 2
+    # ====== check types ====== #
+    if inputs is not None and not isinstance(inputs, (tuple, list)):
+        inputs = (inputs,)
+    if outputs is not None and not isinstance(outputs, (tuple, list)):
+        outputs = (outputs,)
+
     def wrap_function(func):
-        f = _typecheck(func)
-        f.set_types(inputs=inputs, outputs=outputs, debug=debug)
-        return f
+        # ====== fetch arguments order ====== #
+        _ = inspect.getargspec(func)
+        args_name = _.args
+        # reversed 2 time so everything in the right order
+        if _.defaults is not None:
+            args_defaults = OrderedDict(reversed([(i, j)
+                for i, j in zip(reversed(_.args), reversed(_.defaults))]))
+        else:
+            args_defaults = OrderedDict()
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            input_args = list(args)
+            excluded = {i: j for i, j in zip(args_name, input_args)}
+            # check default kwargs
+            for i, j in args_defaults.iteritems():
+                if i in excluded: # already input as positional argument
+                    continue
+                if i in kwargs: # specified value
+                    input_args.append(kwargs[i])
+                else: # default value
+                    input_args.append(j)
+            ### main logic
+            if debug is 0: # ignore
+                return func(*args, **kwargs)
+            ### Check inputs
+            if inputs is not None:
+                # main logic
+                length = int(min(len(input_args), len(inputs)))
+                argtypes = tuple(map(type, input_args))
+                # TODO: smarter way to check argtypes for methods
+                if argtypes[:length] != inputs[:length] and \
+                   argtypes[1:length + 1] != inputs[:length]: # wrong types
+                    msg = _info(func.__name__, inputs, argtypes, 0)
+                    if debug is 1:
+                        print('TypeWarning:', msg)
+                    elif debug is 2:
+                        raise TypeError(msg)
+            ### get results
+            results = func(*args, **kwargs)
+            ### Check outputs
+            if outputs is not None:
+                res_types = ((type(results),)
+                             if not isinstance(results, (tuple, list))
+                             else tuple(map(type, results)))
+                length = min(len(res_types), len(outputs))
+                if len(outputs) > len(res_types) or \
+                   res_types[:length] != outputs[:length]:
+                    msg = _info(func.__name__, outputs, res_types, 1)
+                    if debug is 1:
+                        print('TypeWarning: ', msg)
+                    elif debug is 2:
+                        raise TypeError(msg)
+            ### finally everything ok
+            return results
+        return wrapper
     return wrap_function
 
 # Override the module's __call__ attribute

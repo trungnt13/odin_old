@@ -5,6 +5,7 @@ from __future__ import print_function, division
 import os
 from ..utils import function, frame, get_from_path
 from ..tensor import get_magic_seed
+from ..decorators import cache, typecheck
 import unittest
 import cPickle
 
@@ -21,6 +22,7 @@ def test(a=1, b=2):
     a = math.sqrt(a)
     return 'Shit %s over %s here!' % (str(a), str(b))
 '''
+idx = 0
 
 
 def test(a=1, b=2):
@@ -123,6 +125,20 @@ class UtilsTest(unittest.TestCase):
         self.assertEqual(sorted(x), sorted(y))
         self.assertEqual(sorted(x1), sorted(y1))
         self.assertEqual(sorted(x2), sorted(y2))
+
+    def test_cache_decorator(self):
+        @cache
+        def function(a, b, c=3, d=4):
+            global idx
+            idx += 1
+            return idx
+
+        self.assertEqual(function(1, 2), function(1, 2, 3, 4))
+        self.assertEqual(function(1, 2), function(1, 2, d=4, c=3))
+        self.assertEqual(function(1, 2), function(1, 2))
+        self.assertEqual(function(1, 2), function(1, 2))
+
+        self.assertNotEqual(function(1, 2), function(1, 2, c=4))
 
 # ===========================================================================
 # Main
