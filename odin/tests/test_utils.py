@@ -140,6 +140,44 @@ class UtilsTest(unittest.TestCase):
 
         self.assertNotEqual(function(1, 2), function(1, 2, c=4))
 
+        class ClassName(object):
+            idx = 10
+            arg = 1
+
+            @cache
+            def method(self, a, b=2):
+                ClassName.idx += 1
+                return ClassName.idx
+
+            @cache('arg')
+            def methodarg(self, a, b):
+                ClassName.idx += 1
+                return ClassName.idx
+
+            @classmethod
+            @cache
+            def clmethod(cl, a, b):
+                ClassName.idx += 1
+                return ClassName.idx
+
+        c = ClassName()
+        self.assertEqual(c.method(1, 2), c.method(1, 2))
+        self.assertEqual(c.method(1, 2), c.method(1))
+        self.assertNotEqual(c.method(1, 2), c.method(1, 3))
+
+        self.assertEqual(c.methodarg(1, 2), c.methodarg(1, 2))
+        x1 = c.methodarg(1, 2)
+        c.arg = 2
+        self.assertNotEqual(x1, c.methodarg(1, 2))
+
+        self.assertEqual(c.clmethod(1, 2), c.clmethod(1, 2))
+        self.assertNotEqual(c.clmethod(1, 2), c.clmethod(1, 3))
+
+    def test_typecheck(self):
+        @typecheck(inputs=(int, float, str, int), outputs=(int, str), debug=2)
+        def function(a, b, c=8, d=12):
+            return 8, '12'
+        self.assertEqual(function(1, 2., '8'), (8, '12'))
 # ===========================================================================
 # Main
 # ===========================================================================
