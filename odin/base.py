@@ -14,6 +14,8 @@ from . import logger
 from . import tensor as T
 from .utils import api as API
 from .utils import as_incoming_list, as_tuple
+from .decorators import cache, typecheck
+
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 # ===========================================================================
@@ -443,7 +445,7 @@ class OdinFunction(OdinObject):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, training=False, **kwargs):
+    def __call__(self, *args, **kwargs):
         raise NotImplementedError
 
     def get_inv(self, incomming, **kwargs):
@@ -586,6 +588,9 @@ class OdinFunction(OdinObject):
     @property
     def as_fixed(self):
         return DummyFunction(self, fixed=True)
+
+    def get_output(self, training, **kwargs):
+        pass
 
     def get_input(self, training=True, **kwargs):
         '''
