@@ -36,6 +36,9 @@ class _RandomWrapper(object):
     def binomial(self, shape, p, dtype=_FLOATX):
         return self._rng.binomial(size=shape, n=1, p=p, dtype=dtype)
 
+    def shuffle(self, x):
+        self._state.shuffle(x)
+
 
 def rng(seed=None):
     if seed is None:

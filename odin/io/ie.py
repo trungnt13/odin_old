@@ -10,13 +10,17 @@ import os
 from stat import S_ISDIR
 from six.moves.urllib.request import FancyURLopener
 
-from . import logger
+from .. import logger
+
+__all__ = [
+    'SSH',
+    'get_file'
+]
+
 
 # ======================================================================
 # Net
 # ======================================================================
-
-
 class ParanoidURLopener(FancyURLopener):
 
     def http_error_default(self, url, fp, errcode, errmsg, headers):

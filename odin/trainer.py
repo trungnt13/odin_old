@@ -1,7 +1,7 @@
 from __future__ import print_function, division, absolute_import
 
 from .base import OdinObject
-from .dataset import dataset, batch
+from .io import dataset
 from .tensor import get_magic_seed
 from . import logger
 

@@ -40,6 +40,9 @@ class _RandomWrapper(object):
                 p),
             dtype)
 
+    def shuffle(self, x):
+        self._state.shuffle(x)
+
 
 def rng(seed=None):
     if seed is None:

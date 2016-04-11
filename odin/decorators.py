@@ -8,14 +8,15 @@ from __future__ import print_function, division
 
 import sys
 from collections import OrderedDict, defaultdict
-from functools import wraps, partial, WRAPPER_UPDATES, WRAPPER_ASSIGNMENTS
+from functools import wraps, partial
 import inspect
 from six.moves import zip, zip_longest
 import types
 
 __all__ = [
     'cache',
-    'typecheck'
+    'typecheck',
+    'autoattr'
 ]
 
 # ===========================================================================
@@ -110,13 +111,32 @@ def cache(func, *attrs):
 # ===========================================================================
 def _info(fname, expected, actual, flag):
     '''Convenience function outputs nicely formatted error/warning msg.'''
-    format = lambda typess: ', '.join([str(t).split("'")[1] for t in typess])
-    expected, actual = format(expected), format(actual)
+    def to_str(t):
+        s = []
+        for i in t:
+            if not isinstance(i, (tuple, list)):
+                s.append(str(i).split("'")[1])
+            else:
+                s.append('(' + ', '.join([str(j).split("'")[1] for j in i]) + ')')
+        return ', '.join(s)
+
+    expected, actual = to_str(expected), to_str(actual)
     ftype = 'method'
-    msg = "'{}' {} ".format(fname, ftype)\
-          + ("inputs", "outputs")[flag] + " ({}), but ".format(expected)\
-          + ("was given", "result is")[flag] + " ({})".format(actual)
+    msg = "'{}' {} ".format(fname, ftype) \
+        + ("inputs", "outputs")[flag] + " ({}), but ".format(expected) \
+        + ("was given", "result is")[flag] + " ({})".format(actual)
     return msg
+
+
+def _compares_types(argtype, force_types):
+    # True if types is satisfied the force_types
+    for i, j in zip(argtype, force_types):
+        if isinstance(j, (tuple, list)):
+            if i not in j:
+                return False
+        elif i != j:
+            return False
+    return True
 
 
 def typecheck(inputs=None, outputs=None, debug=2):
@@ -154,6 +174,9 @@ def typecheck(inputs=None, outputs=None, debug=2):
     >>> x.method(1, '1') # error
 
     '''
+    if inspect.ismethod(inputs) or inspect.isfunction(inputs):
+        raise ValueError('You must specify either [inputs] types or [outputs]'
+                         ' types arguments.')
     # ====== parse debug ====== #
     if isinstance(debug, str):
         debug_str = debug.lower()
@@ -203,8 +226,8 @@ def typecheck(inputs=None, outputs=None, debug=2):
                 length = int(min(len(input_args), len(inputs)))
                 argtypes = tuple(map(type, input_args))
                 # TODO: smarter way to check argtypes for methods
-                if argtypes[:length] != inputs[:length] and \
-                   argtypes[1:length + 1] != inputs[:length]: # wrong types
+                if not _compares_types(argtypes[:length], inputs[:length]) and\
+                    not _compares_types(argtypes[1:length + 1], inputs[:length]): # wrong types
                     msg = _info(func.__name__, inputs, argtypes, 0)
                     if debug is 1:
                         print('TypeWarning:', msg)
@@ -219,7 +242,7 @@ def typecheck(inputs=None, outputs=None, debug=2):
                              else tuple(map(type, results)))
                 length = min(len(res_types), len(outputs))
                 if len(outputs) > len(res_types) or \
-                   res_types[:length] != outputs[:length]:
+                    not _compares_types(res_types[:length], outputs[:length]):
                     msg = _info(func.__name__, outputs, res_types, 1)
                     if debug is 1:
                         print('TypeWarning: ', msg)
@@ -228,6 +251,54 @@ def typecheck(inputs=None, outputs=None, debug=2):
             ### finally everything ok
             return results
         return wrapper
+    return wrap_function
+
+
+# ===========================================================================
+# Auto on
+# ===========================================================================
+def autoattr(*args, **kwargs):
+    '''
+    Example
+    -------
+    >>> class ClassName(object):
+    ..... def __init__(self):
+    ......... super(ClassName, self).__init__()
+    ......... self.arg1 = 1
+    ......... self.arg2 = False
+    ...... @autoattr('arg1', arg1=lambda x: x + 1)
+    ...... def test1(self):
+    ......... print(self.arg1)
+    ...... @autoattr('arg2')
+    ...... def test2(self):
+    ......... print(self.arg2)
+    >>> c = ClassName()
+    >>> c.test1() # arg1 = 2
+    >>> c.test2() # arg2 = True
+
+    '''
+    if len(args) > 0 and (inspect.ismethod(args[0]) or inspect.isfunction(args[0])):
+        raise ValueError('You must specify at least 1 *args or **kwargs, all '
+                         'attributes in *args will be setted to True, likewise, '
+                         'all attributes in **kwargs will be setted to given '
+                         'value.')
+    attrs = {i: True for i in args}
+    attrs.update(kwargs)
+
+    def wrap_function(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            results = func(*args, **kwargs)
+            if len(args) > 0:
+                for i, j in attrs.iteritems():
+                    if hasattr(args[0], i):
+                        if hasattr(j, '__call__'):
+                            setattr(args[0], str(i), j(getattr(args[0], i)))
+                        else:
+                            setattr(args[0], str(i), j)
+            return results
+        return wrapper
+
     return wrap_function
 
 # Override the module's __call__ attribute
