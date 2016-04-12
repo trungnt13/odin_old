@@ -268,11 +268,10 @@ class MmapData(object):
     def set_batch(self, batch_size=None, seed=None, start=None, end=None):
         if isinstance(batch_size, int) and batch_size > 0:
             self._batch_size = batch_size
-        if seed is not None:
-            self._seed = seed
-        if start is not None and start > 0:
+        self._seed = seed
+        if start is not None and start > 0. - 1e-12:
             self._start = start
-        if end is not None and end > 0:
+        if end is not None and end > 0. - 1e-12:
             self._end = end
         return self
 
@@ -457,6 +456,7 @@ class MmapData(object):
         if seed is not None:
             rng.seed(seed)
             rng.shuffle(idx)
+            self._seed = None
 
         for i in idx:
             start, end = i
@@ -659,11 +659,10 @@ class Hdf5Data(object):
     def set_batch(self, batch_size=None, seed=None, start=None, end=None):
         if isinstance(batch_size, int) and batch_size > 0:
             self._batch_size = batch_size
-        if seed is not None:
-            self._seed = seed
-        if start is not None and start > 0:
+        self._seed = seed
+        if start is not None and start > 0. - 1e-12:
             self._start = start
-        if end is not None and end > 0:
+        if end is not None and end > 0. - 1e-12:
             self._end = end
         return self
 
@@ -897,6 +896,7 @@ class Hdf5Data(object):
         if seed is not None:
             rng.seed(seed)
             rng.shuffle(idx)
+            self._seed = None
 
         for i in idx:
             start, end = i

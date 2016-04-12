@@ -7,7 +7,7 @@ import os
 import numpy as np
 from scipy import stats
 
-from ..io import Hdf5Data, MmapData, dataset
+from ..io import Hdf5Data, MmapData, dataset, DataIterator
 from .. import tensor
 
 from itertools import izip
@@ -59,8 +59,148 @@ def cleanUp():
     if os.path.exists('test3.ds'):
         os.remove('test3.ds')
 
+# ==================== Dataset ==================== #
+path = 'set01'
 
-class BatchTest(unittest.TestCase):
+
+def write():
+    for f in os.listdir(path):
+        try:
+            os.remove(os.path.join(path, f))
+        except:
+            pass
+
+    ds = dataset(path)
+    # ====== set X ====== #
+    x = ds.get_data('X1', dtype='float32', shape=(10000, 5), datatype='mmap')
+    x[:] = np.arange(10000 * 5 * 0, 10000 * 5 * 1).reshape(-1, 5)
+    x = ds.get_data('X2', dtype='float32', shape=(20000, 5), datatype='mmap')
+    x[:] = np.arange(10000 * 5 * 1, 10000 * 5 * 3).reshape(-1, 5)
+    x = ds.get_data('X3', dtype='float32', shape=(30000, 5), datatype='mmap')
+    x[:] = np.arange(10000 * 5 * 3, 10000 * 5 * 6).reshape(-1, 5)
+
+    # ====== set X ====== #
+    y = ds.get_data('Y1', dtype='float32', shape=(10000, 5), datatype='mmap')
+    y[:] = -np.arange(10000 * 5 * 0, 10000 * 5 * 1).reshape(-1, 5)
+    y = ds.get_data('Y2', dtype='float32', shape=(20000, 5), datatype='mmap')
+    y[:] = -np.arange(10000 * 5 * 1, 10000 * 5 * 3).reshape(-1, 5)
+    y = ds.get_data('Y3', dtype='float32', shape=(30000, 5), datatype='mmap')
+    y[:] = -np.arange(10000 * 5 * 3, 10000 * 5 * 6).reshape(-1, 5)
+
+    # ====== set Z ====== #
+    z = ds.get_data('Z', dtype='float32', shape=(60000, 5), datatype='mmap')
+    z[:] = np.arange(0, 10000 * 5 * 6).reshape(-1, 5)
+
+    ds.flush()
+    # print("\nEstimated size:", ds.size)
+
+
+def read(test):
+    ds = dataset(path)
+    # ====== read X ====== #
+    x1 = ds.get_data('X1')
+    x2 = ds.get_data('X2')
+    x3 = ds.get_data('X3')
+    test.assertEqual((x1.shape[0], x2.shape[0], x3.shape[0]),
+                     (10000, 20000, 30000))
+    # ====== read Y ====== #
+    y1 = ds.get_data('Y1')
+    y2 = ds.get_data('Y2')
+    y3 = ds.get_data('Y3')
+    test.assertEqual((y1.shape[0], y2.shape[0], y3.shape[0]),
+                     (10000, 20000, 30000))
+    # ====== read Z ====== #
+    z = ds.get_data('Z')
+    # ====== test iterator ====== #
+    it1 = DataIterator((x1, x2, x3), seed=12, shuffle=True)
+    it2 = DataIterator((y1, y2, y3), seed=12, shuffle=True)
+    it3 = DataIterator(z, shuffle=False)
+    # ====== mode1 ====== #
+    if True:
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=True, distribution=0.8),
+                        it2.set_mode(sequential=True, distribution=0.8)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1) and count == 48000
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=False, distribution=0.8),
+                        it2.set_mode(sequential=False, distribution=0.8)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1) and count == 48000
+    # ====== mode2 ====== #
+    if True:
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=True, distribution='up'),
+                        it2.set_mode(sequential=True, distribution='up')):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1) and count == 90000
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=False, distribution='down'),
+                        it2.set_mode(sequential=False, distribution='down')):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1) and count == 30000
+    # ====== mode3 ====== #
+    if True:
+        dist = np.random.rand(3).tolist()
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=True, distribution=dist),
+                        it2.set_mode(sequential=True, distribution=dist)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1), '{} != {}, dist={}'.format(count, len(it1), dist)
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=False, distribution=dist),
+                        it2.set_mode(sequential=False, distribution=dist)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1), '{} != {}, dist={}'.format(count, len(it1), dist)
+    # ====== mode4 ====== #
+    if True:
+        dist = np.random.rand(3).tolist()
+        dist[-1] = 0
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=True, distribution=dist).set_range(0.2, 0.6),
+                        it2.set_mode(sequential=True, distribution=dist).set_range(0.2, 0.6)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1), '{} != {}, dist={}'.format(count, len(it1), dist)
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=False, distribution=dist).set_range(0.2, 0.6),
+                        it2.set_mode(sequential=False, distribution=dist).set_range(0.2, 0.6)):
+            assert i.shape == j.shape
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1), '{} != {}, dist={}'.format(count, len(it1), dist)
+    # ====== mode5 ====== #
+    if True: # len must diviable to batch_size
+        count = 0
+        for i, j in zip(it1.set_mode(sequential=True, distribution=1.).set_batch(200, shuffle=False).set_range(0., 1.),
+                        it3.set_mode(sequential=True, distribution=1.).set_batch(200, shuffle=False)):
+            assert i.shape == j.shape, '{} != {}'.format(i.shape, j.shape)
+            assert np.sum(np.abs(i - j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1)
+        count = 0
+        for i, j in zip(it2.set_mode(sequential=True, distribution=1.).set_batch(200, shuffle=False).set_range(0., 1.),
+                        it3.set_mode(sequential=True, distribution=1.).set_batch(200, shuffle=False)):
+            assert i.shape == j.shape, '{} != {}'.format(i.shape, j.shape)
+            assert np.sum(np.abs(i + j)) == 0., 'Difference:{}'.format(np.sum(np.abs(i + j)))
+            count += i.shape[0]
+        assert count == len(it1)
+
+
+class DatasetTest(unittest.TestCase):
 
     def tearDown(self):
         cleanUp()
@@ -146,11 +286,14 @@ class BatchTest(unittest.TestCase):
         data.flush()
         self.assertEqual(x.tolist(), data[:x.shape[0]].tolist())
 
-
-class DatasetTest(unittest.TestCase):
-
-    def tearDown(self):
-        cleanUp()
+    def test_dataset(self):
+        write()
+        for i in range(10):
+            read(self)
+        try:
+            os.remove(path)
+        except:
+            pass
 
 
 # ===========================================================================

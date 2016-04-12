@@ -12,7 +12,6 @@ from .data import MmapData, Hdf5Data, load_data, open_hdf5
 
 from six.moves import zip_longest, zip, range
 from collections import OrderedDict
-from itertools import chain
 
 __all__ = [
     'DataIterator',
@@ -27,10 +26,15 @@ def _approximate_continuos_by_discrete(distribution):
     '''original distribution: [ 0.47619048  0.38095238  0.14285714]
        best approximated: [ 5.  4.  2.]
     '''
-    distribution = 1 - distribution
-    x = np.round(1 / distribution)
+    if len(distribution) == 1:
+        return distribution
+
+    inv_distribution = 1 - distribution
+    x = np.round(1 / inv_distribution)
     x = np.where(distribution == 0, 0, x)
     return x.astype(int)
+
+_apply_cut = lambda n, x: n * x if x < 1. + 1e-12 else int(x)
 
 
 class DataIterator(object):
@@ -76,10 +80,13 @@ class DataIterator(object):
 
         self._sequential = False
         self._distribution = [1.] * len(data)
+        self._seed = seed
 
     # ==================== properties ==================== #
     def __len__(self):
-        return sum(i * j.shape[0]
+        start = self._start
+        end = self._end
+        return sum(round(i * (_apply_cut(j.shape[0], end) - _apply_cut(j.shape[0], start)))
                    for i, j in zip(self._distribution, self._data))
 
     @property
@@ -89,6 +96,35 @@ class DataIterator(object):
     @property
     def distribution(self):
         return self._distribution
+
+    def __str__(self):
+        s = ['====== Iterator: ======']
+        # ====== Find longest string ====== #
+        longest_name = 0
+        longest_shape = 0
+        for d in self._data:
+            name = d.name
+            dtype = d.dtype
+            shape = d.shape
+            longest_name = max(len(name), longest_name)
+            longest_shape = max(len(str(shape)), longest_shape)
+        # ====== return print string ====== #
+        format_str = ('Name:%-' + str(longest_name) + 's  '
+                      'dtype:%-7s  '
+                      'shape:%-' + str(longest_shape) + 's  ')
+        for d in self._data:
+            name = d.name
+            dtype = d.dtype
+            shape = d.shape
+            s.append(format_str % (name, dtype, shape))
+        # ====== batch configuration ====== #
+        s.append('Batch: %d' % self._batch_size)
+        s.append('Shuffle: %r' % self._shuffle)
+        s.append('Sequential: %r' % self._sequential)
+        s.append('Distibution: %s' % str(self._distribution))
+        s.append('Seed: %d' % self._seed)
+        s.append('Range: [%.2f, %.2f]' % (self._start, self._end))
+        return '\n'.join(s)
 
     # ==================== batch configuration ==================== #
     def set_mode(self, sequential=None, distribution=None):
@@ -135,10 +171,11 @@ class DataIterator(object):
             self._shuffle = shuffle
         if seed is not None:
             self._rng.seed(seed)
+            self._seed = seed
         return self
 
     # ==================== main logic of batch iterator ==================== #
-    def _seed(self):
+    def _randseed(self):
         if self._shuffle:
             return self._rng.randint(10e8)
         return None
@@ -157,7 +194,8 @@ class DataIterator(object):
         shape = [i.shape[0] for i in data]
         # ====== prepare distribution information ====== #
         # number of sample should be traversed
-        n = np.asarray([i * j for i, j in zip(distribution, shape)])
+        n = np.asarray([i * (_apply_cut(j, end) - _apply_cut(j, start))
+                        for i, j in zip(distribution, shape)])
         n = np.round(n).astype(int)
         # normalize the distribution (base on new sample n of each data)
         distribution = n / n.sum()
@@ -174,37 +212,37 @@ class DataIterator(object):
         # ==================== optimized parallel code ==================== #
         if not sequential:
             # first iterators
-            it = [iter(dat.set_batch(bs, self._seed(), start, end))
+            it = [iter(dat.set_batch(bs, self._randseed(), start, end))
                   for bs, dat in zip(distribution, data)]
             # iterator
             while sum(n) > 0:
-                data = []
+                batch = []
                 for i, x in enumerate(it):
                     if n[i] <= 0:
                         continue
                     try:
                         x = x.next()[:n[i]]
                         n[i] -= x.shape[0]
-                        data.append(x)
+                        batch.append(x)
                     except StopIteration: # one iterator stopped
                         it[i] = iter(data[i].set_batch(
-                            distribution[i], self._seed(), start, end))
+                            distribution[i], self._randseed(), start, end))
                         x = it[i].next()[:n[i]]
                         n[i] -= x.shape[0]
-                        data.append(x)
-                # got final data
-                data = np.vstack(data)
+                        batch.append(x)
+                # got final batch
+                batch = np.vstack(batch)
                 if self._shuffle:
                     # no idea why random permutation is much faster than shuffle
-                    data = data[self._rng.permutation(data.shape[0])]
+                    batch = batch[self._rng.permutation(batch.shape[0])]
                     # self._rng.shuffle(data)
-                for start, end in idx[:int(ceil(data.shape[0] / batch_size))]:
-                    yield data[start:end]
+                for i, j in idx[:int(ceil(batch.shape[0] / batch_size))]:
+                    yield batch[i:j]
         # ==================== optimized sequential code ==================== #
         else:
             # first iterators
             batch_size = distribution.sum()
-            it = [iter(dat.set_batch(batch_size, self._seed(), start, end))
+            it = [iter(dat.set_batch(batch_size, self._randseed(), start, end))
                   for dat in data]
             current_data = 0
             # iterator
@@ -212,17 +250,17 @@ class DataIterator(object):
                 if n[current_data] <= 0:
                     current_data += 1
                 try:
-                    data = it[current_data].next()[:n[current_data]]
-                    n[current_data] -= data.shape[0]
+                    x = it[current_data].next()[:n[current_data]]
+                    n[current_data] -= x.shape[0]
                 except StopIteration: # one iterator stopped
                     it[current_data] = iter(data[current_data].set_batch(
-                        batch_size, self._seed(), start, end))
-                    data = it[current_data].next()[:n[current_data]]
-                    n[current_data] -= data.shape[0]
+                        batch_size, self._randseed(), start, end))
+                    x = it[current_data].next()[:n[current_data]]
+                    n[current_data] -= x.shape[0]
                 if self._shuffle:
-                    data = data[self._rng.permutation(data.shape[0])]
-                for i, j in idx[:int(ceil(data.shape[0] / self._batch_size))]:
-                    yield data[i:j]
+                    x = x[self._rng.permutation(x.shape[0])]
+                for i, j in idx[:int(ceil(x.shape[0] / self._batch_size))]:
+                    yield x[i:j]
 
 
 # ===========================================================================
@@ -342,7 +380,6 @@ class dataset(OdinObject):
             zfile.write(f, os.path.basename(f))
             logger.progress(i + 1, len(files),
             title=('Archiving: %-' + str(maxlen) + 's') % os.path.basename(f))
-        # print()
         zfile.close()
         return path
 
