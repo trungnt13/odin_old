@@ -77,10 +77,20 @@ class DataIterator(object):
         self._sequential = False
         self._distribution = [1.] * len(data)
 
+    # ==================== properties ==================== #
+    def __len__(self):
+        return sum(i * j.shape[0]
+                   for i, j in zip(self._distribution, self._data))
+
+    @property
+    def data(self):
+        return self._data
+
     @property
     def distribution(self):
         return self._distribution
 
+    # ==================== batch configuration ==================== #
     def set_mode(self, sequential=None, distribution=None):
         if sequential is not None:
             self._sequential = sequential
@@ -110,10 +120,6 @@ class DataIterator(object):
                 self._distribution = [distribution] * len(self._data)
         return self
 
-    def __len__(self):
-        return sum(i * j.shape[0]
-                   for i, j in zip(self._distribution, self._data))
-
     def set_range(self, start, end):
         if start < 0 or end < 0:
             raise ValueError('start and end must > 0, but start={} and end={}'
@@ -131,58 +137,92 @@ class DataIterator(object):
             self._rng.seed(seed)
         return self
 
+    # ==================== main logic of batch iterator ==================== #
     def _seed(self):
         if self._shuffle:
             return self._rng.randint(10e8)
         return None
 
     def __iter__(self):
+        # ====== easy access many private variables ====== #
         sequential = self._sequential
         start, end = self._start, self._end
         batch_size = self._batch_size
-        shape = [i.shape[0] for i in self._data]
+        data = np.asarray(self._data)
         distribution = np.asarray(self._distribution)
+        if self._shuffle: # shuffle order of data (good for sequential mode)
+            idx = self._rng.permutation(len(data))
+            data = data[idx]
+            distribution = distribution[idx]
+        shape = [i.shape[0] for i in data]
+        # ====== prepare distribution information ====== #
         # number of sample should be traversed
         n = np.asarray([i * j for i, j in zip(distribution, shape)])
+        n = np.round(n).astype(int)
         # normalize the distribution (base on new sample n of each data)
         distribution = n / n.sum()
         distribution = _approximate_continuos_by_discrete(distribution)
         # somehow heuristic, rescale distribution to get more benifit from cache
-        if distribution.sum() <= len(self._data):
+        if distribution.sum() <= len(data):
             distribution = distribution * 3
         # distribution now the actual batch size of each data
-        distribution = np.floor(batch_size * distribution).astype(int)
+        distribution = (batch_size * distribution).astype(int)
         assert distribution.sum() % batch_size == 0, 'wrong distribution size!'
-        # first iterators
-        it = {i: iter(dat.set_batch(bs, self._seed(), start, end))
-              for i, (bs, dat) in enumerate(zip(distribution, self._data))}
         # predefined (start,end) pair of each batch (e.g (0,256), (256,512))
         idx = list(range(0, batch_size + distribution.sum(), batch_size))
         idx = list(zip(idx, idx[1:]))
-        # ==================== optimized iterator code ==================== #
-        while sum(n) > 0:
-            data = []
-            for i, x in enumerate(it.values()):
-                if n[i] <= 0:
-                    continue
+        # ==================== optimized parallel code ==================== #
+        if not sequential:
+            # first iterators
+            it = [iter(dat.set_batch(bs, self._seed(), start, end))
+                  for bs, dat in zip(distribution, data)]
+            # iterator
+            while sum(n) > 0:
+                data = []
+                for i, x in enumerate(it):
+                    if n[i] <= 0:
+                        continue
+                    try:
+                        x = x.next()[:n[i]]
+                        n[i] -= x.shape[0]
+                        data.append(x)
+                    except StopIteration: # one iterator stopped
+                        it[i] = iter(data[i].set_batch(
+                            distribution[i], self._seed(), start, end))
+                        x = it[i].next()[:n[i]]
+                        n[i] -= x.shape[0]
+                        data.append(x)
+                # got final data
+                data = np.vstack(data)
+                if self._shuffle:
+                    # no idea why random permutation is much faster than shuffle
+                    data = data[self._rng.permutation(data.shape[0])]
+                    # self._rng.shuffle(data)
+                for start, end in idx[:int(ceil(data.shape[0] / batch_size))]:
+                    yield data[start:end]
+        # ==================== optimized sequential code ==================== #
+        else:
+            # first iterators
+            batch_size = distribution.sum()
+            it = [iter(dat.set_batch(batch_size, self._seed(), start, end))
+                  for dat in data]
+            current_data = 0
+            # iterator
+            while sum(n) > 0:
+                if n[current_data] <= 0:
+                    current_data += 1
                 try:
-                    x = x.next()[:n[i]]
-                    n[i] -= x.shape[0]
-                    data.append(x)
+                    data = it[current_data].next()[:n[current_data]]
+                    n[current_data] -= data.shape[0]
                 except StopIteration: # one iterator stopped
-                    it[i] = iter(self._data[i].set_batch(
-                        distribution[i], self._seed(), start, end))
-                    x = it[i].next()[:n[i]]
-                    n[i] -= x.shape[0]
-                    data.append(x)
-            # got final data
-            data = np.concatenate(data, axis=0)
-            if self._shuffle:
-                # no idea why random permutation is much faster than shuffle
-                data = data[self._rng.permutation(data.shape[0])]
-                # self._rng.shuffle(data)
-            for start, end in idx[:int(ceil(data.shape[0] / batch_size))]:
-                yield data[start:end]
+                    it[current_data] = iter(data[current_data].set_batch(
+                        batch_size, self._seed(), start, end))
+                    data = it[current_data].next()[:n[current_data]]
+                    n[current_data] -= data.shape[0]
+                if self._shuffle:
+                    data = data[self._rng.permutation(data.shape[0])]
+                for i, j in idx[:int(ceil(data.shape[0] / self._batch_size))]:
+                    yield data[i:j]
 
 
 # ===========================================================================
@@ -237,10 +277,20 @@ class dataset(OdinObject):
     def name(self):
         return self._name
 
+    @property
+    def size(self):
+        ''' return size in MegaByte'''
+        size_bytes = 0
+        for i in self._data_map.values():
+            size = np.dtype(i.dtype).itemsize
+            n = np.prod(i.shape)
+            size_bytes += size * n
+        return size_bytes / 1024. / 1024.
+
     # ==================== manipulate data ==================== #
     def get_data(self, name, dtype=None, shape=None, datatype='mmap'):
         datatype = datatype.lower()
-        if datatype not in ['mmap', 'memmap', 'hdf5', 'h5', 'hdf']:
+        if datatype not in ['mmap', 'memmap', 'mem', 'hdf5', 'h5', 'hdf']:
             raise ValueError("No support for data type: {}, following formats "
                              " are supported: 'mmap', 'memmap', 'hdf5', 'h5'"
                              "".format(datatype))
@@ -256,9 +306,9 @@ class dataset(OdinObject):
                     continue
                 return_data = self._data_map[k]
                 break
-        # ====== auto create new data ====== #
+        # ====== auto create new data, if cannot find any match ====== #
         if return_data is None and dtype is not None and shape is not None:
-            if datatype in ['mmap', 'memmap']:
+            if datatype in ['mmap', 'memmap', 'mem']:
                 return_data = MmapData(os.path.join(self.path, name),
                     dtype=dtype, shape=shape, mode='w+', override=True)
             else:
@@ -266,6 +316,10 @@ class dataset(OdinObject):
                 return_data = Hdf5Data(name, f, dtype=dtype, shape=shape)
             key = (return_data.name, return_data.dtype, return_data.shape)
             self._data_map[key] = return_data
+        if return_data is None:
+            raise ValueError('Cannot find or create data with name={}, dtype={} '
+                             'shape={}, and datatype={}'
+                             ''.format(name, dtype, shape, datatype))
         return return_data
 
     def create_iter(self, names,
@@ -291,6 +345,10 @@ class dataset(OdinObject):
         # print()
         zfile.close()
         return path
+
+    def flush(self):
+        for i in self._data_map.values():
+            i.flush()
 
     # ==================== Some info ==================== #
     def __str__(self):
