@@ -331,7 +331,6 @@ class dataset(OdinObject):
             raise ValueError("No support for data type: {}, following formats "
                              " are supported: 'mmap', 'memmap', 'hdf5', 'h5'"
                              "".format(datatype))
-
         return_data = None
         # ====== find defined data ====== #
         for k in self._data_map.keys():

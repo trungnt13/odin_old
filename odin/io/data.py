@@ -71,6 +71,7 @@ def load_data(file):
             mmap = MmapData(file, mode='r+', dtype=None, shape=None)
             return [mmap]
         except Exception, e:
+            import traceback; traceback.print_exc()
             raise ValueError('Error loading memmap data, error:{}, file:{}'
                              ''.format(e, file))
     elif any(i in file for i in Hdf5Data.SUPPORT_EXT):
@@ -79,6 +80,7 @@ def load_data(file):
             ds = get_all_hdf_dataset(f)
             return [Hdf5Data(i, f) for i in ds]
         except Exception, e:
+            import traceback; traceback.print_exc()
             raise ValueError('Error loading hdf5 data, error:{}, file:{} '
                              ''.format(e, file))
     return None
@@ -333,9 +335,9 @@ class MmapData(Data):
     """
 
     # name.float32.(8,12)
-    PATTERN = re.compile('[a-zA-Z0-9]*\.[a-zA-Z]*\d{1,2}.\(\d+(,\d+)*\)')
-    NAME_PATTERN = re.compile('[a-zA-Z0-9]*')
-    SHAPE_PATTERN = re.compile('\.\(\d+(,\d+)*\)')
+    PATTERN = re.compile('[a-zA-Z0-9_]*\.[a-zA-Z]*\d{1,2}.\(\d+(,\d*)*\)')
+    NAME_PATTERN = re.compile('[a-zA-Z0-9_]*')
+    SHAPE_PATTERN = re.compile('\.\(\d+(,\d*)*\)')
     DTYPE_PATTERN = re.compile('\.[a-zA-Z]*\d{1,2}')
 
     def __init__(self, path, dtype='float32', shape=None, mode='r+',
@@ -421,6 +423,11 @@ class MmapData(Data):
         return shape, dtype
 
     def _info_to_name(self, name, shape, dtype):
+        shape = [str(i) for i in shape]
+        #(1000) will be understand as int (error)
+        # should be (1000,)
+        if len(shape) == 1:
+            shape.append('')
         return '.'.join([name,
                         str(dtype),
                         '(' + ','.join([str(i) for i in shape]) + ')'])
