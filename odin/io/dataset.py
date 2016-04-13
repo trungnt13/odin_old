@@ -5,7 +5,6 @@ import numpy as np
 from math import ceil
 
 from ..base import OdinObject
-from .ie import get_file
 from ..tensor import get_random_magic_seed
 from .. import logger
 from .data import MmapData, Hdf5Data, load_data, open_hdf5
@@ -433,26 +432,3 @@ class dataset(OdinObject):
             raise IOError('Error loading archived dataset, path:{}, error:{}'
                           '.'.format(path, e))
         return None
-
-    @staticmethod
-    def load_mnist(path='https://s3.amazonaws.com/ai-datasets/mnist.h5'):
-        '''
-        path : str
-            local path or url to hdf5 datafile
-        '''
-        datapath = get_file('mnist.h5', path)
-        logger.info('Loading data from: %s' % datapath)
-        try:
-            ds = dataset(datapath, mode='r')
-        except:
-            if os.path.exists(datapath):
-                os.remove(datapath)
-            datapath = get_file('mnist.h5', path)
-            ds = dataset(datapath, mode='r')
-        return ds
-
-    def load_imdb(path):
-        pass
-
-    def load_reuters(path):
-        pass

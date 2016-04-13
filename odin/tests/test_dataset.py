@@ -7,7 +7,7 @@ import os
 import numpy as np
 from scipy import stats
 
-from ..io import Hdf5Data, MmapData, dataset, DataIterator
+from ..io import Hdf5Data, MmapData, dataset, DataIterator, open_hdf5, close_all_hdf5
 from .. import tensor
 
 from itertools import izip
@@ -64,23 +64,26 @@ path = 'set01'
 
 
 def write():
-    for f in os.listdir(path):
-        try:
-            os.remove(os.path.join(path, f))
-        except:
-            pass
+    if not os.path.exists(path):
+        os.mkdir(path)
+    else:
+        for f in os.listdir(path):
+            try:
+                os.remove(os.path.join(path, f))
+            except:
+                pass
 
     ds = dataset(path)
     # ====== set X ====== #
     x = ds.get_data('X1', dtype='float32', shape=(10000, 5), datatype='mmap')
     x[:] = np.arange(10000 * 5 * 0, 10000 * 5 * 1).reshape(-1, 5)
-    x = ds.get_data('X2', dtype='float32', shape=(20000, 5), datatype='mmap')
+    x = ds.get_data('X2', dtype='float32', shape=(20000, 5), datatype='hdf')
     x[:] = np.arange(10000 * 5 * 1, 10000 * 5 * 3).reshape(-1, 5)
     x = ds.get_data('X3', dtype='float32', shape=(30000, 5), datatype='mmap')
     x[:] = np.arange(10000 * 5 * 3, 10000 * 5 * 6).reshape(-1, 5)
 
     # ====== set X ====== #
-    y = ds.get_data('Y1', dtype='float32', shape=(10000, 5), datatype='mmap')
+    y = ds.get_data('Y1', dtype='float32', shape=(10000, 5), datatype='hdf')
     y[:] = -np.arange(10000 * 5 * 0, 10000 * 5 * 1).reshape(-1, 5)
     y = ds.get_data('Y2', dtype='float32', shape=(20000, 5), datatype='mmap')
     y[:] = -np.arange(10000 * 5 * 1, 10000 * 5 * 3).reshape(-1, 5)
@@ -220,6 +223,10 @@ class DatasetTest(unittest.TestCase):
         self.assertEqual(x.tolist(), y.tolist())
         self.assertNotEqual(x.tolist(), z.tolist())
         test_ops(data, self.assertEqual)
+        data.flush()
+
+        # reload data
+        data = MmapData('test', dtype='float64')
 
         # test normalization
         data.normalize((0, 1))
@@ -248,7 +255,8 @@ class DatasetTest(unittest.TestCase):
         os.remove(data.path)
 
     def test_hdf5_data(self):
-        f = h5py.File('test.h5', mode='w')
+        close_all_hdf5()
+        f = open_hdf5('test.h5', mode='w')
         data = Hdf5Data('X', f, shape=(None, 5, 5), dtype='float64')
         data.append(np.random.rand(500, 5, 5), np.random.rand(200, 5, 5),
             np.random.rand(10, 5, 8))
@@ -267,6 +275,9 @@ class DatasetTest(unittest.TestCase):
         data.normalize((0, 1))
         self.assertEqual(np.allclose(data.mean((0, 1)), 0.), True)
         self.assertEqual(np.allclose(data.std((0, 1)), 1.), True)
+
+        # recreate data object
+        data = Hdf5Data('X', f)
 
         # test iteration
         data.set_batch(8, 12)

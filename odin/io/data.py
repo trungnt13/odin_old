@@ -5,6 +5,7 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import numpy as np
+from abc import ABCMeta, abstractmethod
 
 import re
 from .. import tensor as T
@@ -18,8 +19,11 @@ from collections import defaultdict
 __all__ = [
     'load_data',
     'open_hdf5',
+    'close_all_hdf5',
     'resize_memmap',
+    'Data',
     'MmapData',
+    'get_all_hdf_dataset',
     'Hdf5Data'
 ]
 
@@ -71,7 +75,7 @@ def load_data(file):
                              ''.format(e, file))
     elif any(i in file for i in Hdf5Data.SUPPORT_EXT):
         try:
-            f = open_hdf5(file, mode='r')
+            f = open_hdf5(file, mode='r+')
             ds = get_all_hdf_dataset(f)
             return [Hdf5Data(i, f) for i in ds]
         except Exception, e:
@@ -81,9 +85,203 @@ def load_data(file):
 
 
 # ===========================================================================
+# Data
+# ===========================================================================
+class Data(object):
+    __metaclass__ = ABCMeta
+
+    """docstring for Data"""
+
+    def __init__(self):
+        super(Data, self).__init__()
+        # batch information
+        self._batch_size = 256
+        self._start = 0.
+        self._end = 1.
+        self._rng = np.random.RandomState()
+        self._seed = None
+        self._status = 0 # flag show that array valued changed
+        # main data object that have shape, dtype ...
+        self._data = None
+
+    # ==================== properties ==================== #
+    @property
+    def shape(self):
+        return self._data.shape
+
+    @property
+    def dtype(self):
+        return self._data.dtype
+
+    @property
+    def array(self):
+        return self._data[:]
+
+    def tolist(self):
+        return self._data[:].tolist()
+
+    @property
+    def mmap(self):
+        return self._data
+
+    @property
+    def batch_size(self):
+        return self._batch_size
+
+    @property
+    def data(self):
+        return self._data
+
+    def set_batch(self, batch_size=None, seed=None, start=None, end=None):
+        if isinstance(batch_size, int) and batch_size > 0:
+            self._batch_size = batch_size
+        self._seed = seed
+        if start is not None and start > 0. - 1e-12:
+            self._start = start
+        if end is not None and end > 0. - 1e-12:
+            self._end = end
+        return self
+
+    # ==================== Slicing methods ==================== #
+    def __getitem__(self, y):
+        return self._data.__getitem__(y)
+
+    @autoattr(_status=lambda x: x + 1)
+    def __setitem__(self, x, y):
+        return self._data.__setitem__(x, y)
+
+    # ==================== iteration ==================== #
+    def __iter__(self):
+        batch_size = self._batch_size
+        seed = self._seed
+        rng = self._rng
+
+        # custom batch_size
+        start = (int(self._start * self.shape[0]) if self._start < 1. + 1e-12
+                 else int(self._start))
+        end = (int(self._end * self.shape[0]) if self._end < 1. + 1e-12
+               else int(self._end))
+        if start > self.shape[0] or end > self.shape[0]:
+            raise ValueError('start={} or end={} excess data_size={}'
+                             ''.format(start, end, self.shape[0]))
+
+        idx = list(range(start, end, batch_size))
+        if idx[-1] < end:
+            idx.append(end)
+        idx = list(zip(idx, idx[1:]))
+        if seed is not None:
+            rng.seed(seed)
+            rng.shuffle(idx)
+            self._seed = None
+
+        for i in idx:
+            start, end = i
+            yield self._data[start:end]
+
+    # ==================== Strings ==================== #
+    def __str__(self):
+        return self._data.__str__()
+
+    def __repr__(self):
+        return self._data.__repr__()
+
+    # ==================== manipulation ==================== #
+    @autoattr(_status=lambda x: x + 1)
+    def append(self, *arrays):
+        accepted_arrays = []
+        new_size = 0
+        for a in arrays:
+            if hasattr(a, 'shape'):
+                if a.shape[1:] == self.shape[1:]:
+                    accepted_arrays.append(a)
+                    new_size += a.shape[0]
+        old_size = self.shape[0]
+        self.resize(old_size + new_size) # resize only once will be faster
+        for a in accepted_arrays:
+            self._data[old_size:old_size + a.shape[0]] = a
+            old_size = old_size + a.shape[0]
+        return self
+
+    @autoattr(_status=lambda x: x + 1)
+    def prepend(self, *arrays):
+        accepted_arrays = []
+        new_size = 0
+        for a in arrays:
+            if hasattr(a, 'shape'):
+                if a.shape[1:] == self.shape[1:]:
+                    accepted_arrays.append(a)
+                    new_size += a.shape[0]
+        if new_size > self.shape[0]:
+            self.resize(new_size) # resize only once will be faster
+        size = 0
+        for a in accepted_arrays:
+            self._data[size:size + a.shape[0]] = a
+            size = size + a.shape[0]
+        return self
+
+    # ==================== abstract ==================== #
+    @abstractmethod
+    def resize(self, shape):
+        raise NotImplementedError
+
+    @abstractmethod
+    def flush(self):
+        raise NotImplementedError
+
+    # ==================== high-level operators ==================== #
+    @abstractmethod
+    def sum(self, axis=0):
+        raise NotImplementedError
+
+    @abstractmethod
+    def cumsum(self, axis=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def sum2(self, axis=0):
+        raise NotImplementedError
+
+    @abstractmethod
+    def pow(self, y):
+        raise NotImplementedError
+
+    @abstractmethod
+    def min(self, axis=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def argmin(self, axis=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def max(self, axis=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def argmax(self, axis=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def mean(self, axis=0):
+        raise NotImplementedError
+
+    @abstractmethod
+    def var(self, axis=0):
+        raise NotImplementedError
+
+    @abstractmethod
+    def std(self, axis=0):
+        raise NotImplementedError
+
+    @abstractmethod
+    def normalize(self, axis, mean=None, std=None):
+        raise NotImplementedError
+
+
+# ===========================================================================
 # Memmap Data object
 # ===========================================================================
-class MmapData(object):
+class MmapData(Data):
 
     """Create a memory-map to an array stored in a *binary* file on disk.
 
@@ -140,8 +338,10 @@ class MmapData(object):
     SHAPE_PATTERN = re.compile('\.\(\d+(,\d+)*\)')
     DTYPE_PATTERN = re.compile('\.[a-zA-Z]*\d{1,2}')
 
-    def __init__(self, path, mode='r+', dtype='float32', shape=None,
+    def __init__(self, path, dtype='float32', shape=None, mode='r+',
         override=True):
+        super(MmapData, self).__init__()
+
         # validate path
         name = os.path.basename(path)
         path = path.replace(name, '')
@@ -210,18 +410,10 @@ class MmapData(object):
             raise ValueError('No support for given mode:' + str(mode))
 
         # store variables
-        self._mmap = np.memmap(mmap_path, dtype=dtype, shape=shape, mode=mode)
+        self._data = np.memmap(mmap_path, dtype=dtype, shape=shape, mode=mode)
         self._name = name.split('.')[0]
         self._path = path
         self._mode = mode
-
-        # batch information
-        self._batch_size = 256
-        self._start = 0.
-        self._end = 1.
-        self._rng = np.random.RandomState()
-        self._seed = None
-        self._status = 0 # flag show that array valued changed
 
     def _name_to_info(self, name):
         shape = eval(name.split('.')[1])
@@ -235,111 +427,45 @@ class MmapData(object):
 
     # ==================== properties ==================== #
     @property
-    def shape(self):
-        return self._mmap.shape
-
-    @property
-    def dtype(self):
-        return self._mmap.dtype
-
-    @property
-    def array(self):
-        return np.asarray(self._mmap)
-
-    def tolist(self):
-        return self._mmap.tolist()
-
-    @property
-    def mmap(self):
-        return self._mmap
-
-    @property
-    def batch_size(self):
-        return self._batch_size
-
-    @property
     def path(self):
-        return self._mmap.filename
+        return self._data.filename
 
     @property
     def name(self):
         return self._name
 
-    def set_batch(self, batch_size=None, seed=None, start=None, end=None):
-        if isinstance(batch_size, int) and batch_size > 0:
-            self._batch_size = batch_size
-        self._seed = seed
-        if start is not None and start > 0. - 1e-12:
-            self._start = start
-        if end is not None and end > 0. - 1e-12:
-            self._end = end
-        return self
-
-    @autoattr(_status=lambda x: x + 1)
-    def append(self, *arrays):
-        accepted_arrays = []
-        new_size = 0
-        for a in arrays:
-            if hasattr(a, 'shape'):
-                if a.shape[1:] == self.shape[1:]:
-                    accepted_arrays.append(a)
-                    new_size += a.shape[0]
-        old_size = self.shape[0]
-        self.resize(old_size + new_size) # resize only once will be faster
-        for a in accepted_arrays:
-            self._mmap[old_size:old_size + a.shape[0]] = a
-            old_size = old_size + a.shape[0]
-        return self
-
-    @autoattr(_status=lambda x: x + 1)
-    def prepend(self, *arrays):
-        accepted_arrays = []
-        new_size = 0
-        for a in arrays:
-            if hasattr(a, 'shape'):
-                if a.shape[1:] == self.shape[1:]:
-                    accepted_arrays.append(a)
-                    new_size += a.shape[0]
-        if new_size > self.shape[0]:
-            self.resize(new_size) # resize only once will be faster
-        size = 0
-        for a in accepted_arrays:
-            self._mmap[size:size + a.shape[0]] = a
-            size = size + a.shape[0]
-        return self
-
     # ==================== High-level operator ==================== #
     @cache('_status')
     def sum(self, axis=0):
-        return self._mmap.sum(axis)
+        return self._data.sum(axis)
 
     @cache('_status')
     def cumsum(self, axis=None):
-        return self._mmap.cumsum(axis)
+        return self._data.cumsum(axis)
 
     @cache('_status')
     def sum2(self, axis=0):
-        return self._mmap.__pow__(2).sum(axis)
+        return self._data.__pow__(2).sum(axis)
 
     @cache('_status')
     def pow(self, y):
-        return self._mmap.__pow__(y)
+        return self._data.__pow__(y)
 
     @cache('_status')
     def min(self, axis=None):
-        return self._mmap.min(axis)
+        return self._data.min(axis)
 
     @cache('_status')
     def argmin(self, axis=None):
-        return self._mmap.argmin(axis)
+        return self._data.argmin(axis)
 
     @cache('_status')
     def max(self, axis=None):
-        return self._mmap.max(axis)
+        return self._data.max(axis)
 
     @cache('_status')
     def argmax(self, axis=None):
-        return self._mmap.argmax(axis)
+        return self._data.argmax(axis)
 
     @cache('_status')
     def mean(self, axis=0):
@@ -366,113 +492,70 @@ class MmapData(object):
     def normalize(self, axis, mean=None, std=None):
         mean = mean if mean is not None else self.mean(axis)
         std = std if std is not None else self.std(axis)
-        self._mmap -= mean
-        self._mmap /= std
+        self._data -= mean
+        self._data /= std
         return self
 
     # ==================== Special operators ==================== #
     def __add__(self, y):
-        return self._mmap.__add__(y)
+        return self._data.__add__(y)
 
     def __sub__(self, y):
-        return self._mmap.__sub__(y)
+        return self._data.__sub__(y)
 
     def __mul__(self, y):
-        return self._mmap.__mul__(y)
+        return self._data.__mul__(y)
 
     def __div__(self, y):
-        return self._mmap.__div__(y)
+        return self._data.__div__(y)
 
     def __floordiv__(self, y):
-        return self._mmap.__floordiv__(y)
+        return self._data.__floordiv__(y)
 
     def __pow__(self, y):
-        return self._mmap.__pow__(y)
+        return self._data.__pow__(y)
 
     @autoattr(_status=lambda x: x + 1)
     def __iadd__(self, y):
-        self._mmap.__iadd__(y)
+        self._data.__iadd__(y)
         return self
 
     @autoattr(_status=lambda x: x + 1)
     def __isub__(self, y):
-        self._mmap.__isub__(y)
+        self._data.__isub__(y)
         return self
 
     @autoattr(_status=lambda x: x + 1)
     def __imul__(self, y):
-        self._mmap.__imul__(y)
+        self._data.__imul__(y)
         return self
 
     @autoattr(_status=lambda x: x + 1)
     def __idiv__(self, y):
-        self._mmap.__idiv__(y)
+        self._data.__idiv__(y)
         return self
 
     @autoattr(_status=lambda x: x + 1)
     def __ifloordiv__(self, y):
-        self._mmap.__ifloordiv__(y)
+        self._data.__ifloordiv__(y)
         return self
 
     @autoattr(_status=lambda x: x + 1)
     def __ipow__(self, y):
-        return self._mmap.__ipow__(y)
+        return self._data.__ipow__(y)
 
     def __neg__(self):
-        self._mmap.__neg__()
+        self._data.__neg__()
         return self
 
     def __pos__(self):
-        self._mmap.__pos__()
+        self._data.__pos__()
         return self
-
-    # ==================== Slicing methods ==================== #
-    def __getitem__(self, y):
-        return self._mmap.__getitem__(y)
-
-    @autoattr(_status=lambda x: x + 1)
-    def __setitem__(self, x, y):
-        return self._mmap.__setitem__(x, y)
-
-    # ==================== iteration ==================== #
-    def __iter__(self):
-        batch_size = self._batch_size
-        seed = self._seed
-        rng = self._rng
-
-        # custom batch_size
-        start = (int(self._start * self.shape[0]) if self._start < 1. + 1e-12
-                 else int(self._start))
-        end = (int(self._end * self.shape[0]) if self._end < 1. + 1e-12
-               else int(self._end))
-        if start > self.shape[0] or end > self.shape[0]:
-            raise ValueError('start={} or end={} excess data_size={}'
-                             ''.format(start, end, self.shape[0]))
-
-        idx = list(range(start, end, batch_size))
-        if idx[-1] < end:
-            idx.append(end)
-        idx = list(zip(idx, idx[1:]))
-        if seed is not None:
-            rng.seed(seed)
-            rng.shuffle(idx)
-            self._seed = None
-
-        for i in idx:
-            start, end = i
-            yield self._mmap[start:end]
-
-    # ==================== Strings ==================== #
-    def __str__(self):
-        return self._mmap.__str__()
-
-    def __repr__(self):
-        return self._mmap.__repr__()
 
     # ==================== Save ==================== #
     def resize(self, shape):
         mode = self._mode
-        mmap = self._mmap
+        mmap = self._data
         if mode == 'r' or mode == 'c':
             return
 
@@ -483,7 +566,7 @@ class MmapData(object):
                              '{} != {}'.format(shape[1:], mmap.shape[1:]))
         if shape[0] < mmap.shape[0]:
             raise ValueError('Only support extend memmap, and do not shrink the memory')
-        elif shape[0] == self._mmap.shape[0]:
+        elif shape[0] == self._data.shape[0]:
             return self
         mmap.flush()
         # resize by create new memmap and also rename old file
@@ -491,7 +574,7 @@ class MmapData(object):
         new_name = os.path.join(os.path.dirname(self.path),
                                 self._info_to_name(self.name, shape, mmap.dtype))
         os.rename(mmap.filename, new_name)
-        self._mmap = np.memmap(new_name,
+        self._data = np.memmap(new_name,
                                dtype=mmap.dtype,
                                mode='r+',
                                shape=shape)
@@ -502,16 +585,16 @@ class MmapData(object):
         if mode == 'r' or mode == 'c':
             return
 
-        old_path = self._mmap.filename
+        old_path = self._data.filename
         new_path = os.path.join(os.path.dirname(self.path),
                     self._info_to_name(self.name, self.shape, self.dtype))
-        self._mmap.flush()
+        self._data.flush()
         if old_path != new_path:
-            del self._mmap
+            del self._data
             os.rename(old_path, new_path)
             if 'w' in mode:
                 mode = 'r+'
-            self._mmap = np.memmap(new_path, mode=mode)
+            self._data = np.memmap(new_path, mode=mode)
 
 
 # ===========================================================================
@@ -521,7 +604,6 @@ try:
     import h5py
 except:
     pass
-_HDF5 = {}
 
 
 def get_all_hdf_dataset(hdf, fileter_func=None, path='/'):
@@ -556,16 +638,46 @@ def _validate_operate_axis(axis):
     return axis
 
 
+_HDF5 = {}
+
+
 def open_hdf5(path, mode='r'):
     '''
+    Parameters
+    ----------
+    mode : one of the following options
+        +------------------------------------------------------------+
+        |r        | Readonly, file must exist                        |
+        +------------------------------------------------------------+
+        |r+       | Read/write, file must exist                      |
+        +------------------------------------------------------------+
+        |w        | Create file, truncate if exists                  |
+        +------------------------------------------------------------+
+        |w- or x  | Create file, fail if exists                      |
+        +------------------------------------------------------------+
+        |a        | Read/write if exists, create otherwise (default) |
+        +------------------------------------------------------------+
+
+    safemode : bool
+        if enable, auto close reading hdf files if you want to
+        override it with new file
+
     Note
     ----
     If given file already open in read mode, mode = 'w' will cause error
     (this is good error and you should avoid this situation)
 
     '''
-    if 'r' in mode:
-        mode = 'r+'
+    path = os.path.abspath(path)
+    if 'r' in mode: # only 2 mode (r, a)
+        if not os.path.exists(path):
+            raise ValueError('Cannot find hdf5 file in read mode, path:' + path)
+        if mode == 'r+':
+            mode = 'a'
+    elif 'w' in mode:
+        if os.path.exists(path):
+            os.remove(path)
+        mode = 'a'
 
     key = (path, mode)
     if key in _HDF5:
@@ -574,16 +686,28 @@ def open_hdf5(path, mode='r'):
             f = h5py.File(path, mode=mode)
     else:
         f = h5py.File(path, mode=mode)
-    _HDF5[key] = f
+        _HDF5[key] = f
     return f
 
 
-class Hdf5Data(object):
+def close_all_hdf5():
+    import gc
+    for obj in gc.get_objects():   # Browse through ALL objects
+        if isinstance(obj, h5py.File):   # Just HDF5 files
+            try:
+                obj.close()
+            except:
+                pass # Was already closed
+
+
+class Hdf5Data(Data):
 
     SUPPORT_EXT = ['.h5', '.hdf', '.dat', '.hdf5']
 
     def __init__(self, dataset, hdf=None, dtype='float32', shape=None,
         chunk_size=32):
+        super(Hdf5Data, self).__init__()
+
         self._chunk_size = chunk_size
         if isinstance(hdf, str):
             hdf = open_hdf5(hdf, mode='a')
@@ -591,7 +715,7 @@ class Hdf5Data(object):
             raise ValueError('Cannot initialize dataset without hdf file')
 
         if isinstance(dataset, h5py.Dataset):
-            self._dataset = dataset
+            self._data = dataset
             self._hdf = dataset.file
         else:
             if dataset not in hdf: # not created dataset
@@ -603,101 +727,28 @@ class Hdf5Data(object):
                     chunks=_get_chunk_size(shape, chunk_size),
                     shape=shape, maxshape=(None, ) + shape[1:])
 
-            self._dataset = hdf[dataset]
-            if shape is not None and self._dataset.shape[1:] != shape[1:]:
+            self._data = hdf[dataset]
+            if shape is not None and self._data.shape[1:] != shape[1:]:
                 raise ValueError('Shape mismatch between predefined dataset '
                                  'and given shape, {} != {}'
-                                 ''.format(shape, self._dataset.shape))
+                                 ''.format(shape, self._data.shape))
             self._hdf = hdf
 
-        self._batch_size = 256
-        self._start = 0.
-        self._end = 1.
-        self._rng = np.random.RandomState()
-        self._seed = None
-        self._status = 0 # flag show that array valued changed
-
     # ==================== properties ==================== #
-    @property
-    def shape(self):
-        return self._dataset.shape
-
-    @property
-    def dtype(self):
-        return self._dataset.dtype
-
-    @property
-    def array(self):
-        return self._dataset[:]
-
-    def tolist(self):
-        return self._dataset[:].tolist()
-
-    @property
-    def dataset(self):
-        return self._dataset
-
-    @property
-    def hdf5(self):
-        return self._hdf
-
-    @property
-    def batch_size(self):
-        return self._batch_size
-
     @property
     def path(self):
         return self._hdf.filename
 
     @property
     def name(self):
-        _ = self._dataset.name
+        _ = self._data.name
         if _[0] == '/':
             _ = _[1:]
         return _
 
-    def set_batch(self, batch_size=None, seed=None, start=None, end=None):
-        if isinstance(batch_size, int) and batch_size > 0:
-            self._batch_size = batch_size
-        self._seed = seed
-        if start is not None and start > 0. - 1e-12:
-            self._start = start
-        if end is not None and end > 0. - 1e-12:
-            self._end = end
-        return self
-
-    @autoattr(_status=lambda x: x + 1)
-    def append(self, *arrays):
-        accepted_arrays = []
-        new_size = 0
-        for a in arrays:
-            if hasattr(a, 'shape'):
-                if a.shape[1:] == self.shape[1:]:
-                    accepted_arrays.append(a)
-                    new_size += a.shape[0]
-        old_size = self.shape[0]
-        self.resize(old_size + new_size) # resize only once will be faster
-        for a in accepted_arrays:
-            self._dataset[old_size:old_size + a.shape[0]] = a
-            old_size = old_size + a.shape[0]
-        return self
-
-    @autoattr(_status=lambda x: x + 1)
-    def prepend(self, *arrays):
-        accepted_arrays = []
-        new_size = 0
-        for a in arrays:
-            if hasattr(a, 'shape'):
-                if a.shape[1:] == self.shape[1:]:
-                    accepted_arrays.append(a)
-                    new_size += a.shape[0]
-        if new_size > self.shape[0]:
-            self.resize(new_size) # resize only once will be faster
-        size = 0
-        for a in accepted_arrays:
-            self._dataset[size:size + a.shape[0]] = a
-            size = size + a.shape[0]
-        return self
+    @property
+    def hdf5(self):
+        return self._hdf
 
     # ==================== High-level operator ==================== #
     @cache('_status')
@@ -725,7 +776,7 @@ class Hdf5Data(object):
 
     @cache('_status')
     def cumsum(self, axis=None):
-        return self._dataset[:].cumsum(axis)
+        return self._data[:].cumsum(axis)
 
     @cache('_status')
     def sum2(self, axis=0):
@@ -734,7 +785,7 @@ class Hdf5Data(object):
 
     @cache('_status')
     def pow(self, y):
-        return self._dataset[:].__pow__(y)
+        return self._data[:].__pow__(y)
 
     @cache('_status')
     def min(self, axis=None):
@@ -745,7 +796,7 @@ class Hdf5Data(object):
 
     @cache('_status')
     def argmin(self, axis=None):
-        return self._dataset[:].argmin(axis)
+        return self._data[:].argmin(axis)
 
     @cache('_status')
     def max(self, axis=None):
@@ -756,7 +807,7 @@ class Hdf5Data(object):
 
     @cache('_status')
     def argmax(self, axis=None):
-        return self._dataset[:].argmax(axis)
+        return self._data[:].argmax(axis)
 
     @cache('_status')
     def mean(self, axis=0):
@@ -798,35 +849,36 @@ class Hdf5Data(object):
         for i in idx:
             start, end = i
             if 'add' == ops:
-                self._dataset[start:end] += y
+                self._data[start:end] += y
             elif 'mul' == ops:
-                self._dataset[start:end] *= y
+                self._data[start:end] *= y
             elif 'div' == ops:
-                self._dataset[start:end] /= y
+                self._data[start:end] /= y
             elif 'sub' == ops:
-                self._dataset[start:end] -= y
+                self._data[start:end] -= y
             elif 'floordiv' == ops:
-                self._dataset[start:end] //= y
+                self._data[start:end] //= y
             elif 'pow' == ops:
-                self._dataset[start:end] **= y
+                self._data[start:end] **= y
 
+    # ==================== low-level operator ==================== #
     def __add__(self, y):
-        return self._mmap.__add__(y)
+        return self._data.__add__(y)
 
     def __sub__(self, y):
-        return self._mmap.__sub__(y)
+        return self._data.__sub__(y)
 
     def __mul__(self, y):
-        return self._mmap.__mul__(y)
+        return self._data.__mul__(y)
 
     def __div__(self, y):
-        return self._mmap.__div__(y)
+        return self._data.__div__(y)
 
     def __floordiv__(self, y):
-        return self._mmap.__floordiv__(y)
+        return self._data.__floordiv__(y)
 
     def __pow__(self, y):
-        return self._mmap.__pow__(y)
+        return self._data.__pow__(y)
 
     @autoattr(_status=lambda x: x + 1)
     def __iadd__(self, y):
@@ -859,55 +911,12 @@ class Hdf5Data(object):
         return self
 
     def __neg__(self):
-        self._dataset.__neg__()
+        self._data.__neg__()
         return self
 
     def __pos__(self):
-        self._dataset.__pos__()
+        self._data.__pos__()
         return self
-
-    # ==================== Slicing methods ==================== #
-    def __getitem__(self, y):
-        return self._dataset.__getitem__(y)
-
-    @autoattr(_status=lambda x: x + 1)
-    def __setitem__(self, x, y):
-        return self._dataset.__setitem__(x, y)
-
-    # ==================== iteration ==================== #
-    def __iter__(self):
-        batch_size = self._batch_size
-        seed = self._seed
-        rng = self._rng
-
-        # custom batch_size
-        start = (int(self._start * self.shape[0]) if self._start < 1. + 1e-12
-                 else int(self._start))
-        end = (int(self._end * self.shape[0]) if self._end < 1. + 1e-12
-               else int(self._end))
-        if start > self.shape[0] or end > self.shape[0]:
-            raise ValueError('start={} or end={} excess data_size={}'
-                             ''.format(start, end, self.shape[0]))
-
-        idx = list(range(start, end, batch_size))
-        if idx[-1] < end:
-            idx.append(end)
-        idx = list(zip(idx, idx[1:]))
-        if seed is not None:
-            rng.seed(seed)
-            rng.shuffle(idx)
-            self._seed = None
-
-        for i in idx:
-            start, end = i
-            yield self._dataset[start:end]
-
-    # ==================== Strings ==================== #
-    def __str__(self):
-        return self._dataset.__str__()
-
-    def __repr__(self):
-        return self._dataset.__repr__()
 
     # ==================== Save ==================== #
     def resize(self, shape):
@@ -924,10 +933,13 @@ class Hdf5Data(object):
         elif shape[0] == self.shape[0]:
             return self
 
-        self._dataset.resize(self.shape[0] + shape[0], 0)
+        self._data.resize(self.shape[0] + shape[0], axis=0)
         return self
 
     def flush(self):
-        if self._hdf.mode == 'r':
-            return
-        self._hdf.flush()
+        try:
+            if self._hdf.mode == 'r':
+                return
+            self._hdf.flush()
+        except:
+            pass
